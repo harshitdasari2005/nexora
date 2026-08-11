@@ -1,0 +1,51 @@
+{
+  "name": "@nexora/app-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora API — the Fastify modular-monolith application container (BACKEND.md §2; ROADMAP.md §7). Wires @nexora/persistence, the domain cores, and the application layers; serves the onboarding API surface.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/src/server.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.0",
+    "@nexora/agent-sdk": "workspace:*",
+    "@nexora/ai-runtime": "workspace:*",
+    "@nexora/application-calendar": "workspace:*",
+    "@nexora/application-documents": "workspace:*",
+    "@nexora/application-hr": "workspace:*",
+    "@nexora/application-identity": "workspace:*",
+    "@nexora/application-knowledge": "workspace:*",
+    "@nexora/application-organizations": "workspace:*",
+    "@nexora/application-projects": "workspace:*",
+    "@nexora/application-workspaces": "workspace:*",
+    "@nexora/contracts": "workspace:*",
+    "@nexora/domain-documents": "workspace:*",
+    "@nexora/domain-hr": "workspace:*",
+    "@nexora/domain-identity": "workspace:*",
+    "@nexora/domain-knowledge": "workspace:*",
+    "@nexora/domain-organizations": "workspace:*",
+    "@nexora/domain-projects": "workspace:*",
+    "@nexora/domain-workspaces": "workspace:*",
+    "@nexora/module-calendar": "workspace:*",
+    "@nexora/module-notifications": "workspace:*",
+    "@nexora/module-search": "workspace:*",
+    "@nexora/module-workflow": "workspace:*",
+    "@nexora/persistence": "workspace:*",
+    "@nexora/shared": "workspace:*",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.36.4",
+    "fastify": "^5.2.0",
+    "openid-client": "^5.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.0"
+  }
+}

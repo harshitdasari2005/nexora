@@ -1,0 +1,29 @@
+{
+  "name": "@nexora/application-projects",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora Projects application layer (BACKEND.md §4): commands, command handlers, queries, DTOs and validators orchestrating @nexora/domain-projects. No persistence, no HTTP, no infrastructure.",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/domain-projects": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

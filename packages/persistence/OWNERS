@@ -1,0 +1,24 @@
+# Owners — @nexora/persistence
+
+## Code owners
+
+- **Platform Engineering** (Persistence squad) — @nexora/platform-eng
+  - owns the Drizzle schema, migrations, and repository implementations
+  - approves all schema changes (tenant isolation, index strategy)
+
+## Review requirements
+
+- Schema migrations require an architecture reviewer (PERSISTENCE.md §4
+  aggregate ownership; §8 tenant isolation).
+- Repository implementations must not leak SQL into domain/application
+  layers — the domain ports are the boundary.
+- New aggregates require both a domain `hydrate` factory and a migration.
+
+## Areas
+
+| Path                 | Owner                             |
+| -------------------- | --------------------------------- |
+| `src/schema/`        | Platform Engineering + Architecture |
+| `src/repositories/`  | Platform Engineering              |
+| `src/hasher/`        | Platform Engineering + Security   |
+| `drizzle/`           | Platform Engineering              |

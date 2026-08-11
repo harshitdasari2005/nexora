@@ -1,0 +1,25 @@
+# Owners — @nexora/domain-workspaces
+
+## Code owners
+
+- **Platform Engineering** (Tenancy squad) — @nexora/platform-eng
+  - owns the Workspaces bounded context domain core
+  - approves all aggregate, policy, and service changes
+
+## Review requirements
+
+- Changes to the `Workspace` aggregate or `WORKSPACE_TRANSITIONS` require an
+  architecture reviewer sign-off (lifecycle is a cross-domain contract).
+- New domain events must be added to the event catalog in sync with
+  `packages/contracts`.
+- Repository interfaces may only change with an infrastructure owner review.
+
+## Areas
+
+| Path            | Owner                             |
+| --------------- | --------------------------------- |
+| `src/entities/` | Platform Engineering (Tenancy)    |
+| `src/policies/` | Platform Engineering + Architecture |
+| `src/services/` | Platform Engineering              |
+| `src/events/`   | Platform Engineering + Contracts  |
+| `test/`         | Platform Engineering              |

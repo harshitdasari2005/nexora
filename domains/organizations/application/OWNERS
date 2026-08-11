@@ -1,0 +1,9 @@
+# OWNERS — @nexora/application-organizations
+
+Path: `domains/organizations/application/`
+
+- Owner team: Platform Tenancy
+- Required approvers: 1 platform engineer
+- Review criteria: no business rules introduced outside the domain;
+  commands/handlers stay thin; domain events published via the
+  `EventPublisher` port only.

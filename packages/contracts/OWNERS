@@ -1,0 +1,15 @@
+# packages/contracts — canonical contracts
+
+Owners: Platform Core team (identity: @nexora/platform-core)
+
+Scope: this package is the single source of truth for all cross-module
+contracts. Every domain, platform module, application, plugin, and AI agent
+depends on these types.
+
+Rules:
+- No duplicate contract definitions anywhere else in the repository.
+- Type-only package: do NOT add runtime dependencies. The `guards` module is
+  the sole runtime surface (dependency-free type guards); keep it that way.
+- Runtime constant VALUES (e.g. `ErrorCode`, `SideEffectClass`) live in
+  `@nexora/shared`; contracts declares the canonical TYPE surface.
+- Contract changes require a compatibility review (versioning module).

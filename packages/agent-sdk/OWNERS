@@ -1,0 +1,16 @@
+# packages/agent-sdk — Agent SDK
+
+Owners: AI Platform team (identity: @nexora/ai-platform)
+
+Scope: the canonical, provider-independent SDK for building AI Agents.
+Every future agent (HR, Projects, CRM, Finance, Knowledge, Workflow, ...)
+extends `BaseAgent` from this package.
+
+Rules:
+- NO business logic. This package is generic and domain-agnostic.
+- NO coupling to LLM providers (OpenAI, Anthropic, Gemini, Groq, ...),
+  HTTP, frameworks, databases, or the Nexora domains/platform modules.
+- Dependencies are limited to: @nexora/contracts, @nexora/shared,
+  @nexora/config. Do not add others.
+- Reuse the canonical contracts and shared utilities; never duplicate them.
+- Contract changes require a compatibility review.

@@ -1,0 +1,28 @@
+{
+  "name": "@nexora/domain-documents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora Documents bounded context (DOMAIN_MODEL.md §14): the Document aggregate with its processing lifecycle, value objects, domain events, policies, repository port, and domain service. Pure business domain; no persistence, no storage SDKs, no AI.",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

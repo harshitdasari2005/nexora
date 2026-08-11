@@ -1,0 +1,28 @@
+{
+  "name": "@nexora/domain-knowledge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora Knowledge bounded context (DOMAIN_MODEL.md §14): the KnowledgeSource aggregate (searchable projection of a document version), value objects, events, repository port, and errors. Pure business domain; no persistence, no search engine, no AI.",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

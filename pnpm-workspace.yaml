@@ -1,0 +1,9 @@
+# Nexora — pnpm workspace configuration
+# Architecture reference: ROADMAP.md §2 (Repository Blueprint), DDD Bounded Contexts.
+
+packages:
+  - 'apps/*'
+  - 'packages/*'
+  - 'domains/*'
+  - 'domains/*/application'
+  - 'platform/*'

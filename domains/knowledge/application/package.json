@@ -1,0 +1,30 @@
+{
+  "name": "@nexora/application-knowledge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora Knowledge application layer (BACKEND.md §4): the index-document command, retrieve-knowledge query, DTOs, validators, and application service orchestrating @nexora/domain-knowledge through the @nexora/module-search port. No persistence, no search engine, no AI.",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/domain-knowledge": "workspace:*",
+    "@nexora/module-search": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

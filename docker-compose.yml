@@ -1,0 +1,11 @@
+# Nexora — local development infrastructure.
+#
+# `docker compose up -d` from the repo root starts PostgreSQL, Redis, MinIO,
+# and Keycloak (with the `nexora` realm import from
+# infrastructure/keycloak/realm-nexora.json). The API and web apps run on the
+# host — see apps/api/README.md.
+
+name: nexora-dev
+
+include:
+  - infrastructure/compose/docker-compose.yml

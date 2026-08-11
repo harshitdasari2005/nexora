@@ -1,0 +1,68 @@
+{
+  "name": "@nexora/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora configuration framework — environment loader, typed config schema, merging, providers, secrets, feature flags, runtime configuration (BKD.md §11 Configuration Platform).",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./environment": {
+      "types": "./dist/src/environment/index.d.ts",
+      "default": "./dist/src/environment/index.js"
+    },
+    "./schema": {
+      "types": "./dist/src/schema/index.d.ts",
+      "default": "./dist/src/schema/index.js"
+    },
+    "./loader": {
+      "types": "./dist/src/loader/index.d.ts",
+      "default": "./dist/src/loader/index.js"
+    },
+    "./providers": {
+      "types": "./dist/src/providers/index.d.ts",
+      "default": "./dist/src/providers/index.js"
+    },
+    "./merging": {
+      "types": "./dist/src/merging/index.d.ts",
+      "default": "./dist/src/merging/index.js"
+    },
+    "./secrets": {
+      "types": "./dist/src/secrets/index.d.ts",
+      "default": "./dist/src/secrets/index.js"
+    },
+    "./feature-flags": {
+      "types": "./dist/src/feature-flags/index.d.ts",
+      "default": "./dist/src/feature-flags/index.js"
+    },
+    "./validation": {
+      "types": "./dist/src/validation/index.d.ts",
+      "default": "./dist/src/validation/index.js"
+    },
+    "./manager": {
+      "types": "./dist/src/manager/index.d.ts",
+      "default": "./dist/src/manager/index.js"
+    },
+    "./types": {
+      "types": "./dist/src/types/index.d.ts",
+      "default": "./dist/src/types/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/shared": "workspace:*",
+    "@types/node": "^20.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

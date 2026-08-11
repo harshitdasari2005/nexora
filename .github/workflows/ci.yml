@@ -1,0 +1,51 @@
+# Nexora — CI pipeline (placeholder scaffold)
+# Architecture reference: ROADMAP.md §7 Wave A (tooling/ci), ENGINEERING_PLAYBOOK.md §8.
+#
+# NOTE: this workflow is a placeholder. It becomes enforceable once the first
+# packages are scaffolded and pnpm-lock.yaml is committed (Roadmap S1–S2).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # TODO(S1): enable per Playbook §8.3 once tooling is ratified
+      # - name: Format check
+      #   run: pnpm format:check
+      # - name: Lint
+      #   run: pnpm lint
+      # - name: Typecheck
+      #   run: pnpm typecheck
+      # - name: Unit + integration tests
+      #   run: pnpm test
+      # - name: Contract tests
+      #   run: pnpm --filter @nexora/contracts test
+      # - name: Security scan (secrets + dependencies)
+      #   run: pnpm exec audit-ci --high

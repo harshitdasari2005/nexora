@@ -1,0 +1,21 @@
+# domains/organizations — Organizations domain core
+
+Owners: Platform team, Tenancy squad (tenancy: @nexora/platform)
+
+Scope: the Organizations bounded context (DOMAIN_MODEL.md §1 Tenancy) —
+Organization aggregate (lifecycle, profile, settings), OrganizationMembership
+aggregate, value objects, domain events, repository interfaces, domain
+services, and policies.
+
+Rules:
+- NO persistence, NO APIs, NO HTTP, NO infrastructure. This package is the
+  pure business domain (ROADMAP.md Phase 1).
+- Dependencies are limited to: @nexora/contracts, @nexora/shared. Do not add
+  others.
+- Repository interfaces are PORTS — the domain defines the contracts, the
+  infrastructure layer supplies implementations. Never persist here.
+- Reuse the canonical contracts and shared utilities; never duplicate them.
+- Organization events ride the shared envelope with category `platform`
+  (Tenancy is a Generic/platform domain, DOMAIN_MODEL.md DOM-01). Do not
+  introduce a new event category without a compatibility review.
+- Contract changes require a compatibility review.

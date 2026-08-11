@@ -1,0 +1,52 @@
+{
+  "realm": "nexora",
+  "enabled": true,
+  "displayName": "Nexora",
+  "displayNameHtml": "<b>Nexora</b> — Work. Orchestrated by AI.",
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "verifyEmail": true,
+  "clients": [
+    {
+      "clientId": "nexora-web",
+      "name": "Nexora Web",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "http://localhost:5173",
+      "baseUrl": "/",
+      "redirectUris": ["http://localhost:3001/api/auth/callback"],
+      "webOrigins": ["http://localhost:5173"],
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      }
+    }
+  ],
+  "users": [
+    {
+      "username": "alex",
+      "email": "alex@nexora.dev",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Alex",
+      "lastName": "Morgan",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "nexora123",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

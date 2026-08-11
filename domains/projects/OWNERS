@@ -1,0 +1,22 @@
+# OWNERS — @nexora/domain-projects
+
+## Bounded context
+
+Projects (DOMAIN_MODEL.md DOM-05) — supporting domain, marketplace App.
+
+## Ownership
+
+- **Domain core:** the Project aggregate and its lifecycle. All business
+  rules live here.
+- **Application layer:** `@nexora/application-projects` (separate package,
+  same team).
+- **Persistence:** `packages/persistence` (`projects` table, migration 0004).
+- **API + AI:** `apps/api` routes and the `CreateProjectTool` (delegate to the
+  application layer — never to this package directly from infrastructure).
+
+## Review rules
+
+- Any lifecycle/state change must update this package, its tests, and
+  `docs/LIFECYCLE.md` together.
+- No new business rule may be enforced outside the domain (application/API/AI
+  layers validate structure only).

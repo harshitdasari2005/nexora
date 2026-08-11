@@ -1,0 +1,113 @@
+{
+  "name": "@nexora/agent-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora Agent SDK (AIR.md §3) — the canonical, provider-independent SDK for building every AI Agent in Nexora. Defines the 14-element agent contract (identity, manifest, capabilities, skills, tools, policies, permissions, knowledge, events, memory, lifecycle, health, version, configuration) and generic execution behavior. No business logic; no LLM-provider coupling.",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./base": {
+      "types": "./dist/src/base/index.d.ts",
+      "default": "./dist/src/base/index.js"
+    },
+    "./contexts": {
+      "types": "./dist/src/contexts/index.d.ts",
+      "default": "./dist/src/contexts/index.js"
+    },
+    "./execution": {
+      "types": "./dist/src/execution/index.d.ts",
+      "default": "./dist/src/execution/index.js"
+    },
+    "./memory": {
+      "types": "./dist/src/memory/index.d.ts",
+      "default": "./dist/src/memory/index.js"
+    },
+    "./knowledge": {
+      "types": "./dist/src/knowledge/index.d.ts",
+      "default": "./dist/src/knowledge/index.js"
+    },
+    "./planning": {
+      "types": "./dist/src/planning/index.d.ts",
+      "default": "./dist/src/planning/index.js"
+    },
+    "./reasoning": {
+      "types": "./dist/src/reasoning/index.d.ts",
+      "default": "./dist/src/reasoning/index.js"
+    },
+    "./tools": {
+      "types": "./dist/src/tools/index.d.ts",
+      "default": "./dist/src/tools/index.js"
+    },
+    "./skills": {
+      "types": "./dist/src/skills/index.d.ts",
+      "default": "./dist/src/skills/index.js"
+    },
+    "./capabilities": {
+      "types": "./dist/src/capabilities/index.d.ts",
+      "default": "./dist/src/capabilities/index.js"
+    },
+    "./policies": {
+      "types": "./dist/src/policies/index.d.ts",
+      "default": "./dist/src/policies/index.js"
+    },
+    "./approval": {
+      "types": "./dist/src/approval/index.d.ts",
+      "default": "./dist/src/approval/index.js"
+    },
+    "./health": {
+      "types": "./dist/src/health/index.d.ts",
+      "default": "./dist/src/health/index.js"
+    },
+    "./metrics": {
+      "types": "./dist/src/metrics/index.d.ts",
+      "default": "./dist/src/metrics/index.js"
+    },
+    "./lifecycle": {
+      "types": "./dist/src/lifecycle/index.d.ts",
+      "default": "./dist/src/lifecycle/index.js"
+    },
+    "./registry": {
+      "types": "./dist/src/registry/index.d.ts",
+      "default": "./dist/src/registry/index.js"
+    },
+    "./errors": {
+      "types": "./dist/src/errors/index.d.ts",
+      "default": "./dist/src/errors/index.js"
+    },
+    "./events": {
+      "types": "./dist/src/events/index.d.ts",
+      "default": "./dist/src/events/index.js"
+    },
+    "./types": {
+      "types": "./dist/src/types/index.d.ts",
+      "default": "./dist/src/types/index.js"
+    },
+    "./builders": {
+      "types": "./dist/src/builders/index.d.ts",
+      "default": "./dist/src/builders/index.js"
+    },
+    "./testing": {
+      "types": "./dist/src/testing/index.d.ts",
+      "default": "./dist/src/testing/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/config": "workspace:*",
+    "@nexora/contracts": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

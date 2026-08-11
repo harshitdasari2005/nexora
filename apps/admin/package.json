@@ -1,0 +1,22 @@
+{
+  "name": "@nexora/app-admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora admin console — users, roles, approval policies, agent policy engine (PRD.md §20.2).",
+  "scripts": {
+    "dev": "echo \"App UI lands in Roadmap S3 (vite dev server)\" && exit 0",
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/design-system": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "typescript": "^5.5.0"
+  }
+}

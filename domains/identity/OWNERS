@@ -1,0 +1,18 @@
+# domains/identity — Identity & Access domain core
+
+Owners: Platform team, Identity squad (identity: @nexora/platform)
+
+Scope: the Identity & Access bounded context (DOMAIN_MODEL.md §2.2) — User,
+Session, and Role aggregates, value objects, domain events, repository
+interfaces, domain services, and policies.
+
+Rules:
+- NO persistence, NO APIs, NO HTTP, NO authentication implementation, NO
+  JWT/OAuth. This package is the pure business domain (ROADMAP.md Phase 1).
+- Dependencies are limited to: @nexora/contracts, @nexora/shared. Do not add
+  others.
+- The PasswordHasher is a PORT — the domain defines the contract, the
+  infrastructure layer supplies the implementation. Never hash here.
+- Reuse the canonical contracts and shared utilities; never duplicate them.
+- Domain events must ride the shared envelope with category `identity`.
+- Contract changes require a compatibility review.

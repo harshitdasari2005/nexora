@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "roles_name_platform_unique" ON "roles" USING btree ("name") WHERE "roles"."tenant_id" IS NULL;

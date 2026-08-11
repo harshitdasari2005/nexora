@@ -1,0 +1,9 @@
+# OWNERS — @nexora/application-identity
+
+Path: `domains/identity/application/`
+
+- Owner team: Platform Identity
+- Required approvers: 1 platform engineer
+- Review criteria: no business rules introduced outside the domain;
+  commands/handlers stay thin; domain events published via the
+  `EventPublisher` port only.

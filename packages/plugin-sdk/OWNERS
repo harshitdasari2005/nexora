@@ -1,0 +1,19 @@
+# packages/plugin-sdk — Plugin SDK
+
+Owners: Platform team (identity: @nexora/platform)
+
+Scope: the canonical SDK for building every first-party and third-party
+Nexora plugin (SAD.md §7). First-party apps are plugins too (ADR-003), so
+this package is the single installability contract for the platform.
+
+Rules:
+- NO business logic. The SDK is generic and domain-agnostic.
+- Dependencies are limited to: @nexora/contracts, @nexora/shared,
+  @nexora/config, @nexora/agent-sdk. Do not add others.
+- NO coupling to React, Next.js, HTTP frameworks, Node APIs, databases,
+  or LLM providers. Frontend surfaces are declarative (component ids),
+  never framework code.
+- Reuse the canonical contracts and shared utilities; never duplicate them.
+- The plugin manifest is the canonical `PluginManifest` from
+  @nexora/contracts/plugin — the SDK extends, never redefines it.
+- Contract changes require a compatibility review.

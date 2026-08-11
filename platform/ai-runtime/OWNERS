@@ -1,0 +1,28 @@
+# @nexora/ai-runtime — OWNERS
+
+## Owners
+
+- **AI Platform Engineering** (platform/ai-runtime)
+  - Primary: AI Platform Tech Lead
+  - Secondary: Agent SDK / Platform Architecture
+
+## Code ownership
+
+| Path | Owner |
+| --- | --- |
+| `src/orchestrator/` | AI Platform (EAO, orchestration) |
+| `src/planner/`, `src/discovery/`, `src/registry/` | AI Platform (planning, discovery, registry) |
+| `src/execution/`, `src/verification/` | AI Platform (tool runtime, verification) |
+| `src/conversation/`, `src/memory/`, `src/context/` | AI Platform (conversation, memory, context) |
+| `src/prompting/`, `src/providers/`, `src/adapters/` | AI Platform + Platform Engineering (providers, adapters) |
+| `src/telemetry/`, `src/events/`, `src/reasoning/` | AI Platform + Observability |
+| `src/errors/` | AI Platform |
+| `src/testing/`, `test/` | AI Platform (all) |
+| `docs/` | AI Platform (architecture owner) |
+
+## Review policy
+
+- All changes require review by the AI Platform Tech Lead.
+- Provider adapters and the provider registry additionally require Platform Engineering review.
+- The orchestrator pipeline (entry → execution → record) is architecture-critical: no change to the pipeline order or gating without an ADR.
+- No business domain may ever be imported into this package.

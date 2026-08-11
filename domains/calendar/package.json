@@ -1,0 +1,28 @@
+{
+  "name": "@nexora/module-calendar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora Calendar domain core (DOMAIN_MODEL.md §4.5) — the Calendar bounded context: CalendarEntry aggregate with lifecycle, value objects, domain events, repository interface, domain service, and domain policies. Pure business domain; no persistence, no APIs, no infrastructure.",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

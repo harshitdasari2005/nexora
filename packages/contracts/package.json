@@ -1,0 +1,85 @@
+{
+  "name": "@nexora/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora canonical contracts — the single source of truth for all cross-module types (API, events, commands, queries, AI, workflow, plugin, approval, notification, identity, registry, versioning). Pure type-only package with zero runtime dependencies (ENGINEERING_PLAYBOOK.md §1.2).",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./common": {
+      "types": "./dist/src/common/index.d.ts",
+      "default": "./dist/src/common/index.js"
+    },
+    "./api": {
+      "types": "./dist/src/api/index.d.ts",
+      "default": "./dist/src/api/index.js"
+    },
+    "./events": {
+      "types": "./dist/src/events/index.d.ts",
+      "default": "./dist/src/events/index.js"
+    },
+    "./commands": {
+      "types": "./dist/src/commands/index.d.ts",
+      "default": "./dist/src/commands/index.js"
+    },
+    "./queries": {
+      "types": "./dist/src/queries/index.d.ts",
+      "default": "./dist/src/queries/index.js"
+    },
+    "./messages": {
+      "types": "./dist/src/messages/index.d.ts",
+      "default": "./dist/src/messages/index.js"
+    },
+    "./ai": {
+      "types": "./dist/src/ai/index.d.ts",
+      "default": "./dist/src/ai/index.js"
+    },
+    "./workflow": {
+      "types": "./dist/src/workflow/index.d.ts",
+      "default": "./dist/src/workflow/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/src/plugin/index.d.ts",
+      "default": "./dist/src/plugin/index.js"
+    },
+    "./approval": {
+      "types": "./dist/src/approval/index.d.ts",
+      "default": "./dist/src/approval/index.js"
+    },
+    "./notification": {
+      "types": "./dist/src/notification/index.d.ts",
+      "default": "./dist/src/notification/index.js"
+    },
+    "./identity": {
+      "types": "./dist/src/identity/index.d.ts",
+      "default": "./dist/src/identity/index.js"
+    },
+    "./registry": {
+      "types": "./dist/src/registry/index.d.ts",
+      "default": "./dist/src/registry/index.js"
+    },
+    "./versioning": {
+      "types": "./dist/src/versioning/index.d.ts",
+      "default": "./dist/src/versioning/index.js"
+    },
+    "./guards": {
+      "types": "./dist/src/guards/index.d.ts",
+      "default": "./dist/src/guards/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@nexora/shared": "workspace:*",
+    "vitest": "^2.1.0"
+  }
+}

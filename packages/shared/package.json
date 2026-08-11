@@ -1,0 +1,63 @@
+{
+  "name": "@nexora/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora shared platform foundation — structured logger, error hierarchy, Result pattern, ID/time utilities, validation helpers, constants, event base types. Reused by every domain and platform module (ENGINEERING_PLAYBOOK.md §4).",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./logger": {
+      "types": "./dist/src/logger/index.d.ts",
+      "default": "./dist/src/logger/index.js"
+    },
+    "./errors": {
+      "types": "./dist/src/errors/index.d.ts",
+      "default": "./dist/src/errors/index.js"
+    },
+    "./result": {
+      "types": "./dist/src/result/index.d.ts",
+      "default": "./dist/src/result/index.js"
+    },
+    "./ids": {
+      "types": "./dist/src/ids/index.d.ts",
+      "default": "./dist/src/ids/index.js"
+    },
+    "./time": {
+      "types": "./dist/src/time/index.d.ts",
+      "default": "./dist/src/time/index.js"
+    },
+    "./validation": {
+      "types": "./dist/src/validation/index.d.ts",
+      "default": "./dist/src/validation/index.js"
+    },
+    "./constants": {
+      "types": "./dist/src/constants/index.d.ts",
+      "default": "./dist/src/constants/index.js"
+    },
+    "./utils": {
+      "types": "./dist/src/utils/index.d.ts",
+      "default": "./dist/src/utils/index.js"
+    },
+    "./events": {
+      "types": "./dist/src/events/index.d.ts",
+      "default": "./dist/src/events/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

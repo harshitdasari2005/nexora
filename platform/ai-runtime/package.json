@@ -1,0 +1,100 @@
+{
+  "name": "@nexora/ai-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora Enterprise AI Runtime (AIR.md) — the orchestration layer between the UI and every business capability. Enterprise AI Orchestrator, planner, capability discovery, tool execution, verification, conversation, memory, prompting, providers, telemetry. Provider-independent; no business logic; no domains.",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./orchestrator": {
+      "types": "./dist/src/orchestrator/index.d.ts",
+      "default": "./dist/src/orchestrator/index.js"
+    },
+    "./planner": {
+      "types": "./dist/src/planner/index.d.ts",
+      "default": "./dist/src/planner/index.js"
+    },
+    "./reasoning": {
+      "types": "./dist/src/reasoning/index.d.ts",
+      "default": "./dist/src/reasoning/index.js"
+    },
+    "./execution": {
+      "types": "./dist/src/execution/index.d.ts",
+      "default": "./dist/src/execution/index.js"
+    },
+    "./registry": {
+      "types": "./dist/src/registry/index.d.ts",
+      "default": "./dist/src/registry/index.js"
+    },
+    "./discovery": {
+      "types": "./dist/src/discovery/index.d.ts",
+      "default": "./dist/src/discovery/index.js"
+    },
+    "./verification": {
+      "types": "./dist/src/verification/index.d.ts",
+      "default": "./dist/src/verification/index.js"
+    },
+    "./conversation": {
+      "types": "./dist/src/conversation/index.d.ts",
+      "default": "./dist/src/conversation/index.js"
+    },
+    "./memory": {
+      "types": "./dist/src/memory/index.d.ts",
+      "default": "./dist/src/memory/index.js"
+    },
+    "./context": {
+      "types": "./dist/src/context/index.d.ts",
+      "default": "./dist/src/context/index.js"
+    },
+    "./prompting": {
+      "types": "./dist/src/prompting/index.d.ts",
+      "default": "./dist/src/prompting/index.js"
+    },
+    "./providers": {
+      "types": "./dist/src/providers/index.d.ts",
+      "default": "./dist/src/providers/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/src/adapters/index.d.ts",
+      "default": "./dist/src/adapters/index.js"
+    },
+    "./telemetry": {
+      "types": "./dist/src/telemetry/index.d.ts",
+      "default": "./dist/src/telemetry/index.js"
+    },
+    "./events": {
+      "types": "./dist/src/events/index.d.ts",
+      "default": "./dist/src/events/index.js"
+    },
+    "./errors": {
+      "types": "./dist/src/errors/index.d.ts",
+      "default": "./dist/src/errors/index.js"
+    },
+    "./testing": {
+      "types": "./dist/src/testing/index.d.ts",
+      "default": "./dist/src/testing/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/agent-sdk": "workspace:*",
+    "@nexora/config": "workspace:*",
+    "@nexora/contracts": "workspace:*",
+    "@nexora/plugin-sdk": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "vitest": "^2.1.0"
+  }
+}

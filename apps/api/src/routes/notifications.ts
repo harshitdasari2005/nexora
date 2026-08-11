@@ -1,0 +1,444 @@
+/**
+ * @nexora/app-api — notification routes.
+ *
+ * The Notification Center + Activity Feed surface (PSD.md §10): list the
+ * authenticated user's notifications, read/unread state, preferences, the
+ * workspace-scoped activity feed, and a real-time SSE stream.
+ *
+ * Security contract (the same model as every other surface):
+ * - The recipient is ALWAYS the authenticated user — a client-supplied
+ *   `userId` is ignored (the endpoint never accepts one).
+ * - The tenant (organization) is resolved from TRUSTED organization
+ *   membership (listOrganizations) — never from a client-supplied value.
+ * - The optional workspace filter is verified against the membership-scoped
+ *   workspace read model (listMyWorkspaces) — a forged or foreign workspace
+ *   resolves to 403, never to another workspace's notifications.
+ * - Notification id enumeration is scoped: a foreign or non-existent id
+ *   returns 404, never data.
+ */
+
+import type { FastifyInstance, FastifySchema } from 'fastify';
+import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
+import type { ListOrganizationsHandler } from '@nexora/application-organizations';
+import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
+import {
+  ActivityItem,
+  Notification,
+  type GetNotificationPreferencesHandler,
+  type ListActivityHandler,
+  type ListNotificationsHandler,
+  type MarkAllNotificationsReadHandler,
+  type MarkNotificationReadHandler,
+  type NotificationStream,
+  type UnreadNotificationsCountHandler,
+  type UpdateNotificationPreferencesCommand,
+  type UpdateNotificationPreferencesHandler,
+} from '@nexora/module-notifications';
+
+import { formatSse } from '../ai/chat-stream.js';
+import { requireAuth } from '../plugins/auth.js';
+
+/** Request body schema for PUT /api/notifications/preferences. */
+const updatePreferencesSchema: FastifySchema = {
+  body: {
+    type: 'object',
+    required: ['category', 'enabled'],
+    additionalProperties: false,
+    properties: {
+      category: { type: 'string', minLength: 1, maxLength: 32 },
+      enabled: { type: 'boolean' },
+    },
+  },
+};
+
+/** Dependencies of the notification routes. */
+export interface NotificationRoutesDependencies {
+  /** The recipient-scoped inbox listing handler. */
+  listNotifications: ListNotificationsHandler;
+  /** The unread-count handler. */
+  unreadNotifications: UnreadNotificationsCountHandler;
+  /** The mark-one-read handler. */
+  markNotificationRead: MarkNotificationReadHandler;
+  /** The mark-all-read handler. */
+  markAllNotificationsRead: MarkAllNotificationsReadHandler;
+  /** The preferences read handler. */
+  getNotificationPreferences: GetNotificationPreferencesHandler;
+  /** The preferences update handler. */
+  updateNotificationPreferences: UpdateNotificationPreferencesHandler;
+  /** The workspace-scoped activity feed handler. */
+  listActivity: ListActivityHandler;
+  /** Resolves the caller's organization memberships (tenant scope). */
+  listOrganizations: ListOrganizationsHandler;
+  /** Verifies workspace membership (workspace scope). */
+  listMyWorkspaces: ListMyWorkspacesHandler;
+  /** The real-time notification stream (SSE transport seam). */
+  stream: NotificationStream;
+}
+
+/** Resolves the trusted tenant (first membership or verified query org). */
+async function resolveTenant(
+  dependencies: NotificationRoutesDependencies,
+  userId: UserId,
+  organizationId: string | undefined,
+): Promise<string | undefined> {
+  const membership = await dependencies.listOrganizations.handle({ userId });
+  if (!membership.ok || membership.value.length === 0) {
+    return undefined;
+  }
+  if (organizationId === undefined) {
+    // First membership is the default tenant scope (dashboard convention).
+    return membership.value[0]?.id;
+  }
+  const accessible = membership.value.some((org) => org.id === organizationId);
+  return accessible ? organizationId : undefined;
+}
+
+/** Verifies the workspace belongs to the trusted tenant (else 403). */
+async function workspaceDenial(
+  dependencies: NotificationRoutesDependencies,
+  userId: UserId,
+  tenantId: TenantId,
+  workspaceId: string | undefined,
+): Promise<string | undefined> {
+  if (workspaceId === undefined) {
+    return undefined;
+  }
+  const workspaces = await dependencies.listMyWorkspaces.handle({
+    userId,
+    organizationId: tenantId,
+  });
+  const accessible = workspaces.ok && workspaces.value.some((ws) => ws.id === workspaceId);
+  return accessible ? undefined : 'You are not a member of this workspace';
+}
+
+/** Registers the notification routes. */
+export function registerNotificationRoutes(
+  app: FastifyInstance,
+  dependencies: NotificationRoutesDependencies,
+): void {
+  app.get('/api/notifications', async (request, reply) => {
+    const auth = requireAuth(request);
+    const query = request.query as {
+      organizationId?: string;
+      workspaceId?: string;
+      limit?: string;
+    };
+
+    const tenantId = await resolveTenant(dependencies, auth.userId, query.organizationId);
+    if (tenantId === undefined) {
+      return reply.code(403).send({
+        error: {
+          code: 'AUTHORIZATION_ERROR',
+          message: 'You are not a member of any organization',
+          requestId: request.id,
+        },
+      });
+    }
+    const denial = await workspaceDenial(
+      dependencies,
+      auth.userId,
+      tenantId as TenantId,
+      query.workspaceId,
+    );
+    if (denial !== undefined) {
+      return reply.code(403).send({
+        error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
+      });
+    }
+
+    const limit = query.limit === undefined ? undefined : Number(query.limit);
+    const result = await dependencies.listNotifications.handle({
+      userId: auth.userId,
+      tenantId: tenantId as TenantId,
+      workspaceId: query.workspaceId as WorkspaceId | undefined,
+      limit: Number.isFinite(limit) && limit !== undefined ? limit : undefined,
+    });
+    if (!result.ok) {
+      return reply.code(500).send({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Could not list notifications',
+          requestId: request.id,
+        },
+      });
+    }
+    return { notifications: result.value.notifications };
+  });
+
+  app.get('/api/notifications/unread-count', async (request, reply) => {
+    const auth = requireAuth(request);
+    const query = request.query as { organizationId?: string; workspaceId?: string };
+
+    const tenantId = await resolveTenant(dependencies, auth.userId, query.organizationId);
+    if (tenantId === undefined) {
+      return reply.code(403).send({
+        error: {
+          code: 'AUTHORIZATION_ERROR',
+          message: 'You are not a member of any organization',
+          requestId: request.id,
+        },
+      });
+    }
+    const denial = await workspaceDenial(
+      dependencies,
+      auth.userId,
+      tenantId as TenantId,
+      query.workspaceId,
+    );
+    if (denial !== undefined) {
+      return reply.code(403).send({
+        error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
+      });
+    }
+
+    const result = await dependencies.unreadNotifications.handle({
+      userId: auth.userId,
+      tenantId: tenantId as TenantId,
+      workspaceId: query.workspaceId as WorkspaceId | undefined,
+    });
+    if (!result.ok) {
+      return reply.code(500).send({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Could not count notifications',
+          requestId: request.id,
+        },
+      });
+    }
+    return { count: result.value.count };
+  });
+
+  app.post('/api/notifications/:id/read', async (request, reply) => {
+    const auth = requireAuth(request);
+    const params = request.params as { id: string };
+    const query = request.query as { organizationId?: string };
+
+    const tenantId = await resolveTenant(dependencies, auth.userId, query.organizationId);
+    if (tenantId === undefined) {
+      return reply.code(403).send({
+        error: {
+          code: 'AUTHORIZATION_ERROR',
+          message: 'You are not a member of any organization',
+          requestId: request.id,
+        },
+      });
+    }
+
+    const result = await dependencies.markNotificationRead.handle({
+      notificationId: params.id,
+      userId: auth.userId,
+      tenantId: tenantId as TenantId,
+    });
+    if (!result.ok) {
+      return reply.code(500).send({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Could not mark notification read',
+          requestId: request.id,
+        },
+      });
+    }
+    if ('notification' in result.value) {
+      return { notification: result.value.notification };
+    }
+    // Foreign/unknown ids resolve to 404 (no enumeration).
+    return reply.code(404).send({
+      error: { code: 'NOT_FOUND', message: 'Notification not found', requestId: request.id },
+    });
+  });
+
+  app.post('/api/notifications/read-all', async (request, reply) => {
+    const auth = requireAuth(request);
+    const query = request.query as { organizationId?: string; workspaceId?: string };
+
+    const tenantId = await resolveTenant(dependencies, auth.userId, query.organizationId);
+    if (tenantId === undefined) {
+      return reply.code(403).send({
+        error: {
+          code: 'AUTHORIZATION_ERROR',
+          message: 'You are not a member of any organization',
+          requestId: request.id,
+        },
+      });
+    }
+    const denial = await workspaceDenial(
+      dependencies,
+      auth.userId,
+      tenantId as TenantId,
+      query.workspaceId,
+    );
+    if (denial !== undefined) {
+      return reply.code(403).send({
+        error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
+      });
+    }
+
+    const result = await dependencies.markAllNotificationsRead.handle({
+      userId: auth.userId,
+      tenantId: tenantId as TenantId,
+      workspaceId: query.workspaceId as WorkspaceId | undefined,
+    });
+    if (!result.ok) {
+      return reply.code(500).send({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Could not mark notifications read',
+          requestId: request.id,
+        },
+      });
+    }
+    return { marked: result.value.marked };
+  });
+
+  app.get('/api/notifications/preferences', async (request, reply) => {
+    const auth = requireAuth(request);
+    const query = request.query as { organizationId?: string };
+
+    const tenantId = await resolveTenant(dependencies, auth.userId, query.organizationId);
+    if (tenantId === undefined) {
+      return reply.code(403).send({
+        error: {
+          code: 'AUTHORIZATION_ERROR',
+          message: 'You are not a member of any organization',
+          requestId: request.id,
+        },
+      });
+    }
+
+    const result = await dependencies.getNotificationPreferences.handle({
+      userId: auth.userId,
+      tenantId: tenantId as TenantId,
+    });
+    if (!result.ok) {
+      return reply.code(500).send({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Could not load preferences',
+          requestId: request.id,
+        },
+      });
+    }
+    return { preferences: result.value.preferences };
+  });
+
+  app.put(
+    '/api/notifications/preferences',
+    { schema: updatePreferencesSchema },
+    async (request, reply) => {
+      const auth = requireAuth(request);
+      const query = request.query as { organizationId?: string };
+      const body = request.body as { category: string; enabled: boolean };
+
+      const tenantId = await resolveTenant(dependencies, auth.userId, query.organizationId);
+      if (tenantId === undefined) {
+        return reply.code(403).send({
+          error: {
+            code: 'AUTHORIZATION_ERROR',
+            message: 'You are not a member of any organization',
+            requestId: request.id,
+          },
+        });
+      }
+
+      const result = await dependencies.updateNotificationPreferences.handle({
+        userId: auth.userId,
+        tenantId: tenantId as TenantId,
+        category: body.category as UpdateNotificationPreferencesCommand['category'],
+        enabled: body.enabled,
+      });
+      if (!result.ok) {
+        return reply.code(500).send({
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Could not update preferences',
+            requestId: request.id,
+          },
+        });
+      }
+      return { preferences: result.value.preferences };
+    },
+  );
+
+  app.get('/api/activity', async (request, reply) => {
+    const auth = requireAuth(request);
+    const query = request.query as {
+      organizationId?: string;
+      workspaceId?: string;
+      limit?: string;
+    };
+
+    const tenantId = await resolveTenant(dependencies, auth.userId, query.organizationId);
+    if (tenantId === undefined) {
+      return reply.code(403).send({
+        error: {
+          code: 'AUTHORIZATION_ERROR',
+          message: 'You are not a member of any organization',
+          requestId: request.id,
+        },
+      });
+    }
+    const denial = await workspaceDenial(
+      dependencies,
+      auth.userId,
+      tenantId as TenantId,
+      query.workspaceId,
+    );
+    if (denial !== undefined) {
+      return reply.code(403).send({
+        error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
+      });
+    }
+
+    const limit = query.limit === undefined ? undefined : Number(query.limit);
+    const result = await dependencies.listActivity.handle({
+      tenantId: tenantId as TenantId,
+      workspaceId: query.workspaceId as WorkspaceId | undefined,
+      limit: Number.isFinite(limit) && limit !== undefined ? limit : undefined,
+    });
+    if (!result.ok) {
+      return reply.code(500).send({
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'Could not list activity',
+          requestId: request.id,
+        },
+      });
+    }
+    return { activity: result.value.activity };
+  });
+
+  // Real-time stream: one authenticated SSE connection, filtered server-side
+  // to the authenticated recipient. The NotificationStream is the transport
+  // seam; the consumer publishes onto it as notifications are created.
+  app.get('/api/notifications/stream', async (request, reply) => {
+    const auth = requireAuth(request);
+    reply.hijack();
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache, no-transform',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no',
+    });
+    raw.write(formatSse('ready', { status: 'connected' }));
+
+    const unsubscribe = dependencies.stream.subscribe((event) => {
+      // Server-side filtering: only the authenticated recipient's own
+      // notifications (and tenant-scoped activity) reach this connection.
+      if (event.kind === 'notification' && event.notification.recipientId === auth.userId) {
+        raw.write(formatSse('notification', Notification.snapshot(event.notification)));
+      }
+      if (event.kind === 'activity' && event.item.tenantId === auth.tenantId) {
+        raw.write(formatSse('activity', ActivityItem.snapshot(event.item)));
+      }
+    });
+
+    request.raw.on('close', () => {
+      unsubscribe();
+      if (!raw.writableEnded) {
+        raw.end();
+      }
+    });
+    return reply;
+  });
+}

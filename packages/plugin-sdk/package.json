@@ -1,0 +1,134 @@
+{
+  "name": "@nexora/plugin-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora Plugin SDK (SAD.md §7) — the canonical SDK for building every first-party and third-party Nexora plugin. Plugins contribute applications, commands, pages, navigation, dashboards, widgets, agents, skills, tools, workflows, event handlers, configuration, permissions, search providers, knowledge providers, and notification providers. Generic; no business logic.",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./base": {
+      "types": "./dist/src/base/index.d.ts",
+      "default": "./dist/src/base/index.js"
+    },
+    "./manifest": {
+      "types": "./dist/src/manifest/index.d.ts",
+      "default": "./dist/src/manifest/index.js"
+    },
+    "./registry": {
+      "types": "./dist/src/registry/index.d.ts",
+      "default": "./dist/src/registry/index.js"
+    },
+    "./installer": {
+      "types": "./dist/src/installer/index.d.ts",
+      "default": "./dist/src/installer/index.js"
+    },
+    "./loader": {
+      "types": "./dist/src/loader/index.d.ts",
+      "default": "./dist/src/loader/index.js"
+    },
+    "./lifecycle": {
+      "types": "./dist/src/lifecycle/index.d.ts",
+      "default": "./dist/src/lifecycle/index.js"
+    },
+    "./permissions": {
+      "types": "./dist/src/permissions/index.d.ts",
+      "default": "./dist/src/permissions/index.js"
+    },
+    "./navigation": {
+      "types": "./dist/src/navigation/index.d.ts",
+      "default": "./dist/src/navigation/index.js"
+    },
+    "./pages": {
+      "types": "./dist/src/pages/index.d.ts",
+      "default": "./dist/src/pages/index.js"
+    },
+    "./widgets": {
+      "types": "./dist/src/widgets/index.d.ts",
+      "default": "./dist/src/widgets/index.js"
+    },
+    "./commands": {
+      "types": "./dist/src/commands/index.d.ts",
+      "default": "./dist/src/commands/index.js"
+    },
+    "./events": {
+      "types": "./dist/src/events/index.d.ts",
+      "default": "./dist/src/events/index.js"
+    },
+    "./configuration": {
+      "types": "./dist/src/configuration/index.d.ts",
+      "default": "./dist/src/configuration/index.js"
+    },
+    "./workflow": {
+      "types": "./dist/src/workflow/index.d.ts",
+      "default": "./dist/src/workflow/index.js"
+    },
+    "./knowledge": {
+      "types": "./dist/src/knowledge/index.d.ts",
+      "default": "./dist/src/knowledge/index.js"
+    },
+    "./search": {
+      "types": "./dist/src/search/index.d.ts",
+      "default": "./dist/src/search/index.js"
+    },
+    "./notifications": {
+      "types": "./dist/src/notifications/index.d.ts",
+      "default": "./dist/src/notifications/index.js"
+    },
+    "./agents": {
+      "types": "./dist/src/agents/index.d.ts",
+      "default": "./dist/src/agents/index.js"
+    },
+    "./tools": {
+      "types": "./dist/src/tools/index.d.ts",
+      "default": "./dist/src/tools/index.js"
+    },
+    "./skills": {
+      "types": "./dist/src/skills/index.d.ts",
+      "default": "./dist/src/skills/index.js"
+    },
+    "./hooks": {
+      "types": "./dist/src/hooks/index.d.ts",
+      "default": "./dist/src/hooks/index.js"
+    },
+    "./builders": {
+      "types": "./dist/src/builders/index.d.ts",
+      "default": "./dist/src/builders/index.js"
+    },
+    "./validators": {
+      "types": "./dist/src/validators/index.d.ts",
+      "default": "./dist/src/validators/index.js"
+    },
+    "./testing": {
+      "types": "./dist/src/testing/index.d.ts",
+      "default": "./dist/src/testing/index.js"
+    },
+    "./errors": {
+      "types": "./dist/src/errors/index.d.ts",
+      "default": "./dist/src/errors/index.js"
+    },
+    "./types": {
+      "types": "./dist/src/types/index.d.ts",
+      "default": "./dist/src/types/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/agent-sdk": "workspace:*",
+    "@nexora/config": "workspace:*",
+    "@nexora/contracts": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,8 @@
+# @nexora/config — ownership
+
+- **Owner:** Platform team — Configuration Platform capability (BKD.md §11).
+- **Reviewers:** Platform lead; AI Platform lead (AI configuration section, BKD.md §11.5).
+- **Scope:** environment loader, typed config schema, merging, providers, secrets interface, feature flags, runtime configuration.
+- **Out of scope:** per-tenant persistence, the remote configuration service, business-domain settings.
+
+Cross-module changes to the public contracts (subpath exports) require a second owner's review (ENGINEERING_PLAYBOOK.md §3.4).

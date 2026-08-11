@@ -1,0 +1,33 @@
+{
+  "name": "@nexora/design-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora design tokens and component primitives (DESIGN_SYSTEM.md §3).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tokens": {
+      "types": "./dist/tokens.d.ts",
+      "default": "./dist/tokens.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0"
+  },
+  "devDependencies": {
+    "react": "^18.3.0",
+    "@types/react": "^18.3.0",
+    "vitest": "^2.1.0"
+  }
+}
