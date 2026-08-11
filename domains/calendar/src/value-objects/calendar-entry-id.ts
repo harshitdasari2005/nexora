@@ -15,7 +15,8 @@ import { InvalidCalendarEntryValueError } from '../errors/index.js';
  * CalendarEntry id literal pattern: `cal_` + RFC-4122 UUID v4 (the
  * `prefixedId` shape).
  */
-const CALENDAR_ENTRY_ID_PATTERN = /^cal_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const CALENDAR_ENTRY_ID_PATTERN =
+  /^cal_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * A branded calendar-entry id. Strings with this brand satisfy the type;

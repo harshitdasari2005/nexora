@@ -13,7 +13,7 @@
  */
 
 import type { TenantId, WorkspaceId } from '@nexora/contracts/common';
-import type { EventEnvelope, EventPublisher } from '@nexora/shared/events';
+import type { EventPublisher } from '@nexora/shared/events';
 import { toNexoraError, type NexoraError } from '@nexora/shared/errors';
 import { err, ok, type Result } from '@nexora/shared/result';
 import {

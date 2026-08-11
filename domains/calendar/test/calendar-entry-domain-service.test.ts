@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 
 import {
-  CalendarEntry,
+  type CalendarEntry,
   CalendarEntryDomainService,
   CalendarEntryId,
   CalendarEntryNotFoundError,

@@ -27,7 +27,9 @@ export class UpdateCalendarEventHandler implements CommandHandler<
     this.#service = service;
   }
 
-  handle(command: UpdateCalendarEventCommand): Promise<Result<UpdateCalendarEventResult, NexoraError>> {
+  handle(
+    command: UpdateCalendarEventCommand,
+  ): Promise<Result<UpdateCalendarEventResult, NexoraError>> {
     return this.#service.updateCalendarEvent(command);
   }
 }

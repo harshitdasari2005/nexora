@@ -122,7 +122,11 @@ describe('CalendarEntry lifecycle transitions', () => {
   it('reschedules a scheduled entry (title + window) and records an updated event', () => {
     const entry = scheduledEntry();
     entry.reschedule(
-      { title: 'Mobile Banking Review', startsAt: '2026-09-02T10:00:00.000Z', endsAt: '2026-09-02T11:00:00.000Z' },
+      {
+        title: 'Mobile Banking Review',
+        startsAt: '2026-09-02T10:00:00.000Z',
+        endsAt: '2026-09-02T11:00:00.000Z',
+      },
       userContext(),
     );
     expect(entry.title.value).toBe('Mobile Banking Review');
@@ -178,7 +182,11 @@ describe('CalendarEntry snapshot / hydrate', () => {
   it('round-trips through snapshot and hydrate without re-emitting events', () => {
     const entry = scheduledEntry();
     entry.reschedule(
-      { title: 'Mobile Banking Review', startsAt: '2026-09-02T10:00:00.000Z', endsAt: '2026-09-02T11:00:00.000Z' },
+      {
+        title: 'Mobile Banking Review',
+        startsAt: '2026-09-02T10:00:00.000Z',
+        endsAt: '2026-09-02T11:00:00.000Z',
+      },
       userContext(),
     );
     entry.cancel(userContext());

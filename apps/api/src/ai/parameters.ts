@@ -388,10 +388,7 @@ export function extractIntentParameters(input: {
   if (input.toolId === 'knowledge.search' || input.capabilityId === 'knowledge.search') {
     return extractKnowledgeQuestionParameters(input);
   }
-  if (
-    input.toolId === 'calendar.create_event' ||
-    input.capabilityId === 'calendar.create_event'
-  ) {
+  if (input.toolId === 'calendar.create_event' || input.capabilityId === 'calendar.create_event') {
     return extractCreateCalendarEventParameters(input);
   }
   return {};

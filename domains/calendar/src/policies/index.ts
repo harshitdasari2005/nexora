@@ -7,7 +7,10 @@
  * typed domain errors on violation.
  */
 
-import { InvalidCalendarEntryValueError, CalendarEntryStateTransitionError } from '../errors/index.js';
+import {
+  InvalidCalendarEntryValueError,
+  CalendarEntryStateTransitionError,
+} from '../errors/index.js';
 import type { CalendarEntryStatusValue } from '../value-objects/calendar-entry-status.js';
 import { type CalendarEntryStatus } from '../value-objects/calendar-entry-status.js';
 

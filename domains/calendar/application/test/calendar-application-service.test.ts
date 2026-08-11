@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import type { EventEnvelope } from '@nexora/shared/events';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import {
-  CalendarEntry,
+  type CalendarEntry,
   CalendarEntryDomainService,
   type CalendarEntryRepository,
 } from '@nexora/module-calendar';
@@ -122,7 +122,7 @@ describe('CalendarApplicationService.createCalendarEvent', () => {
 
 describe('CalendarApplicationService.updateCalendarEvent', () => {
   it('reschedules an entry and publishes exactly one updated event', async () => {
-    const { service, repository, publisher } = setup();
+    const { service, publisher } = setup();
     const created = await service.createCalendarEvent(
       createCommand() as Parameters<typeof service.createCalendarEvent>[0],
     );
@@ -146,7 +146,10 @@ describe('CalendarApplicationService.updateCalendarEvent', () => {
       return;
     }
     expect(result.value.entry.title.value).toBe('Mobile Banking Review');
-    expect(publisher.published.map((event) => event.type)).toEqual(['calendar.event.created', 'calendar.event.updated']);
+    expect(publisher.published.map((event) => event.type)).toEqual([
+      'calendar.event.created',
+      'calendar.event.updated',
+    ]);
   });
 
   it('returns NOT FOUND for a foreign workspace entry id (no data leak)', async () => {
@@ -220,7 +223,10 @@ describe('CalendarApplicationService.cancelCalendarEvent', () => {
       return;
     }
     expect(result.value.entry.status.value).toBe('cancelled');
-    expect(publisher.published.map((event) => event.type)).toEqual(['calendar.event.created', 'calendar.event.cancelled']);
+    expect(publisher.published.map((event) => event.type)).toEqual([
+      'calendar.event.created',
+      'calendar.event.cancelled',
+    ]);
   });
 
   it('returns NOT FOUND for a foreign organization entry id', async () => {

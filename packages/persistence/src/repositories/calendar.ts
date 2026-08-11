@@ -14,7 +14,11 @@
 
 import { and, desc, eq } from 'drizzle-orm';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
-import { CalendarEntry, type CalendarEntryId, type CalendarEntryRepository } from '@nexora/module-calendar';
+import {
+  CalendarEntry,
+  type CalendarEntryId,
+  type CalendarEntryRepository,
+} from '@nexora/module-calendar';
 
 import type { NexoraDatabase } from '../db.js';
 import { calendarEvents } from '../schema/index.js';
@@ -32,7 +36,9 @@ function toDate(iso: string): Date {
 type CalendarEntryRow = typeof calendarEvents.$inferSelect;
 
 /** Maps a calendar_events row to a {@link CalendarEntry} snapshot. */
-function rowToCalendarEntrySnapshot(row: CalendarEntryRow): ReturnType<typeof CalendarEntry.snapshot> {
+function rowToCalendarEntrySnapshot(
+  row: CalendarEntryRow,
+): ReturnType<typeof CalendarEntry.snapshot> {
   return {
     id: row.id as CalendarEntryId,
     organizationId: row.organizationId as TenantId,

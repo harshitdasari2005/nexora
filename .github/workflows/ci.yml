@@ -36,16 +36,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # TODO(S1): enable per Playbook §8.3 once tooling is ratified
-      # - name: Format check
-      #   run: pnpm format:check
-      # - name: Lint
-      #   run: pnpm lint
-      # - name: Typecheck
-      #   run: pnpm typecheck
-      # - name: Unit + integration tests
-      #   run: pnpm test
-      # - name: Contract tests
-      #   run: pnpm --filter @nexora/contracts test
+      # Stabilization (2026-08): baseline quality gates enabled — all green
+      # locally on the known-good baseline.
+      - name: Format check
+        run: pnpm format:check
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit + integration tests
+        run: pnpm test
+      # TODO(S1): contract tests are already covered by `pnpm test`
+      # (@nexora/contracts runs its own suite); a standalone contract-test
+      # runner lands with tooling/ci. Security scan (audit-ci) is pending
+      # dependency ratification (ENGINEERING_PLAYBOOK.md §8.3).
       # - name: Security scan (secrets + dependencies)
       #   run: pnpm exec audit-ci --high

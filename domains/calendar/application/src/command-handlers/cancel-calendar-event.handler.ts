@@ -27,7 +27,9 @@ export class CancelCalendarEventHandler implements CommandHandler<
     this.#service = service;
   }
 
-  handle(command: CancelCalendarEventCommand): Promise<Result<CancelCalendarEventResult, NexoraError>> {
+  handle(
+    command: CancelCalendarEventCommand,
+  ): Promise<Result<CancelCalendarEventResult, NexoraError>> {
     return this.#service.cancelCalendarEvent(command);
   }
 }

@@ -124,11 +124,14 @@ describe('Calendar API — update and cancel', () => {
   it('returns 404 for an unknown entry id', async () => {
     const client = await chatClient();
     const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);
-    const response = await client.patch('/api/calendar/events/cal_00000000-0000-4000-8000-000000000000', {
-      organizationId,
-      workspaceId,
-      ...eventPayload(),
-    });
+    const response = await client.patch(
+      '/api/calendar/events/cal_00000000-0000-4000-8000-000000000000',
+      {
+        organizationId,
+        workspaceId,
+        ...eventPayload(),
+      },
+    );
     expect(response.statusCode).toBe(404);
   });
 });
@@ -185,6 +188,14 @@ describe('Calendar API — authorization boundaries', () => {
           payload: body,
         });
       },
+      patch(path, body) {
+        return app.inject({
+          method: 'PATCH',
+          url: path,
+          headers: { cookie: session, 'content-type': 'application/json' },
+          payload: body,
+        });
+      },
       postEmpty(path) {
         return app.inject({
           method: 'POST',
@@ -207,6 +218,14 @@ describe('Calendar API — authorization boundaries', () => {
       `/api/calendar/events/${entryId}?organizationId=${organizationId}&workspaceId=ws_alien_0000`,
     );
     expect(forged.statusCode).toBe(403);
+
+    // A forged cross-workspace update (same org, foreign workspace) → 403.
+    const forgedUpdate = await client.patch(`/api/calendar/events/${entryId}`, {
+      organizationId,
+      workspaceId: 'ws_alien_0000',
+      ...eventPayload({ title: 'Sneaky Update' }),
+    });
+    expect(forgedUpdate.statusCode).toBe(403);
   });
 
   it('rejects unauthenticated access with 401', async () => {

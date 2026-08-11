@@ -92,9 +92,10 @@ const TITLE_MAX_LENGTH = 120;
  * The write tool that schedules a calendar entry through the Calendar
  * application layer under the trusted execution context.
  */
-export class CreateCalendarEventTool
-  implements Tool<CreateCalendarEventInput, CreateCalendarEventOutput>
-{
+export class CreateCalendarEventTool implements Tool<
+  CreateCalendarEventInput,
+  CreateCalendarEventOutput
+> {
   readonly manifest = CREATE_CALENDAR_EVENT_MANIFEST;
 
   readonly #createCalendarEvent: CreateCalendarEventHandler;
@@ -149,7 +150,9 @@ export class CreateCalendarEventTool
       userId: context.userId as UserId,
     });
     if (!membership.ok || !membership.value.some((org) => org.id === context.tenantId)) {
-      return this.#failure('You are not authorized to create a calendar event in this organization');
+      return this.#failure(
+        'You are not authorized to create a calendar event in this organization',
+      );
     }
     const workspaces = await this.#listMyWorkspaces.handle({
       userId: context.userId as UserId,

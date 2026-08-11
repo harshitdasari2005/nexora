@@ -122,7 +122,10 @@ export class CalendarEntryDomainService {
     input: RescheduleCalendarEntryCommand,
     context: CalendarEventContext,
   ): Promise<
-    Result<CalendarEntryCommandResult, CalendarEntryNotFoundError | CalendarEntryStateTransitionError>
+    Result<
+      CalendarEntryCommandResult,
+      CalendarEntryNotFoundError | CalendarEntryStateTransitionError
+    >
   > {
     try {
       const entry = await this.#requireEntry(entryId);
@@ -145,7 +148,10 @@ export class CalendarEntryDomainService {
     entryId: CalendarEntryId,
     context: CalendarEventContext,
   ): Promise<
-    Result<CalendarEntryCommandResult, CalendarEntryNotFoundError | CalendarEntryStateTransitionError>
+    Result<
+      CalendarEntryCommandResult,
+      CalendarEntryNotFoundError | CalendarEntryStateTransitionError
+    >
   > {
     try {
       const entry = await this.#requireEntry(entryId);

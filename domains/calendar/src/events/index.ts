@@ -112,7 +112,12 @@ export function calendarEventCreatedEvent(
   calendarEntryId: CalendarEntryId,
   payload: CalendarEntryCreatedPayload,
 ): EventEnvelope<CalendarEntryCreatedPayload> {
-  return calendarEvent(CALENDAR_EVENT_TYPES.calendarEventCreated, context, calendarEntryId, payload);
+  return calendarEvent(
+    CALENDAR_EVENT_TYPES.calendarEventCreated,
+    context,
+    calendarEntryId,
+    payload,
+  );
 }
 
 /** A calendar entry was updated (calendar.event.updated). */
@@ -121,7 +126,12 @@ export function calendarEventUpdatedEvent(
   calendarEntryId: CalendarEntryId,
   payload: CalendarEntryUpdatedPayload,
 ): EventEnvelope<CalendarEntryUpdatedPayload> {
-  return calendarEvent(CALENDAR_EVENT_TYPES.calendarEventUpdated, context, calendarEntryId, payload);
+  return calendarEvent(
+    CALENDAR_EVENT_TYPES.calendarEventUpdated,
+    context,
+    calendarEntryId,
+    payload,
+  );
 }
 
 /** A calendar entry was cancelled (calendar.event.cancelled). */

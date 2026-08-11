@@ -32,7 +32,7 @@ import type {
 } from '@nexora/domain-projects';
 import type { AssignmentId } from '@nexora/domain-projects';
 import type { Employee, EmployeeRepository } from '@nexora/domain-hr';
-import { CalendarEntry, type CalendarEntryRepository } from '@nexora/module-calendar';
+import type { CalendarEntry, CalendarEntryRepository } from '@nexora/module-calendar';
 import type { Document, DocumentRepository } from '@nexora/domain-documents';
 import type { DocumentId } from '@nexora/domain-documents';
 import type { KnowledgeSource, KnowledgeSourceRepository } from '@nexora/domain-knowledge';
@@ -437,8 +437,7 @@ export class FakeCalendarEntryRepository implements CalendarEntryRepository {
   ): Promise<readonly CalendarEntry[]> {
     return [...this.entries.values()]
       .filter(
-        (entry) =>
-          entry.organizationId === organizationId && entry.workspaceId === workspaceId,
+        (entry) => entry.organizationId === organizationId && entry.workspaceId === workspaceId,
       )
       .sort((a, b) => b.timeWindow.startsAt.localeCompare(a.timeWindow.startsAt));
   }

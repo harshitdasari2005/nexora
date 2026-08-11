@@ -118,44 +118,48 @@ export function registerCalendarRoutes(
   app: FastifyInstance,
   dependencies: CalendarRoutesDependencies,
 ): void {
-  app.post('/api/calendar/events', { schema: createCalendarEventSchema }, async (request, reply) => {
-    const auth = requireAuth(request);
-    const body = request.body as {
-      organizationId: string;
-      workspaceId: string;
-      title: string;
-      startsAt: string;
-      endsAt: string;
-    };
+  app.post(
+    '/api/calendar/events',
+    { schema: createCalendarEventSchema },
+    async (request, reply) => {
+      const auth = requireAuth(request);
+      const body = request.body as {
+        organizationId: string;
+        workspaceId: string;
+        title: string;
+        startsAt: string;
+        endsAt: string;
+      };
 
-    const denial = await authorizeScope(
-      dependencies,
-      auth.userId,
-      body.organizationId,
-      body.workspaceId,
-    );
-    if (denial !== undefined) {
-      return reply.code(403).send({
-        error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
+      const denial = await authorizeScope(
+        dependencies,
+        auth.userId,
+        body.organizationId,
+        body.workspaceId,
+      );
+      if (denial !== undefined) {
+        return reply.code(403).send({
+          error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
+        });
+      }
+
+      const result = await dependencies.createCalendarEvent.handle({
+        organizationId: body.organizationId as TenantId,
+        workspaceId: body.workspaceId as WorkspaceId,
+        createdBy: auth.userId,
+        actorId: auth.userId,
+        correlationId: request.id,
+        title: body.title,
+        startsAt: body.startsAt,
+        endsAt: body.endsAt,
       });
-    }
-
-    const result = await dependencies.createCalendarEvent.handle({
-      organizationId: body.organizationId as TenantId,
-      workspaceId: body.workspaceId as WorkspaceId,
-      createdBy: auth.userId,
-      actorId: auth.userId,
-      correlationId: request.id,
-      title: body.title,
-      startsAt: body.startsAt,
-      endsAt: body.endsAt,
-    });
-    if (!result.ok) {
-      const http = toHttpError(result.error, request.id);
-      return reply.code(http.statusCode).send(http.body);
-    }
-    return reply.code(201).send({ event: toCalendarEventDto(result.value.entry) });
-  });
+      if (!result.ok) {
+        const http = toHttpError(result.error, request.id);
+        return reply.code(http.statusCode).send(http.body);
+      }
+      return reply.code(201).send({ event: toCalendarEventDto(result.value.entry) });
+    },
+  );
 
   app.get('/api/calendar/events', async (request, reply) => {
     const auth = requireAuth(request);
