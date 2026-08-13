@@ -76,6 +76,12 @@ import type {
   NotificationPreferencesRepository,
   NotificationRepository,
 } from '@nexora/module-notifications';
+import type {
+  EmailOutboxRepository,
+  WebhookDeliveryRepository,
+  WebhookEndpointRepository,
+} from '@nexora/module-integrations';
+import type { EmailRecord, WebhookDelivery, WebhookEndpoint } from '@nexora/module-integrations';
 
 import type {
   OidcCallbackParams,
@@ -785,6 +791,126 @@ export class FakeActivityRepository implements ActivityRepository {
       })
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
       .slice(0, options?.limit ?? 100);
+  }
+}
+
+/** An in-memory {@link WebhookEndpointRepository}. */
+export class FakeWebhookEndpointRepository implements WebhookEndpointRepository {
+  readonly endpoints = new Map<string, WebhookEndpoint>();
+
+  async findById(id: string): Promise<WebhookEndpoint | undefined> {
+    return this.endpoints.get(id);
+  }
+
+  async findByIdAndTenant(id: string, tenantId: TenantId): Promise<WebhookEndpoint | undefined> {
+    const endpoint = this.endpoints.get(id);
+    return endpoint !== undefined && endpoint.organizationId === tenantId ? endpoint : undefined;
+  }
+
+  async listByWorkspace(
+    tenantId: TenantId,
+    workspaceId: string,
+  ): Promise<readonly WebhookEndpoint[]> {
+    return [...this.endpoints.values()]
+      .filter(
+        (endpoint) => endpoint.organizationId === tenantId && endpoint.workspaceId === workspaceId,
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listSubscribed(
+    tenantId: TenantId,
+    workspaceId: string,
+    eventType: string,
+  ): Promise<readonly WebhookEndpoint[]> {
+    return [...this.endpoints.values()].filter(
+      (endpoint) =>
+        endpoint.organizationId === tenantId &&
+        endpoint.workspaceId === workspaceId &&
+        endpoint.subscribesTo(eventType),
+    );
+  }
+
+  async save(endpoint: WebhookEndpoint): Promise<void> {
+    this.endpoints.set(endpoint.id, endpoint);
+  }
+
+  async remove(endpoint: WebhookEndpoint): Promise<void> {
+    this.endpoints.delete(endpoint.id);
+  }
+}
+
+/** An in-memory {@link WebhookDeliveryRepository}. */
+export class FakeWebhookDeliveryRepository implements WebhookDeliveryRepository {
+  readonly deliveries = new Map<string, WebhookDelivery>();
+
+  async findByIdAndTenant(id: string, tenantId: TenantId): Promise<WebhookDelivery | undefined> {
+    const delivery = this.deliveries.get(id);
+    return delivery !== undefined && delivery.organizationId === tenantId ? delivery : undefined;
+  }
+
+  async listByEndpoint(
+    tenantId: TenantId,
+    endpointId: string,
+    options?: { limit?: number },
+  ): Promise<readonly WebhookDelivery[]> {
+    return [...this.deliveries.values()]
+      .filter(
+        (delivery) => delivery.organizationId === tenantId && delivery.endpointId === endpointId,
+      )
+      .sort((a, b) => b.deliveredAt.localeCompare(a.deliveredAt))
+      .slice(0, options?.limit ?? 100);
+  }
+
+  async save(delivery: WebhookDelivery): Promise<void> {
+    this.deliveries.set(delivery.id, delivery);
+  }
+}
+
+/** An in-memory {@link EmailOutboxRepository}. */
+export class FakeEmailOutboxRepository implements EmailOutboxRepository {
+  readonly records = new Map<string, EmailRecord>();
+
+  async findByIdAndTenant(id: string, tenantId: TenantId): Promise<EmailRecord | undefined> {
+    const record = this.records.get(id);
+    return record !== undefined && record.tenantId === tenantId ? record : undefined;
+  }
+
+  async findBySourceEventId(
+    sourceEventId: string,
+    tenantId: TenantId,
+  ): Promise<EmailRecord | undefined> {
+    for (const record of this.records.values()) {
+      if (record.sourceEventId === sourceEventId && record.tenantId === tenantId) {
+        return record;
+      }
+    }
+    return undefined;
+  }
+
+  async listByTenant(
+    tenantId: TenantId,
+    options?: { workspaceId?: string; limit?: number },
+  ): Promise<readonly EmailRecord[]> {
+    return [...this.records.values()]
+      .filter((record) => {
+        const scoped = record.tenantId === tenantId;
+        if (options?.workspaceId !== undefined) {
+          // Org-level emails (no workspace scope) are visible to every
+          // tenant member through a workspace view.
+          return (
+            scoped &&
+            (record.workspaceId === options.workspaceId || record.workspaceId === undefined)
+          );
+        }
+        return scoped;
+      })
+      .sort((a, b) => b.dispatchedAt.localeCompare(a.dispatchedAt))
+      .slice(0, options?.limit ?? 100);
+  }
+
+  async save(record: EmailRecord): Promise<void> {
+    this.records.set(record.id, record);
   }
 }
 

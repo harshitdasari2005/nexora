@@ -16,6 +16,7 @@ import { Documents } from './pages/Documents.js';
 import { Knowledge } from './pages/Knowledge.js';
 import { Apps } from './pages/Apps.js';
 import { Employees } from './pages/Employees.js';
+import { Integrations } from './pages/Integrations.js';
 import { Projects } from './pages/Projects.js';
 import { Workflows } from './pages/Workflows.js';
 import { RequireAuth, SessionProvider } from './session.js';
@@ -97,6 +98,14 @@ export function App(): JSX.Element {
             element={
               <RequireAuth>
                 <Workflows />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app/integrations"
+            element={
+              <RequireAuth>
+                <Integrations />
               </RequireAuth>
             }
           />

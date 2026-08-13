@@ -24,6 +24,16 @@ export interface AiConfig {
   model: string;
 }
 
+/** Webhook/email inbound signing configuration (BKD §9.2). */
+export interface IntegrationsConfig {
+  /**
+   * Shared HMAC secret for the signed inbound email endpoint. In production
+   * this is a per-deployment secret distributed out-of-band to the email
+   * action provider; in local dev the documented default is used.
+   */
+  inboundSecret: string;
+}
+
 /** S3/MinIO object-storage configuration (durable document content). */
 export interface S3Config {
   /** The S3 endpoint host (e.g. `localhost` for the compose MinIO). */
@@ -70,6 +80,8 @@ export interface ApiConfig {
   cookie: CookieConfig;
   /** Enterprise AI Runtime configuration. */
   ai: AiConfig;
+  /** Integrations (webhook-in signing, email) configuration. */
+  integrations: IntegrationsConfig;
   /**
    * S3/MinIO object storage. `undefined` when S3_ENDPOINT is not set — the
    * container then falls back to the in-memory storage port (local dev
@@ -134,6 +146,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     ai: {
       groqApiKey: env['GROQ_API_KEY'] === undefined ? undefined : env['GROQ_API_KEY'],
       model: env['AI_MODEL']?.trim() || 'llama-3.3-70b-versatile',
+    },
+    integrations: {
+      inboundSecret: required(env, 'INTEGRATIONS_INBOUND_SECRET', 'nexora-inbound-dev-secret'),
     },
     s3: loadS3Config(env),
     logLevel,

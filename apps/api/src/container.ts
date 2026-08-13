@@ -23,6 +23,11 @@ import type {
   KnowledgeSourceRepository,
 } from '@nexora/domain-knowledge';
 import type { CalendarEntryRepository } from '@nexora/module-calendar';
+import type {
+  EmailOutboxRepository,
+  WebhookDeliveryRepository,
+  WebhookEndpointRepository,
+} from '@nexora/module-integrations';
 import type { SearchIndexPort } from '@nexora/module-search';
 import type {
   WorkspaceInstallationRepository,
@@ -163,6 +168,9 @@ export interface RepositorySet {
   knowledgeArticles: KnowledgeArticleRepository;
   knowledgeCategories: KnowledgeCategoryRepository;
   calendarEvents: CalendarEntryRepository;
+  webhookEndpoints: WebhookEndpointRepository;
+  webhookDeliveries: WebhookDeliveryRepository;
+  emailOutbox: EmailOutboxRepository;
   searchIndex: SearchIndexPort;
   documentStorage: DocumentStorage;
   documentExtractor: DocumentTextExtractor;

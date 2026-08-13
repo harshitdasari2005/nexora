@@ -280,3 +280,74 @@ export interface NotificationPreferencesDto {
   categories: Record<string, boolean>;
   updatedAt: string;
 }
+
+/** A webhook endpoint as seen by the client (S20 Integrations). */
+export interface WebhookEndpointDto {
+  /** The endpoint id. */
+  id: string;
+  /** The target URL. */
+  url: string;
+  /** The subscribed event types. */
+  eventTypes: readonly string[];
+  /** Whether the endpoint is enabled. */
+  enabled: boolean;
+  /** ISO-8601 UTC creation time. */
+  createdAt: string;
+  /** ISO-8601 UTC last mutation time. */
+  updatedAt: string;
+  /** The masked signing secret (`whk_abcd…` — full secret shown once at creation). */
+  secretMasked: string;
+}
+
+/** A webhook delivery receipt as seen by the client (S20). */
+export interface WebhookDeliveryDto {
+  /** The receipt id. */
+  id: string;
+  /** The webhook endpoint id. */
+  endpointId: string;
+  /** The business event id that triggered the delivery. */
+  eventId: string;
+  /** The business event type. */
+  eventType: string;
+  /** The terminal outcome (`delivered` | `failed`). */
+  status: 'delivered' | 'failed';
+  /** The final attempt number. */
+  attempt: number;
+  /** The HTTP status received (delivered only). */
+  statusCode?: number;
+  /** A human-readable failure reason (failed only). */
+  error?: string;
+  /** ISO-8601 UTC delivery time. */
+  deliveredAt: string;
+}
+
+/** An email outbox record as seen by the client (S20). */
+export interface EmailOutboxDto {
+  /** The outbox record id. */
+  id: string;
+  /** The recipient email address. */
+  recipientEmail: string;
+  /** The subject line. */
+  subject: string;
+  /** The body text. */
+  body: string;
+  /** The source business event id. */
+  sourceEventId: string;
+  /** ISO-8601 UTC dispatch time. */
+  dispatchedAt: string;
+}
+
+/** The webhook registry response (S20). */
+export interface WebhookRegistryResponse {
+  /** The workspace webhook endpoints (newest first). */
+  endpoints: readonly WebhookEndpointDto[];
+  /** The subscribable event catalog (checkboxes in the creator). */
+  subscribableEvents: readonly string[];
+}
+
+/** The webhook creation response (the ONLY response with the full secret). */
+export interface WebhookCreatedResponse {
+  endpoint: WebhookEndpointDto;
+  /** The full signing secret — exposed exactly once at creation. */
+  secret: string;
+}

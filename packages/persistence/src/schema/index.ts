@@ -622,6 +622,89 @@ export const workflowStepExecutions = pgTable(
 );
 
 /**
+ * webhook_endpoints — the
+ * {@link @nexora/module-integrations!WebhookEndpoint} aggregate (S20
+ * webhooks out). One row per workspace webhook endpoint. The organization
+ * id is the tenant scope and the workspace id is the workspace scope —
+ * every read is scoped. The `secret` (HMAC signing key) is persisted but
+ * only ever surfaced once at creation; reads return a masked value.
+ */
+export const webhookEndpoints = pgTable(
+  'webhook_endpoints',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    url: varchar('url', { length: 2048 }).notNull(),
+    secret: varchar('secret', { length: 128 }).notNull(),
+    eventTypes: jsonb('event_types').notNull().default([]),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [index('webhook_endpoints_workspace_idx').on(table.organizationId, table.workspaceId)],
+);
+
+/**
+ * webhook_deliveries — the
+ * {@link @nexora/module-integrations!WebhookDelivery} aggregate (S20
+ * delivery receipts). An APPEND-ONLY audit log: one row per business event
+ * delivered to a webhook endpoint, recording the terminal outcome and the
+ * final attempt. Rows are never updated after creation.
+ */
+export const webhookDeliveries = pgTable(
+  'webhook_deliveries',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    endpointId: varchar('endpoint_id', { length: 64 }).notNull(),
+    eventId: varchar('event_id', { length: 128 }).notNull(),
+    eventType: varchar('event_type', { length: 128 }).notNull(),
+    status: varchar('status', { length: 16 }).notNull(),
+    attempt: integer('attempt').notNull().default(1),
+    statusCode: integer('status_code'),
+    error: text('error'),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('webhook_deliveries_endpoint_idx').on(
+      table.organizationId,
+      table.endpointId,
+      table.deliveredAt,
+    ),
+  ],
+);
+
+/**
+ * email_outbox — the {@link @nexora/module-integrations!EmailRecord}
+ * outbox (S20 email notifications). An APPEND-ONLY record of every email
+ * notification dispatched through the email channel; the unique
+ * (tenant, source_event) index is the idempotency key — a duplicate event
+ * delivery can never dispatch the same email twice.
+ */
+export const emailOutbox = pgTable(
+  'email_outbox',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }),
+    recipientId: varchar('recipient_id', { length: 64 }).notNull(),
+    recipientEmail: varchar('recipient_email', { length: 254 }).notNull(),
+    subject: varchar('subject', { length: 200 }).notNull(),
+    body: text('body').notNull(),
+    sourceEventId: varchar('source_event_id', { length: 128 }).notNull(),
+    correlationId: varchar('correlation_id', { length: 128 }).notNull(),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('email_outbox_tenant_idx').on(table.tenantId, table.recipientId, table.dispatchedAt),
+    uniqueIndex('email_outbox_source_event_unique').on(table.tenantId, table.sourceEventId),
+  ],
+);
+
+/**
  * calendar_events — the {@link @nexora/module-calendar!CalendarEntry}
  * aggregate. One row per calendar entry; the organization id is the tenant
  * scope and the workspace id is the workspace scope — every read is scoped

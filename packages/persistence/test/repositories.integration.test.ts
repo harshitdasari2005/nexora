@@ -38,6 +38,7 @@ import {
 import { Project, ResourceAssignment } from '@nexora/domain-projects';
 import { Employee } from '@nexora/domain-hr';
 import { CalendarEntry } from '@nexora/module-calendar';
+import { EmailRecord, WebhookDelivery, WebhookEndpoint } from '@nexora/module-integrations';
 import { ActivityItem, Notification, NotificationPreferences } from '@nexora/module-notifications';
 import { ContentRef, DocumentTemplate, DocumentVersion } from '@nexora/domain-documents';
 import { Document } from '@nexora/domain-documents';
@@ -58,6 +59,7 @@ import {
   PgDocumentRepository,
   PgDocumentTemplateRepository,
   PgDocumentVersionRepository,
+  PgEmailOutboxRepository,
   PgEmployeeRepository,
   PgMembershipRepository,
   PgNotificationPreferencesRepository,
@@ -67,6 +69,8 @@ import {
   PgResourceAssignmentRepository,
   PgSessionRepository,
   PgUserRepository,
+  PgWebhookDeliveryRepository,
+  PgWebhookEndpointRepository,
   PgWorkspaceInstallationRepository,
   PgWorkspaceMembershipRepository,
   PgWorkspaceRepository,
@@ -79,6 +83,7 @@ import {
   calendarEvents,
   documentTemplates,
   documentVersions,
+  emailOutbox,
   employees,
   knowledgeArticles,
   knowledgeCategories,
@@ -91,6 +96,8 @@ import {
   resourceAssignments,
   sessions,
   users,
+  webhookDeliveries,
+  webhookEndpoints,
   workspaceInstallations,
   workspaceMemberships,
   workspaces,
@@ -161,6 +168,9 @@ describeDb('repository integration (Postgres)', () => {
   });
 
   afterAll(async () => {
+    await db.delete(emailOutbox);
+    await db.delete(webhookDeliveries);
+    await db.delete(webhookEndpoints);
     await db.delete(documentVersions);
     await db.delete(documentTemplates);
     await db.delete(knowledgeSources);
@@ -1144,6 +1154,136 @@ describeDb('repository integration (Postgres)', () => {
       await store.removeByScope(articleId, TENANT);
       const after = await store.query({ tenantId: TENANT, workspaceId: 'ws_kb_1', query: 'leave' });
       expect(after.map((entry) => entry.id)).not.toContain(articleId);
+    });
+  });
+
+  describe('integrations (S20 webhooks + email outbox)', () => {
+    function integrationsContext() {
+      return {
+        actor: { kind: 'user' as const, id: 'usr_alice' as UserId },
+        correlationId: 'corr_int',
+        organizationId: TENANT,
+      };
+    }
+
+    it('round-trips a WebhookEndpoint and finds subscribed endpoints by event type', async () => {
+      const repo = new PgWebhookEndpointRepository(db);
+      const endpoint = WebhookEndpoint.create(
+        {
+          organizationId: TENANT,
+          workspaceId: 'ws_int_1' as never,
+          url: 'https://example.com/hooks/nexora',
+          eventTypes: ['project.created', 'employee.created'],
+        },
+        'secret-abc-123',
+        integrationsContext(),
+      );
+      endpoint.pullDomainEvents();
+      await repo.save(endpoint);
+
+      const loaded = await repo.findByIdAndTenant(endpoint.id, TENANT);
+      expect(loaded?.id).toBe(endpoint.id);
+      expect(loaded?.url).toBe('https://example.com/hooks/nexora');
+      expect(loaded?.secret).toBe('secret-abc-123');
+      expect(loaded?.enabled).toBe(true);
+      expect(loaded?.eventTypes).toEqual(['project.created', 'employee.created']);
+
+      // Dispatcher read: subscribed endpoints by event type (enabled only).
+      const subscribed = await repo.listSubscribed(TENANT, 'ws_int_1' as never, 'project.created');
+      expect(subscribed.map((item) => item.id)).toEqual([endpoint.id]);
+      const unsubscribed = await repo.listSubscribed(
+        TENANT,
+        'ws_int_1' as never,
+        'calendar.event.created',
+      );
+      expect(unsubscribed).toHaveLength(0);
+
+      // Workspace scoping: the endpoint is not visible from another workspace.
+      const otherWs = await repo.listByWorkspace(TENANT, 'ws_int_other' as never);
+      expect(otherWs.some((item) => item.id === endpoint.id)).toBe(false);
+
+      // Tenant scoping: a foreign tenant never resolves the endpoint.
+      expect(await repo.findByIdAndTenant(endpoint.id, 'org_other' as TenantId)).toBeUndefined();
+
+      // Update + disable round-trip.
+      endpoint.update(
+        { url: 'https://new.example.com/hooks', eventTypes: ['employee.created'] },
+        integrationsContext(),
+      );
+      endpoint.setEnabled(false, integrationsContext());
+      await repo.save(endpoint);
+      const reloaded = await repo.findByIdAndTenant(endpoint.id, TENANT);
+      expect(reloaded?.url).toBe('https://new.example.com/hooks');
+      expect(reloaded?.enabled).toBe(false);
+      expect(
+        await repo.listSubscribed(TENANT, 'ws_int_1' as never, 'employee.created'),
+      ).toHaveLength(0);
+
+      // Removal is a hard delete.
+      await repo.remove(endpoint);
+      expect(await repo.findById(endpoint.id)).toBeUndefined();
+    });
+
+    it('round-trips append-only WebhookDelivery receipts with scoping', async () => {
+      const repo = new PgWebhookDeliveryRepository(db);
+      const delivery = WebhookDelivery.create({
+        organizationId: TENANT,
+        workspaceId: 'ws_int_1' as never,
+        endpointId: 'whk_endpoint_1',
+        eventId: 'evt_int_1',
+        eventType: 'project.created',
+        status: 'delivered',
+        attempt: 2,
+        statusCode: 200,
+      });
+      await repo.save(delivery);
+
+      const loaded = await repo.findByIdAndTenant(delivery.id, TENANT);
+      expect(loaded?.id).toBe(delivery.id);
+      expect(loaded?.status).toBe('delivered');
+      expect(loaded?.attempt).toBe(2);
+      expect(loaded?.statusCode).toBe(200);
+
+      const listed = await repo.listByEndpoint(TENANT, 'whk_endpoint_1');
+      expect(listed.map((item) => item.id)).toEqual([delivery.id]);
+
+      // Tenant scoping: a foreign tenant never resolves the receipt.
+      expect(await repo.findByIdAndTenant(delivery.id, 'org_other' as TenantId)).toBeUndefined();
+    });
+
+    it('round-trips EmailRecord outbox entries with idempotent source-event lookup', async () => {
+      const repo = new PgEmailOutboxRepository(db);
+      const record = EmailRecord.create({
+        tenantId: TENANT,
+        workspaceId: 'ws_int_1' as never,
+        recipientId: 'usr_alice' as UserId,
+        recipientEmail: 'alice@nexora.dev',
+        subject: 'Project created',
+        body: 'Project "Mobile Banking" was created.',
+        sourceEventId: 'evt_int_email_1',
+        correlationId: 'corr_int_email_1',
+      });
+      await repo.save(record);
+
+      const loaded = await repo.findByIdAndTenant(record.id, TENANT);
+      expect(loaded?.id).toBe(record.id);
+      expect(loaded?.subject).toBe('Project created');
+      expect(loaded?.recipientEmail).toBe('alice@nexora.dev');
+
+      // The dedupe key resolves the same record (at-least-once delivery).
+      const byEvent = await repo.findBySourceEventId('evt_int_email_1', TENANT);
+      expect(byEvent?.id).toBe(record.id);
+      expect(await repo.findBySourceEventId('evt_int_email_2', TENANT)).toBeUndefined();
+
+      const listed = await repo.listByTenant(TENANT, { workspaceId: 'ws_int_1' as never });
+      expect(listed.map((item) => item.id)).toEqual([record.id]);
+
+      // A different workspace never sees the record.
+      const otherWs = await repo.listByTenant(TENANT, { workspaceId: 'ws_other' as never });
+      expect(otherWs.some((item) => item.id === record.id)).toBe(false);
+
+      // Tenant scoping: a foreign tenant never resolves the record.
+      expect(await repo.findByIdAndTenant(record.id, 'org_other' as TenantId)).toBeUndefined();
     });
   });
 });

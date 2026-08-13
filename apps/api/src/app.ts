@@ -20,6 +20,7 @@ import {
   PgDocumentRepository,
   PgDocumentTemplateRepository,
   PgDocumentVersionRepository,
+  PgEmailOutboxRepository,
   PgEmployeeRepository,
   PgKnowledgeArticleRepository,
   PgKnowledgeCategoryRepository,
@@ -34,6 +35,8 @@ import {
   PgRoleRepository,
   PgSessionRepository,
   PgUserRepository,
+  PgWebhookDeliveryRepository,
+  PgWebhookEndpointRepository,
   PgWorkflowInstanceRepository,
   PgWorkflowStepExecutionRepository,
   PgWorkspaceInstallationRepository,
@@ -52,10 +55,18 @@ import {
   NotificationPolicy,
   NotificationStream,
 } from '@nexora/module-notifications';
+import { Email } from '@nexora/domain-identity';
+import {
+  DevEmailSink,
+  EmailProjection,
+  IntegrationApplicationService,
+  WebhookDispatcher,
+  type WebhookHttpClient,
+} from '@nexora/module-integrations';
 
 import type { ApiConfig } from './config.js';
 import { LoggingEventPublisher } from './events/logging-event-publisher.js';
-import { NotificationForwardingPublisher } from './events/notification-forwarding-publisher.js';
+import { ProjectionChainPublisher } from './events/projection-chain-publisher.js';
 import { toHttpError } from './http/errors.js';
 import type { OidcGateway } from './oidc/gateway.js';
 import { registerAuth } from './plugins/auth.js';
@@ -76,6 +87,7 @@ import {
 import { registerCalendarRoutes } from './routes/calendar.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
+import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { registerMarketplaceRoutes } from './routes/marketplace.js';
 import { registerOrganizationRoutes } from './routes/organizations.js';
@@ -98,6 +110,8 @@ export interface AppDependencies {
   publisher?: EventPublisher;
   /** Durable AI conversation store (defaults to in-memory without a database). */
   aiStore?: ConversationStore;
+  /** Webhook delivery transport (defaults to fetch — tests inject a fake). */
+  webhookHttp?: WebhookHttpClient;
 }
 
 /** Builds the Nexora API application. */
@@ -122,8 +136,16 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     stream: notificationStream,
     logger: app.log,
   });
-  const publisher = new NotificationForwardingPublisher(basePublisher, notificationConsumer);
+  // The v1 event backbone: every domain event flows through this chain to
+  // the projections (notifications, and — registered below — webhooks +
+  // email) before the base publisher. No second event bus (SAD.md §11).
+  const publisher = new ProjectionChainPublisher(basePublisher, [notificationConsumer]);
   const container = buildContainer({ config: dependencies.config, repositories, publisher });
+
+  // The integration application service is composed AFTER the AI runtime
+  // (its inbound router targets the existing ApprovalEngine); the webhook
+  // dispatcher + email projection are registered onto the same chain.
+  const integrationsPolicy = new NotificationPolicy();
 
   registerAuth(app, { config: dependencies.config, sessions: container.sessionsService });
   registerHealth(app);
@@ -269,6 +291,114 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listOrganizations: container.listOrganizations,
   });
 
+  // --- Integrations platform (S20) ----------------------------------------
+  // Composed here (after the AI runtime) so the inbound email action router
+  // can target the existing ApprovalEngine (BKD §9.2). The webhook
+  // dispatcher + email projection ride the SAME event backbone as the
+  // notification consumer — no second event bus.
+  const integrationService = new IntegrationApplicationService({
+    endpoints: repositories.webhookEndpoints,
+    deliveries: repositories.webhookDeliveries,
+    emailOutbox: repositories.emailOutbox,
+    emailSender: new DevEmailSink((record) => {
+      app.log.info(
+        { emailId: record.id, to: record.recipientEmail, subject: record.subject },
+        'email dispatched (dev sink)',
+      );
+    }),
+    // The inbound sender allowlist: only a user whose email belongs to a
+    // member of the organization AND the workspace may trigger inbound
+    // email actions (the ONE authorization model — never from the request).
+    isSenderAllowed: async ({ tenantId, workspaceId, from }) => {
+      let email: ReturnType<typeof Email.create> | undefined;
+      try {
+        email = Email.create(from);
+      } catch {
+        return false;
+      }
+      const user = await repositories.users.findByEmail(email);
+      if (user === undefined) {
+        return false;
+      }
+      const membership = await repositories.memberships.findByOrganizationAndUser(
+        tenantId as never,
+        user.id as never,
+      );
+      if (membership === undefined) {
+        return false;
+      }
+      const wsMembership = await repositories.workspaceMemberships.findByWorkspaceAndUser(
+        workspaceId as never,
+        user.id as never,
+      );
+      return wsMembership !== undefined;
+    },
+    routeInboundAction: async ({ action, targetId, decision, from, tenantId }) => {
+      // Only the supported action catalog is routable (BKD §9.2):
+      // `approval.decide` maps to the existing ApprovalEngine — no new
+      // approval system (AIR.md §12). The actor is resolved from the
+      // allowlisted sender, never from the request.
+      if (action !== 'approval.decide') {
+        return { ok: false, reason: 'unknown-action' };
+      }
+      let email: ReturnType<typeof Email.create> | undefined;
+      try {
+        email = Email.create(from);
+      } catch {
+        return { ok: false, reason: 'sender-not-found' };
+      }
+      const user = await repositories.users.findByEmail(email);
+      if (user === undefined) {
+        return { ok: false, reason: 'sender-not-found' };
+      }
+      const approval = ai.approvals.byId(targetId);
+      if (approval === undefined || approval.tenantId !== tenantId) {
+        // Forged or foreign approval ids resolve to a hard NOT FOUND — the
+        // approval never grants another tenant's run.
+        return { ok: false, reason: 'target-not-found' };
+      }
+      const grant = decision === 'grant';
+      const reject = decision === 'reject';
+      if (!grant && !reject) {
+        return { ok: false, reason: 'invalid-decision' };
+      }
+      const outcome = ai.approvals.decide(targetId, {
+        decision: grant ? 'grant' : 'reject',
+        decidedBy: user.id,
+        reason: 'inbound email action',
+      });
+      // Exactly-once: a duplicate inbound delivery resolves to
+      // already_decided — the action never executes twice.
+      return outcome.ok ? { ok: true } : { ok: false, reason: outcome.reason };
+    },
+    publisher,
+  });
+  const webhookDispatcher = new WebhookDispatcher({
+    endpoints: repositories.webhookEndpoints,
+    deliveries: repositories.webhookDeliveries,
+    publisher,
+    logger: app.log,
+    http: dependencies.webhookHttp,
+  });
+  const emailProjection = new EmailProjection({
+    policy: integrationsPolicy,
+    service: integrationService,
+    userEmails: {
+      findEmailByUserId: async (userId) => {
+        const user = await repositories.users.findById(userId as never);
+        return user?.email.value;
+      },
+    },
+    logger: app.log,
+  });
+  publisher.addProjections([webhookDispatcher, emailProjection]);
+  registerIntegrationsRoutes(app, {
+    integrations: integrationService,
+    inboundSecret: dependencies.config.integrations.inboundSecret,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+  });
+
   app.setErrorHandler((error: FastifyError, request, reply) => {
     request.log.error({ err: error, requestId: request.id }, 'request failed');
     // Preserve framework-level client errors (e.g. schema validation 400s).
@@ -317,6 +447,9 @@ function buildPgRepositories(
     knowledgeArticles: new PgKnowledgeArticleRepository(database),
     knowledgeCategories: new PgKnowledgeCategoryRepository(database),
     calendarEvents: new PgCalendarEventRepository(database),
+    webhookEndpoints: new PgWebhookEndpointRepository(database),
+    webhookDeliveries: new PgWebhookDeliveryRepository(database),
+    emailOutbox: new PgEmailOutboxRepository(database),
     searchIndex: new PgKnowledgeIndexStore(database),
     // Durable content when S3/MinIO is configured; in-memory storage for
     // local dev without object storage (the port contract is identical).

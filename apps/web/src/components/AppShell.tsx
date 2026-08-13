@@ -49,6 +49,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Knowledge', icon: '📚', to: '/app/knowledge' },
   { label: 'Workflows', icon: '⧉', to: '/app/workflows' },
   { label: 'Apps', icon: '▦', to: '/app/apps' },
+  { label: 'Integrations', icon: '🔌', to: '/app/integrations' },
   { label: 'AI Assistant', icon: '✦', soon: true },
   { label: 'Search', icon: '⌕', soon: true },
   { label: 'Settings', icon: '⚙', soon: true },

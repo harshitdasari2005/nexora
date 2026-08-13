@@ -1,0 +1,30 @@
+{
+  "name": "@nexora/module-integrations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora backend module: integrations (webhooks out, email notifications, inbound email actions) per BACKEND.md §9 / V1-9.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/module-notifications": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "vitest": "^2.1.0"
+  }
+}

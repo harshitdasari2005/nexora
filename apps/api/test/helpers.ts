@@ -51,6 +51,7 @@ import {
   FakeDocumentRepository,
   FakeDocumentTemplateRepository,
   FakeDocumentVersionRepository,
+  FakeEmailOutboxRepository,
   FakeEmployeeRepository,
   FakeKnowledgeArticleRepository,
   FakeKnowledgeCategoryRepository,
@@ -65,6 +66,8 @@ import {
   FakeRoleRepository,
   FakeSessionRepository,
   FakeUserRepository,
+  FakeWebhookDeliveryRepository,
+  FakeWebhookEndpointRepository,
   FakeWorkflowInstanceRepository,
   FakeWorkflowStepExecutionRepository,
   FakeWorkspaceInstallationRepository,
@@ -135,11 +138,12 @@ export interface ChatClient {
  * (each login dance issues a session for the gateway's next identity).
  */
 export async function buildTestApp(
-  options: { oidc?: OidcGateway } = {},
+  options: { oidc?: OidcGateway; webhookHttp?: Parameters<typeof buildApp>[0]['webhookHttp'] } = {},
 ): Promise<{ app: FastifyInstance; repos: RepositorySet; store: InMemoryConversationStore }> {
   const config = loadConfig({
     DATABASE_URL: 'postgres://test:test@localhost:5432/test',
     LOG_LEVEL: 'error',
+    INTEGRATIONS_INBOUND_SECRET: 'test-inbound-secret',
   } as NodeJS.ProcessEnv);
   const repositories: RepositorySet = {
     users: new FakeUserRepository(),
@@ -160,6 +164,9 @@ export async function buildTestApp(
     knowledgeArticles: new FakeKnowledgeArticleRepository(),
     knowledgeCategories: new FakeKnowledgeCategoryRepository(),
     calendarEvents: new FakeCalendarEntryRepository(),
+    webhookEndpoints: new FakeWebhookEndpointRepository(),
+    webhookDeliveries: new FakeWebhookDeliveryRepository(),
+    emailOutbox: new FakeEmailOutboxRepository(),
     searchIndex: new InMemorySearchIndex(),
     documentStorage: new InMemoryDocumentStorage(),
     documentExtractor: new DefaultDocumentTextExtractor(),
@@ -175,6 +182,7 @@ export async function buildTestApp(
     oidc: options.oidc ?? new FakeOidcGateway(),
     repositories,
     aiStore: store,
+    webhookHttp: options.webhookHttp,
   });
   return { app, repos: repositories, store };
 }
