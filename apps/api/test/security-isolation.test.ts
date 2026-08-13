@@ -218,4 +218,27 @@ describe('S21 security isolation sweep', () => {
 
     await client.app.close();
   });
+
+  it('isolates insights measurements by tenant and workspace (S23)', async () => {
+    const client = await chatClient();
+    const scope = await onboardOrgAndWorkspace(client);
+
+    // A forged foreign workspace → 403 (membership gate), never another
+    // workspace's measurements.
+    const foreignWs = await client.get('/api/insights?workspaceId=wsp_alien');
+    expect(foreignWs.statusCode).toBe(403);
+
+    // A forged foreign tenant (the user is not a member) → the route falls
+    // back to the trusted membership and returns the caller's OWN org.
+    const forgedOrg = await client.get('/api/insights?organizationId=org_alien');
+    expect(forgedOrg.statusCode).toBe(200);
+    const body = forgedOrg.json() as { measurements: { tenantId: string } };
+    expect(body.measurements.tenantId).toBe(scope.organizationId);
+
+    // Unauthenticated → 401.
+    const unauthenticated = await client.app.inject({ method: 'GET', url: '/api/insights' });
+    expect(unauthenticated.statusCode).toBe(401);
+
+    await client.app.close();
+  });
 });

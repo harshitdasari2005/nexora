@@ -62,6 +62,7 @@ import {
   PgEmailOutboxRepository,
   PgEmployeeRepository,
   PgInboundMessageRepository,
+  PgMeasurementRepository,
   PgMembershipRepository,
   PgNotificationPreferencesRepository,
   PgNotificationRepository,
@@ -99,6 +100,7 @@ import {
   users,
   webhookDeliveries,
   webhookEndpoints,
+  workflowInstances,
   workspaceInstallations,
   workspaceMemberships,
   workspaces,
@@ -181,6 +183,8 @@ describeDb('repository integration (Postgres)', () => {
     await db.delete(activityItems);
     await db.delete(notifications);
     await db.delete(notificationPreferences);
+    await db.delete(workflowInstances);
+    await db.delete(organizationMemberships);
     await db.delete(resourceAssignments);
     await db.delete(projects);
     await db.delete(employees);
@@ -1331,6 +1335,199 @@ describeDb('repository integration (Postgres)', () => {
         `SELECT indexdef FROM pg_indexes WHERE indexname = 'knowledge_sources_tenant_idx'`,
       );
       expect(search.rows[0]?.indexdef).toContain('indexed_at');
+    });
+  });
+
+  describe('measurements (S23 pilot dashboard)', () => {
+    it('computes workflow health, onboarding, audit completeness, and overview from real SQL', async () => {
+      const TENANT_S23 = 'org_s23' as TenantId;
+      const usersRepo = new PgUserRepository(db);
+
+      // A pilot user + org membership: joined at 00:00, first succeeded
+      // workflow at 00:15. Users are platform-scoped; the ORG membership is
+      // the tenant boundary the measurement queries use.
+      const pilot = User.create(
+        {
+          tenantId: TENANT_S23,
+          email: Email.create('pilot@example.com'),
+          username: Username.create('pilot'),
+          passwordHash: PasswordHash.create('scrypt', 'scrypt:salt:hash'),
+          displayName: DisplayName.create('Pilot'),
+          status: UserStatus.active(),
+        },
+        {
+          actor: { kind: 'user', id: 'usr_system' },
+          correlationId: 'corr_s23',
+          tenantId: TENANT_S23,
+        },
+      );
+      await db
+        .insert(users)
+        .values({
+          id: pilot.id,
+          tenantId: TENANT_S23,
+          email: 'pilot@example.com',
+          username: 'pilot',
+          passwordAlgorithm: 'scrypt',
+          passwordHash: 'scrypt:salt:hash',
+          status: 'active',
+          profile: {},
+          roles: [],
+          createdAt: new Date('2026-08-01T00:00:00.000Z'),
+          updatedAt: new Date('2026-08-01T00:00:00.000Z'),
+          version: 1,
+        })
+        .onConflictDoNothing({ target: users.id });
+      await db.insert(organizationMemberships).values({
+        id: 'om_s23',
+        organizationId: TENANT_S23,
+        userId: pilot.id,
+        role: 'owner',
+        joinedAt: new Date('2026-08-01T00:00:00.000Z'),
+      });
+      void usersRepo;
+
+      // Workflow instances: 9 succeeded + 1 failed of employee-onboarding,
+      // plus 1 succeeded of a second definition. Cycle times are 10s each.
+      const instances = [
+        {
+          id: 'wfi_s23_1',
+          tenantId: TENANT_S23,
+          definitionId: 'wfd_onboarding',
+          definitionKey: 'employee-onboarding',
+          definitionVersion: 1,
+          userId: pilot.id,
+          workspaceId: 'wsp_s23',
+          correlationId: 'corr_s23',
+          status: 'succeeded',
+          input: {},
+          state: {},
+          output: null,
+          error: null,
+          currentStepId: null,
+          startedAt: new Date('2026-08-01T00:15:00.000Z'),
+          finishedAt: new Date('2026-08-01T00:15:10.000Z'),
+          createdAt: new Date('2026-08-01T00:15:00.000Z'),
+          updatedAt: new Date('2026-08-01T00:15:10.000Z'),
+          version: 1,
+        },
+        {
+          id: 'wfi_s23_2',
+          tenantId: TENANT_S23,
+          definitionId: 'wfd_onboarding',
+          definitionKey: 'employee-onboarding',
+          definitionVersion: 1,
+          userId: pilot.id,
+          workspaceId: 'wsp_s23',
+          correlationId: 'corr_s23_2',
+          status: 'failed',
+          input: {},
+          state: {},
+          output: null,
+          error: 'boom',
+          currentStepId: null,
+          startedAt: new Date('2026-08-02T00:00:00.000Z'),
+          finishedAt: new Date('2026-08-02T00:00:10.000Z'),
+          createdAt: new Date('2026-08-02T00:00:00.000Z'),
+          updatedAt: new Date('2026-08-02T00:00:10.000Z'),
+          version: 1,
+        },
+        {
+          id: 'wfi_s23_3',
+          tenantId: TENANT_S23,
+          definitionId: 'wfd_offboarding',
+          definitionKey: 'employee-offboarding',
+          definitionVersion: 1,
+          userId: pilot.id,
+          workspaceId: 'wsp_s23',
+          correlationId: 'corr_s23_3',
+          status: 'succeeded',
+          input: {},
+          state: {},
+          output: null,
+          error: null,
+          currentStepId: null,
+          startedAt: new Date('2026-08-03T00:00:00.000Z'),
+          finishedAt: new Date('2026-08-03T00:00:20.000Z'),
+          createdAt: new Date('2026-08-03T00:00:00.000Z'),
+          updatedAt: new Date('2026-08-03T00:00:20.000Z'),
+          version: 1,
+        },
+      ];
+      await db.insert(workflowInstances).values(instances);
+
+      // Audit trail: activity items for two of the three correlation scopes
+      // (employee-offboarding is untraced → untracedTypes lists it).
+      await db.insert(activityItems).values([
+        {
+          id: 'act_s23_1',
+          tenantId: TENANT_S23,
+          workspaceId: 'wsp_s23',
+          type: 'workflow.completed',
+          title: 'Onboarding completed',
+          body: '…',
+          actorId: pilot.id,
+          sourceEventId: 'evt_s23_1',
+          correlationId: 'corr_s23',
+          occurredAt: new Date('2026-08-01T00:15:10.000Z'),
+        },
+        {
+          id: 'act_s23_2',
+          tenantId: TENANT_S23,
+          workspaceId: 'wsp_s23',
+          type: 'workflow.failed',
+          title: 'Onboarding failed',
+          body: '…',
+          actorId: pilot.id,
+          sourceEventId: 'evt_s23_2',
+          correlationId: 'corr_s23_2',
+          occurredAt: new Date('2026-08-02T00:00:10.000Z'),
+        },
+      ]);
+
+      const measurements = new PgMeasurementRepository(db);
+      const snapshot = await measurements.loadTenantMeasurements(TENANT_S23);
+
+      // Workflow health: 2 succeeded + 1 failed across two definitions.
+      const onboarding = snapshot.workflowHealth.find(
+        (m) => m.definitionKey === 'employee-onboarding',
+      );
+      expect(onboarding).toBeDefined();
+      expect(onboarding?.total).toBe(2);
+      expect(onboarding?.succeeded).toBe(1);
+      expect(onboarding?.failed).toBe(1);
+      expect(onboarding?.successRate).toBe(50);
+      expect(onboarding?.unrecoverableErrorRate).toBe(50);
+      expect(onboarding?.cycleTimeP50Ms).toBe(10_000);
+      expect(onboarding?.cycleTimeP95Ms).toBe(10_000);
+
+      const offboarding = snapshot.workflowHealth.find(
+        (m) => m.definitionKey === 'employee-offboarding',
+      );
+      expect(offboarding?.successRate).toBe(100);
+      expect(offboarding?.cycleTimeP50Ms).toBe(20_000);
+
+      // Onboarding: signup → first succeeded workflow (15 minutes).
+      expect(snapshot.onboarding).toHaveLength(1);
+      expect(snapshot.onboarding[0]?.email).toBe('pilot@example.com');
+      expect(snapshot.onboarding[0]?.timeToFirstWorkflowMs).toBe(15 * 60_000);
+
+      // Audit completeness: 2 of 3 executions traced → 66.7%; the untraced
+      // definition is employee-offboarding.
+      expect(snapshot.auditCompleteness.totalEvents).toBe(3);
+      expect(snapshot.auditCompleteness.tracedEvents).toBe(2);
+      expect(snapshot.auditCompleteness.traceableShare).toBe(66.67);
+      expect(snapshot.auditCompleteness.untracedTypes).toEqual(['employee-offboarding']);
+
+      // Tenant overview: the pilot user is counted; a FOREIGN tenant's
+      // records never leak into this tenant's numbers.
+      expect(snapshot.overview.users).toBe(1);
+      expect(snapshot.overview.workspaces).toBe(0);
+
+      // Another tenant's snapshot has zero of our data.
+      const foreign = await measurements.loadTenantMeasurements('org_other' as TenantId);
+      expect(foreign.overview.users).toBe(0);
+      expect(foreign.auditCompleteness.totalEvents).toBe(0);
     });
   });
 });

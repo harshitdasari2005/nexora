@@ -351,3 +351,88 @@ export interface WebhookCreatedResponse {
   /** The full signing secret — exposed exactly once at creation. */
   secret: string;
 }
+
+// --- S23 Insights (pilot measurement dashboard) --------------------------
+
+/** Workflow health per definition (PRD §20.4). */
+export interface WorkflowHealthMetricDto {
+  /** The stable definition key (e.g. `employee-onboarding`). */
+  definitionKey: string;
+  /** Total terminal instances in the tenant. */
+  total: number;
+  /** Instances that reached `succeeded`. */
+  succeeded: number;
+  /** Instances that reached `failed` (unrecoverable). */
+  failed: number;
+  /** Succeeded / total, 0–100. */
+  successRate: number;
+  /** Failed / total, 0–100. */
+  unrecoverableErrorRate: number;
+  /** Cycle time p50 in ms (started → finished of terminal instances). */
+  cycleTimeP50Ms: number | null;
+  /** Cycle time p95 in ms (started → finished of terminal instances). */
+  cycleTimeP95Ms: number | null;
+}
+
+/** Onboarding progress per user (PRD §20.4). */
+export interface OnboardingUserMetricDto {
+  /** The user id. */
+  userId: string;
+  /** The user email. */
+  email: string;
+  /** ISO-8601 signup time. */
+  signedUpAt: string;
+  /** ISO-8601 first succeeded workflow time, when one exists. */
+  firstWorkflowAt: string | null;
+  /** Milliseconds from signup to first succeeded workflow, when known. */
+  timeToFirstWorkflowMs: number | null;
+}
+
+/** Audit completeness (PRD §20.4). */
+export interface AuditCompletenessMetricDto {
+  /** Share of executions with an audit-trail entry, 0–100. */
+  traceableShare: number;
+  /** Total business executions (workflow instances). */
+  totalEvents: number;
+  /** Executions with at least one activity item in the same correlation scope. */
+  tracedEvents: number;
+  /** Definition keys whose executions have no audit-trail entry. */
+  untracedTypes: readonly string[];
+}
+
+/** Tenant overview counts (PRD §20.4). */
+export interface TenantOverviewDto {
+  /** Users registered in the tenant. */
+  users: number;
+  /** Workspaces in the tenant. */
+  workspaces: number;
+  /** Projects in the tenant. */
+  projects: number;
+  /** Documents in the tenant. */
+  documents: number;
+  /** Knowledge sources (search corpus) in the tenant. */
+  knowledgeSources: number;
+  /** Calendar events in the tenant. */
+  calendarEvents: number;
+}
+
+/** The full tenant measurement snapshot (S23 Insights page). */
+export interface TenantMeasurementsDto {
+  /** The tenant scope the metrics were computed for. */
+  tenantId: string;
+  /** ISO-8601 UTC time the snapshot was computed. */
+  generatedAt: string;
+  /** Workflow health per definition. */
+  workflowHealth: readonly WorkflowHealthMetricDto[];
+  /** Onboarding progress per user. */
+  onboarding: readonly OnboardingUserMetricDto[];
+  /** Audit completeness of the tenant's business executions. */
+  auditCompleteness: AuditCompletenessMetricDto;
+  /** Tenant overview counts. */
+  overview: TenantOverviewDto;
+}
+
+/** The insights API response. */
+export interface InsightsResponse {
+  measurements: TenantMeasurementsDto;
+}

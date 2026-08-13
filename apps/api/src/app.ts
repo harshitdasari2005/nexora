@@ -27,6 +27,7 @@ import {
   PgKnowledgeCategoryRepository,
   PgKnowledgeIndexStore,
   PgKnowledgeSourceRepository,
+  PgMeasurementRepository,
   PgMembershipRepository,
   PgNotificationPreferencesRepository,
   PgNotificationRepository,
@@ -90,6 +91,7 @@ import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
+import { registerInsightsRoutes } from './routes/insights.js';
 import { registerMarketplaceRoutes } from './routes/marketplace.js';
 import { registerOrganizationRoutes } from './routes/organizations.js';
 import { registerProjectRoutes } from './routes/projects.js';
@@ -291,6 +293,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listWorkflows: new ListWorkflowsHandler(ai.workflows),
     listOrganizations: container.listOrganizations,
   });
+  registerInsightsRoutes(app, {
+    getTenantMeasurements: container.getTenantMeasurements,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+  });
 
   // --- Integrations platform (S20) ----------------------------------------
   // Composed here (after the AI runtime) so the inbound email action router
@@ -453,6 +460,7 @@ function buildPgRepositories(
     webhookDeliveries: new PgWebhookDeliveryRepository(database),
     emailOutbox: new PgEmailOutboxRepository(database),
     inboundMessages: new PgInboundMessageRepository(database),
+    measurements: new PgMeasurementRepository(database),
     searchIndex: new PgKnowledgeIndexStore(database),
     // Durable content when S3/MinIO is configured; in-memory storage for
     // local dev without object storage (the port contract is identical).

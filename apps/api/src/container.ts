@@ -29,6 +29,7 @@ import type {
   WebhookDeliveryRepository,
   WebhookEndpointRepository,
 } from '@nexora/module-integrations';
+import type { MeasurementRepository } from '@nexora/module-measurements';
 import type { SearchIndexPort } from '@nexora/module-search';
 import type {
   WorkspaceInstallationRepository,
@@ -145,6 +146,10 @@ import {
   UnreadNotificationsCountHandler,
   UpdateNotificationPreferencesHandler,
 } from '@nexora/module-notifications';
+import {
+  GetTenantMeasurementsHandler,
+  MeasurementApplicationService,
+} from '@nexora/module-measurements';
 import { ScryptPasswordHasher } from '@nexora/persistence';
 
 import type { ApiConfig } from './config.js';
@@ -173,6 +178,7 @@ export interface RepositorySet {
   webhookDeliveries: WebhookDeliveryRepository;
   emailOutbox: EmailOutboxRepository;
   inboundMessages: InboundMessageRepository;
+  measurements: MeasurementRepository;
   searchIndex: SearchIndexPort;
   documentStorage: DocumentStorage;
   documentExtractor: DocumentTextExtractor;
@@ -295,6 +301,8 @@ export interface Container {
   listNotifications: ListNotificationsHandler;
   /** Unread notification count handler. */
   unreadNotifications: UnreadNotificationsCountHandler;
+  /** Pilot measurement dashboard handler (S23). */
+  getTenantMeasurements: GetTenantMeasurementsHandler;
   /** Mark-one-notification-read handler (recipient-scoped). */
   markNotificationRead: MarkNotificationReadHandler;
   /** Mark-all-read handler (recipient-scoped). */
@@ -437,6 +445,7 @@ export function buildContainer(options: BuildContainerOptions): Container {
     preferences: repositories.notificationPreferences,
     activity: repositories.activity,
   });
+  const measurementService = new MeasurementApplicationService(repositories.measurements);
 
   return {
     sessionsService,
@@ -499,5 +508,6 @@ export function buildContainer(options: BuildContainerOptions): Container {
     getNotificationPreferences: new GetNotificationPreferencesHandler(notificationService),
     updateNotificationPreferences: new UpdateNotificationPreferencesHandler(notificationService),
     listActivity: new ListActivityHandler(notificationService),
+    getTenantMeasurements: new GetTenantMeasurementsHandler(measurementService),
   };
 }

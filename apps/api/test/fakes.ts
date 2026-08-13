@@ -83,6 +83,8 @@ import type {
   WebhookEndpointRepository,
 } from '@nexora/module-integrations';
 import type { EmailRecord, WebhookDelivery, WebhookEndpoint } from '@nexora/module-integrations';
+import type { MeasurementRepository } from '@nexora/module-measurements';
+import type { TenantMeasurementsSnapshot } from '@nexora/module-measurements';
 
 import type {
   OidcCallbackParams,
@@ -1091,5 +1093,42 @@ export class FakeOidcGateway implements OidcGateway {
 
   async buildLogoutUrl(redirectTo: string): Promise<string> {
     return `http://keycloak.test/realms/nexora/protocol/openid-connect/logout?post_logout_redirect_uri=${encodeURIComponent(redirectTo)}`;
+  }
+}
+
+/** An in-memory {@link MeasurementRepository} (returns a zeroed snapshot). */
+export class FakeMeasurementRepository implements MeasurementRepository {
+  readonly snapshots = new Map<string, TenantMeasurementsSnapshot>();
+
+  async loadTenantMeasurements(tenantId: TenantId): Promise<TenantMeasurementsSnapshot> {
+    const existing = [...this.snapshots.values()].find((s) => s.tenantId === tenantId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    return {
+      tenantId,
+      generatedAt: new Date().toISOString(),
+      workflowHealth: [],
+      onboarding: [],
+      auditCompleteness: {
+        traceableShare: 100,
+        totalEvents: 0,
+        tracedEvents: 0,
+        untracedTypes: [],
+      },
+      overview: {
+        users: 0,
+        workspaces: 0,
+        projects: 0,
+        documents: 0,
+        knowledgeSources: 0,
+        calendarEvents: 0,
+      },
+    };
+  }
+
+  /** Seeds a fixed snapshot for a tenant (test setup convenience). */
+  seed(tenantId: TenantId, snapshot: TenantMeasurementsSnapshot): void {
+    this.snapshots.set(tenantId, snapshot);
   }
 }

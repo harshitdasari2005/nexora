@@ -104,6 +104,9 @@ importers:
       '@nexora/module-integrations':
         specifier: workspace:*
         version: link:../../platform/integrations
+      '@nexora/module-measurements':
+        specifier: workspace:*
+        version: link:../../platform/measurements
       '@nexora/module-notifications':
         specifier: workspace:*
         version: link:../../platform/notifications
@@ -550,6 +553,9 @@ importers:
       '@nexora/module-integrations':
         specifier: workspace:*
         version: link:../../platform/integrations
+      '@nexora/module-measurements':
+        specifier: workspace:*
+        version: link:../../platform/measurements
       '@nexora/module-notifications':
         specifier: workspace:*
         version: link:../../platform/notifications
@@ -653,6 +659,22 @@ importers:
       '@nexora/module-notifications':
         specifier: workspace:*
         version: link:../notifications
+      '@nexora/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.43)
+
+  platform/measurements:
+    dependencies:
+      '@nexora/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@nexora/shared':
         specifier: workspace:*
         version: link:../../packages/shared

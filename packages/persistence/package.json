@@ -40,6 +40,7 @@
     "@nexora/domain-workspaces": "workspace:*",
     "@nexora/module-calendar": "workspace:*",
     "@nexora/module-integrations": "workspace:*",
+    "@nexora/module-measurements": "workspace:*",
     "@nexora/module-notifications": "workspace:*",
     "@nexora/module-search": "workspace:*",
     "@nexora/module-workflow": "workspace:*",
