@@ -10,6 +10,7 @@
  */
 
 import { sql } from 'drizzle-orm';
+import { desc } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -136,7 +137,12 @@ export const organizationMemberships = pgTable(
     joinedAt: timestamp('joined_at', { withTimezone: true }).notNull(),
     version: integer('version').notNull().default(1),
   },
-  (table) => [uniqueIndex('org_membership_org_user_unique').on(table.organizationId, table.userId)],
+  (table) => [
+    uniqueIndex('org_membership_org_user_unique').on(table.organizationId, table.userId),
+    // S22: user-leading index — the per-request authorization read resolves
+    // the caller's organizations by user_id on EVERY protected request.
+    index('org_membership_user_idx').on(table.userId),
+  ],
 );
 
 /**
@@ -184,7 +190,13 @@ export const workspaceMemberships = pgTable(
     joinedAt: timestamp('joined_at', { withTimezone: true }).notNull(),
     version: integer('version').notNull().default(1),
   },
-  (table) => [uniqueIndex('ws_membership_ws_user_unique').on(table.workspaceId, table.userId)],
+  (table) => [
+    uniqueIndex('ws_membership_ws_user_unique').on(table.workspaceId, table.userId),
+    // S22: user-leading index — the per-request authorization read resolves
+    // the caller's workspace memberships by user_id on every protected
+    // request (was a full table scan).
+    index('ws_membership_user_idx').on(table.userId),
+  ],
 );
 
 /**
@@ -433,7 +445,14 @@ export const knowledgeSources = pgTable(
     indexedAt: timestamp('indexed_at', { withTimezone: true }).notNull(),
   },
   (table) => [
-    index('knowledge_sources_tenant_idx').on(table.tenantId, table.workspaceId),
+    // S22 search/index warm-up: the tenant+workspace scope index now also
+    // serves the search ORDER BY (indexed_at DESC) — the p95 < 300 ms
+    // search window no longer pays an explicit sort at volume.
+    index('knowledge_sources_tenant_idx').on(
+      table.tenantId,
+      table.workspaceId,
+      desc(table.indexedAt),
+    ),
     uniqueIndex('knowledge_sources_document_unique').on(
       table.tenantId,
       table.workspaceId,

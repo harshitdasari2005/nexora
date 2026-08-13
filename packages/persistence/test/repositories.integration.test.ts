@@ -1311,5 +1311,26 @@ describeDb('repository integration (Postgres)', () => {
       // another tenant's legitimate delivery).
       expect(await repo.claim({ ...input, tenantId: 'org_other' as TenantId })).toBe(true);
     });
+
+    it('declares the S22 performance indexes (authz user scans + search order)', async () => {
+      // S22 regression: the per-request authorization reads were full table
+      // scans (no user-leading index) and the search ORDER BY was not index
+      // served. The migration must keep these indexes present — without them
+      // the hot path degrades linearly with membership volume.
+      const { rows } = await pool.query(
+        `SELECT indexname, indexdef FROM pg_indexes
+         WHERE indexname IN ('org_membership_user_idx', 'ws_membership_user_idx')
+         ORDER BY indexname`,
+      );
+      expect(rows).toHaveLength(2);
+      const names = rows.map((row) => row.indexname as string);
+      expect(names).toContain('org_membership_user_idx');
+      expect(names).toContain('ws_membership_user_idx');
+
+      const search = await pool.query(
+        `SELECT indexdef FROM pg_indexes WHERE indexname = 'knowledge_sources_tenant_idx'`,
+      );
+      expect(search.rows[0]?.indexdef).toContain('indexed_at');
+    });
   });
 });

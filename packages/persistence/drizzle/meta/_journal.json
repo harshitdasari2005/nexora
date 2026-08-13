@@ -92,6 +92,13 @@
       "when": 1786624686787,
       "tag": "0012_inbound_messages_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786626168643,
+      "tag": "0013_s22_authz_and_search_indexes",
+      "breakpoints": true
     }
   ]
 }
