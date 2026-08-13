@@ -10,6 +10,7 @@ import { ValidationError } from '@nexora/shared/errors';
 import {
   SlugAlreadyExistsError,
   WorkspaceDomainService,
+  WorkspaceInstallationService,
   WorkspaceMembershipService,
   WORKSPACE_EVENT_TYPES,
 } from '@nexora/domain-workspaces';
@@ -17,6 +18,7 @@ import {
 import type { CreateWorkspaceCommand } from '../src/commands/create-workspace.command.js';
 import { WorkspaceApplicationService } from '../src/services/workspace-application-service.js';
 import {
+  InMemoryWorkspaceInstallationRepository,
   InMemoryWorkspaceMembershipRepository,
   InMemoryWorkspaceRepository,
   RecordingEventPublisher,
@@ -32,9 +34,14 @@ function makeEnvironment() {
 
   const workspacesService = new WorkspaceDomainService({ workspaces });
   const membershipsService = new WorkspaceMembershipService({ memberships, workspaces });
+  const installationsService = new WorkspaceInstallationService({
+    installations: new InMemoryWorkspaceInstallationRepository(),
+    workspaces,
+  });
   const service = new WorkspaceApplicationService({
     workspacesService,
     membershipsService,
+    installationsService,
     publisher,
   });
   return { service, workspaces, memberships, publisher };

@@ -121,6 +121,31 @@ export class PluginAlreadyInstalledError extends WorkspaceDomainError {
   }
 }
 
+/** The plugin is already at the requested version (update is a no-op). */
+export class PluginVersionUnchangedError extends WorkspaceDomainError {
+  constructor(details?: unknown) {
+    super('Plugin is already at this version', 'CONFLICT', details);
+  }
+}
+
+/** The app is not listed in the marketplace catalog. */
+export class MarketplaceAppNotFoundError extends WorkspaceDomainError {
+  constructor(details?: unknown) {
+    super('App not found in the marketplace', 'NOT_FOUND', details);
+  }
+}
+
+/** The install-time permission review was not confirmed. */
+export class PermissionReviewRequiredError extends WorkspaceDomainError {
+  constructor(details?: unknown) {
+    super(
+      'Permission review must be confirmed before installing this app',
+      'PERMISSION_REVIEW_REQUIRED',
+      details,
+    );
+  }
+}
+
 /** The agent is already bound to the workspace. */
 export class AgentAlreadyBoundError extends WorkspaceDomainError {
   constructor(details?: unknown) {

@@ -83,6 +83,48 @@ describe('NotificationPolicy — recipient determination', () => {
     expect(outcome.activity).toHaveLength(1);
   });
 
+  it('maps marketplace install/update/uninstall to audit activity + notification', () => {
+    const installed = new NotificationPolicy().evaluate(
+      envelope('workspace.plugin_installed', { payload: { pluginId: 'com.nexora.hr' } }),
+    );
+    expect(installed.notifications[0]?.category).toBe('system');
+    expect(installed.notifications[0]?.title).toBe('App installed');
+    expect(installed.notifications[0]?.body).toBe(
+      'App "com.nexora.hr" was installed in this workspace.',
+    );
+    expect(installed.activity[0]?.title).toBe('App installed');
+
+    const updated = new NotificationPolicy().evaluate(
+      envelope('workspace.plugin_updated', { payload: { pluginId: 'com.nexora.hr' } }),
+    );
+    expect(updated.notifications[0]?.title).toBe('App updated');
+    expect(updated.activity[0]?.body).toBe('App "com.nexora.hr" was updated in this workspace.');
+
+    const removed = new NotificationPolicy().evaluate(
+      envelope('workspace.plugin_removed', { payload: { pluginId: 'com.nexora.hr' } }),
+    );
+    expect(removed.notifications[0]?.title).toBe('App uninstalled');
+    expect(removed.activity[0]?.body).toBe(
+      'App "com.nexora.hr" was uninstalled in this workspace.',
+    );
+  });
+
+  it('a poisoned plugin payload cannot widen the marketplace audit scope', () => {
+    const outcome = new NotificationPolicy().evaluate(
+      envelope('workspace.plugin_installed', {
+        payload: {
+          pluginId: 'com.nexora.hr',
+          recipientId: 'user_victim',
+          tenantId: 'org_other',
+          workspaceId: 'ws_other',
+        },
+      }),
+    );
+    expect(outcome.notifications[0]?.recipientId).toBe(ACTOR);
+    expect(outcome.activity[0]?.workspaceId).toBe(WORKSPACE);
+    expect(outcome.activity[0]?.body).toBe('App "com.nexora.hr" was installed in this workspace.');
+  });
+
   it('maps calendar.event.created to a calendar notification + activity', () => {
     const outcome = new NotificationPolicy().evaluate(
       envelope('calendar.event.created', { payload: { title: 'Project Review' } }),

@@ -46,7 +46,11 @@ import { EmployeeDomainService } from '@nexora/domain-hr';
 import { DocumentDomainService } from '@nexora/domain-documents';
 import { CalendarEntryDomainService } from '@nexora/module-calendar';
 import { KnowledgeDomainService } from '@nexora/domain-knowledge';
-import { WorkspaceDomainService, WorkspaceMembershipService } from '@nexora/domain-workspaces';
+import {
+  WorkspaceDomainService,
+  WorkspaceInstallationService,
+  WorkspaceMembershipService,
+} from '@nexora/domain-workspaces';
 import {
   AuthenticateWithOidcHandler,
   EndSessionHandler,
@@ -60,8 +64,13 @@ import {
 } from '@nexora/application-organizations';
 import {
   CreateWorkspaceHandler,
+  InstallAppHandler,
+  ListInstalledAppsHandler,
+  ListMarketplaceAppsHandler,
   ListMyWorkspacesHandler,
   ListWorkspacesHandler,
+  UninstallAppHandler,
+  UpdateAppHandler,
   WorkspaceApplicationService,
 } from '@nexora/application-workspaces';
 import {
@@ -184,6 +193,16 @@ export interface Container {
   listWorkspaces: ListWorkspacesHandler;
   /** Membership-scoped workspace listing (the AI authorization query). */
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /** Marketplace app install handler (S19, permission review). */
+  installApp: InstallAppHandler;
+  /** Marketplace app update handler (S19). */
+  updateApp: UpdateAppHandler;
+  /** Marketplace app uninstall handler (S19). */
+  uninstallApp: UninstallAppHandler;
+  /** Marketplace catalog + installed-state listing handler (S19). */
+  listMarketplaceApps: ListMarketplaceAppsHandler;
+  /** Installed-apps listing handler (S19). */
+  listInstalledApps: ListInstalledAppsHandler;
   /** Project creation handler. */
   createProject: CreateProjectHandler;
   /** Project listing handler. */
@@ -323,6 +342,10 @@ export function buildContainer(options: BuildContainerOptions): Container {
     memberships: repositories.workspaceMemberships,
     workspaces: repositories.workspaces,
   });
+  const workspaceInstallationService = new WorkspaceInstallationService({
+    installations: repositories.workspaceInstallations,
+    workspaces: repositories.workspaces,
+  });
 
   // Projects domain services (lifecycle + resource assignment).
   const projectsService = new ProjectDomainService({
@@ -366,6 +389,7 @@ export function buildContainer(options: BuildContainerOptions): Container {
   const workspaceService = new WorkspaceApplicationService({
     workspacesService,
     membershipsService: workspaceMembershipsService,
+    installationsService: workspaceInstallationService,
     publisher,
   });
   const projectService = new ProjectApplicationService({
@@ -414,6 +438,11 @@ export function buildContainer(options: BuildContainerOptions): Container {
     createWorkspace: new CreateWorkspaceHandler(workspaceService),
     listWorkspaces: new ListWorkspacesHandler(workspaceService),
     listMyWorkspaces: new ListMyWorkspacesHandler(workspaceService),
+    installApp: new InstallAppHandler(workspaceService),
+    updateApp: new UpdateAppHandler(workspaceService),
+    uninstallApp: new UninstallAppHandler(workspaceService),
+    listMarketplaceApps: new ListMarketplaceAppsHandler(workspaceService),
+    listInstalledApps: new ListInstalledAppsHandler(workspaceService),
     createProject: new CreateProjectHandler(projectService),
     listProjects: new ListProjectsHandler(projectService),
     findProjectByName: new FindProjectByNameHandler(projectService),

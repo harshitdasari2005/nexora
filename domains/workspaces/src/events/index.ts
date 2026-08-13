@@ -29,6 +29,7 @@ export const WORKSPACE_EVENT_TYPES = {
   memberAdded: 'workspace.member_added',
   memberRemoved: 'workspace.member_removed',
   pluginInstalled: 'workspace.plugin_installed',
+  pluginUpdated: 'workspace.plugin_updated',
   pluginRemoved: 'workspace.plugin_removed',
   agentBound: 'workspace.agent_bound',
   agentUnbound: 'workspace.agent_unbound',
@@ -124,6 +125,22 @@ export interface PluginRemovedPayload {
   installationId: string;
   /** The removed plugin id. */
   pluginId: string;
+}
+
+/** Payload of the {@link pluginUpdatedEvent}. */
+export interface PluginUpdatedPayload {
+  /** The workspace the plugin was updated in. */
+  workspaceId: WorkspaceId;
+  /** The installation record. */
+  installationId: string;
+  /** The updated plugin id. */
+  pluginId: string;
+  /** The previous plugin version. */
+  previousVersion: string;
+  /** The new plugin version. */
+  pluginVersion: string;
+  /** ISO-8601 UTC time of the update. */
+  updatedAt: string;
 }
 
 /** Payload of the {@link agentBoundEvent}. */
@@ -337,6 +354,14 @@ export function pluginRemovedEvent(
   payload: PluginRemovedPayload,
 ): EventEnvelope<PluginRemovedPayload> {
   return workspaceEvent(WORKSPACE_EVENT_TYPES.pluginRemoved, context, payload.workspaceId, payload);
+}
+
+/** A plugin was updated to a new version (workspace.plugin_updated). */
+export function pluginUpdatedEvent(
+  context: WorkspaceEventContext,
+  payload: PluginUpdatedPayload,
+): EventEnvelope<PluginUpdatedPayload> {
+  return workspaceEvent(WORKSPACE_EVENT_TYPES.pluginUpdated, context, payload.workspaceId, payload);
 }
 
 /** An agent was bound to a workspace (workspace.agent_bound). */

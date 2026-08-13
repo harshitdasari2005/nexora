@@ -5,11 +5,16 @@
 import { describe, expect, it } from 'vitest';
 import type { TenantId, UserId } from '@nexora/contracts/common';
 
-import { WorkspaceDomainService, WorkspaceMembershipService } from '@nexora/domain-workspaces';
+import {
+  WorkspaceDomainService,
+  WorkspaceInstallationService,
+  WorkspaceMembershipService,
+} from '@nexora/domain-workspaces';
 
 import { WorkspaceApplicationService } from '../src/services/workspace-application-service.js';
 import { ListWorkspacesHandler } from '../src/query-handlers/list-workspaces.handler.js';
 import {
+  InMemoryWorkspaceInstallationRepository,
   InMemoryWorkspaceMembershipRepository,
   InMemoryWorkspaceRepository,
   RecordingEventPublisher,
@@ -25,9 +30,14 @@ async function makeSeededEnvironment() {
 
   const workspacesService = new WorkspaceDomainService({ workspaces });
   const membershipsService = new WorkspaceMembershipService({ memberships, workspaces });
+  const installationsService = new WorkspaceInstallationService({
+    installations: new InMemoryWorkspaceInstallationRepository(),
+    workspaces,
+  });
   const service = new WorkspaceApplicationService({
     workspacesService,
     membershipsService,
+    installationsService,
     publisher,
   });
 

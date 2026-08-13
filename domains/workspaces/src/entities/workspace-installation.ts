@@ -14,7 +14,7 @@ import { prefixedId } from '@nexora/shared/ids';
 import { nowIso } from '@nexora/shared/time';
 
 import type { WorkspaceEventContext } from '../events/index.js';
-import { pluginInstalledEvent } from '../events/index.js';
+import { pluginInstalledEvent, pluginUpdatedEvent } from '../events/index.js';
 import type { WorkspaceId } from '../value-objects/workspace-id.js';
 
 /** Input for installing a plugin in a workspace. */
@@ -57,7 +57,9 @@ export class WorkspaceInstallation {
   #id: string;
   readonly #workspaceId: WorkspaceId;
   readonly #pluginId: string;
-  readonly #pluginVersion: string;
+  // Not `readonly`: reassigned by `updatePlugin` (version upgrades keep the
+  // installation identity; the version column is the upgrade audit trail).
+  #pluginVersion: string;
   readonly #installedAt: string;
   #version: number;
   readonly #events: EventEnvelope[] = [];
@@ -114,6 +116,33 @@ export class WorkspaceInstallation {
   /** The installed plugin version. */
   get pluginVersion(): string {
     return this.#pluginVersion;
+  }
+
+  /**
+   * Upgrades the installed plugin to a new version (FR-17: semantic
+   * versions; the old version is retained on the event for the audit
+   * trail). The installation identity, workspace, and install time are
+   * immutable — only the version moves forward. Emits a
+   * {@link pluginUpdatedEvent}.
+   *
+   * @param pluginVersion - the new plugin version (semver).
+   * @param context       - event context.
+   * @param now           - ISO-8601 UTC time of the update (defaults to now).
+   */
+  updatePlugin(pluginVersion: string, context: WorkspaceEventContext, now = nowIso()): void {
+    const previousVersion = this.#pluginVersion;
+    this.#pluginVersion = pluginVersion;
+    this.#version += 1;
+    this.#events.push(
+      pluginUpdatedEvent(context, {
+        workspaceId: this.#workspaceId,
+        installationId: this.#id,
+        pluginId: this.#pluginId,
+        previousVersion,
+        pluginVersion,
+        updatedAt: now,
+      }),
+    );
   }
 
   /** ISO-8601 UTC install time. */

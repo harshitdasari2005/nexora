@@ -863,7 +863,7 @@ export class FakeWorkspaceMembershipRepository implements WorkspaceMembershipRep
   }
 }
 
-/** An in-memory {@link WorkspaceInstallationRepository} (unused in v1). */
+/** An in-memory {@link WorkspaceInstallationRepository} (S19 marketplace). */
 export class FakeWorkspaceInstallationRepository implements WorkspaceInstallationRepository {
   readonly installations = new Map<string, WorkspaceInstallation>();
 
@@ -872,14 +872,21 @@ export class FakeWorkspaceInstallationRepository implements WorkspaceInstallatio
   }
 
   async findByWorkspaceAndPlugin(
-    _workspaceId: WorkspaceId,
-    _pluginId: string,
+    workspaceId: WorkspaceId,
+    pluginId: string,
   ): Promise<WorkspaceInstallation | undefined> {
+    for (const installation of this.installations.values()) {
+      if (installation.workspaceId === workspaceId && installation.pluginId === pluginId) {
+        return installation;
+      }
+    }
     return undefined;
   }
 
-  async listByWorkspace(_workspaceId: WorkspaceId): Promise<readonly WorkspaceInstallation[]> {
-    return [];
+  async listByWorkspace(workspaceId: WorkspaceId): Promise<readonly WorkspaceInstallation[]> {
+    return [...this.installations.values()].filter(
+      (installation) => installation.workspaceId === workspaceId,
+    );
   }
 
   async save(installation: WorkspaceInstallation): Promise<void> {

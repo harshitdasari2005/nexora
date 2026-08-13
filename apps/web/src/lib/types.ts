@@ -145,6 +145,52 @@ export interface KnowledgeCategoryDto {
   createdAt: string;
 }
 
+/** A marketplace app listing as seen by the client (S19). */
+export interface MarketplaceAppDto {
+  /** The catalog app id, e.g. `com.nexora.hr`. */
+  id: string;
+  /** The display name. */
+  name: string;
+  /** The catalog (latest) version. */
+  version: string;
+  /** The marketplace summary. */
+  summary: string;
+  /** The marketplace description. */
+  description: string;
+  /** The publisher name. */
+  publisher: string;
+  /** The category tags. */
+  categories: readonly string[];
+  /** The scopes the app requires to function (the permission review). */
+  requiredPermissions: readonly string[];
+  /** The scopes the app is granted while active. */
+  grantedPermissions: readonly string[];
+  /** Whether the requesting workspace has this app installed. */
+  installed: boolean;
+  /** The installed version, when installed. */
+  installedVersion?: string;
+  /** The navigation label registered by the app (shell sidebar). */
+  navigationLabel?: string;
+}
+
+/** A workspace-installed app as seen by the client (S19). */
+export interface InstalledAppDto {
+  /** The installation record id. */
+  installationId: string;
+  /** The app id, e.g. `com.nexora.hr`. */
+  appId: string;
+  /** The app display name (from the catalog). */
+  name: string;
+  /** The installed version. */
+  version: string;
+  /** The catalog's current version (whether an update is available). */
+  latestVersion: string;
+  /** Whether a newer catalog version exists. */
+  updateAvailable: boolean;
+  /** ISO-8601 UTC install time. */
+  installedAt: string;
+}
+
 /** A project as seen by the client. */
 export interface ProjectDto {
   id: string;

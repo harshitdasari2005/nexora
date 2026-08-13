@@ -9,8 +9,10 @@ import type { TenantId, UserId } from '@nexora/contracts/common';
 import type {
   WorkspaceRepository,
   WorkspaceMembershipRepository,
+  WorkspaceInstallationRepository,
   Workspace,
   WorkspaceMembership,
+  WorkspaceInstallation,
 } from '@nexora/domain-workspaces';
 import type { WorkspaceId, WorkspaceSlug } from '@nexora/domain-workspaces';
 
@@ -93,6 +95,39 @@ export class InMemoryWorkspaceMembershipRepository implements WorkspaceMembershi
 
   async remove(membership: WorkspaceMembership): Promise<void> {
     this.memberships.delete(membership.id);
+  }
+}
+
+/** An in-memory {@link WorkspaceInstallationRepository}. */
+export class InMemoryWorkspaceInstallationRepository implements WorkspaceInstallationRepository {
+  readonly installations = new Map<string, WorkspaceInstallation>();
+
+  async findById(id: string): Promise<WorkspaceInstallation | undefined> {
+    return this.installations.get(id);
+  }
+
+  async findByWorkspaceAndPlugin(
+    workspaceId: WorkspaceId,
+    pluginId: string,
+  ): Promise<WorkspaceInstallation | undefined> {
+    return [...this.installations.values()].find(
+      (installation) =>
+        installation.workspaceId === workspaceId && installation.pluginId === pluginId,
+    );
+  }
+
+  async listByWorkspace(workspaceId: WorkspaceId): Promise<readonly WorkspaceInstallation[]> {
+    return [...this.installations.values()].filter(
+      (installation) => installation.workspaceId === workspaceId,
+    );
+  }
+
+  async save(installation: WorkspaceInstallation): Promise<void> {
+    this.installations.set(installation.id, installation);
+  }
+
+  async remove(installation: WorkspaceInstallation): Promise<void> {
+    this.installations.delete(installation.id);
   }
 }
 

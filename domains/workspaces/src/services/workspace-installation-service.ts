@@ -18,6 +18,7 @@ import type { WorkspaceArchivedError, WorkspaceNotActiveError } from '../errors/
 import {
   PluginAlreadyInstalledError,
   PluginNotFoundError,
+  PluginVersionUnchangedError,
   toWorkspaceError,
   WorkspaceNotFoundError,
 } from '../errors/index.js';
@@ -145,6 +146,55 @@ export class WorkspaceInstallationService {
       return err(
         toWorkspaceError(error) as
           WorkspaceNotFoundError | WorkspaceArchivedError | PluginNotFoundError,
+      );
+    }
+  }
+
+  /**
+   * Updates a plugin to a new version in a workspace: the installation must
+   * exist, the workspace must not be archived, and the version must actually
+   * change (an update to the same version is rejected — the version bump is
+   * the audit trail). Emits `workspace.plugin_updated` (FR-17).
+   */
+  async updatePlugin(
+    workspaceId: WorkspaceId,
+    pluginId: string,
+    pluginVersion: string,
+    context: WorkspaceEventContext,
+  ): Promise<
+    Result<
+      InstallationCommandResult,
+      | WorkspaceNotFoundError
+      | WorkspaceArchivedError
+      | PluginNotFoundError
+      | PluginVersionUnchangedError
+    >
+  > {
+    try {
+      const workspace = await this.#requireWorkspace(workspaceId);
+      this.#policy.assertCanInstall(workspace.status);
+
+      const installation = await this.#installations.findByWorkspaceAndPlugin(
+        workspaceId,
+        pluginId,
+      );
+      if (installation === undefined) {
+        return err(new PluginNotFoundError({ workspaceId, pluginId }));
+      }
+      if (installation.pluginVersion === pluginVersion) {
+        return err(new PluginVersionUnchangedError({ workspaceId, pluginId, pluginVersion }));
+      }
+
+      installation.updatePlugin(pluginVersion, context);
+      await this.#installations.save(installation);
+      return ok({ installation, events: installation.pullDomainEvents() });
+    } catch (error) {
+      return err(
+        toWorkspaceError(error) as
+          | WorkspaceNotFoundError
+          | WorkspaceArchivedError
+          | PluginNotFoundError
+          | PluginVersionUnchangedError,
       );
     }
   }

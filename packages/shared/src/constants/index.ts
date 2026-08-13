@@ -26,6 +26,7 @@ export const DEFAULT_LOG_LEVEL: LogLevel = 'info';
  */
 export const ERROR_CODES = [
   'VALIDATION_ERROR',
+  'PERMISSION_REVIEW_REQUIRED',
   'AUTHORIZATION_ERROR',
   'NOT_FOUND',
   'CONFLICT',

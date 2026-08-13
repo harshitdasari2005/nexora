@@ -77,6 +77,7 @@ import { registerCalendarRoutes } from './routes/calendar.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
+import { registerMarketplaceRoutes } from './routes/marketplace.js';
 import { registerOrganizationRoutes } from './routes/organizations.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
@@ -182,6 +183,15 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listCategories: container.listCategories,
     indexArticle: container.indexArticle,
     removeArticleIndex: container.removeArticleIndex,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+  });
+  registerMarketplaceRoutes(app, {
+    installApp: container.installApp,
+    updateApp: container.updateApp,
+    uninstallApp: container.uninstallApp,
+    listMarketplaceApps: container.listMarketplaceApps,
+    listInstalledApps: container.listInstalledApps,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
   });

@@ -7,7 +7,8 @@
  * rules of its own — every invariant is enforced by the domain.
  */
 
-import type { TenantId, UserId } from '@nexora/contracts/common';
+import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
+import type { WorkspaceNotFoundError } from '@nexora/domain-workspaces';
 import type { EventPublisher } from '@nexora/shared/events';
 import { toNexoraError, type NexoraError } from '@nexora/shared/errors';
 import { err, ok, type Result } from '@nexora/shared/result';
@@ -16,15 +17,26 @@ import type {
   WorkspaceDomainService,
   WorkspaceMembershipService,
   WorkspaceEventContext,
-  WorkspaceId,
+  WorkspaceInstallationService,
+} from '@nexora/domain-workspaces';
+import {
+  MarketplaceAppNotFoundError,
+  PermissionReviewRequiredError,
 } from '@nexora/domain-workspaces';
 
 import type {
   CreateWorkspaceCommand,
   CreateWorkspaceResult,
 } from '../commands/create-workspace.command.js';
+import type { InstallAppCommand, InstallAppResult } from '../commands/install-app.command.js';
+import type { UpdateAppCommand, UpdateAppResult } from '../commands/update-app.command.js';
+import type { UninstallAppCommand, UninstallAppResult } from '../commands/uninstall-app.command.js';
 import { toWorkspaceDto, type WorkspaceDto } from '../dto/workspace.dto.js';
+import { toMarketplaceAppDto, type MarketplaceAppDto } from '../dto/marketplace-app.dto.js';
+import { toInstalledAppDto, type InstalledAppDto } from '../dto/installed-app.dto.js';
+import { AppCatalog } from '../marketplace/app-catalog.js';
 import { validateCreateWorkspace } from '../validators/create-workspace.validator.js';
+import { validateInstallApp } from '../validators/install-app.validator.js';
 
 /** Dependencies of the {@link WorkspaceApplicationService}. */
 export interface WorkspaceApplicationServiceDependencies {
@@ -32,6 +44,10 @@ export interface WorkspaceApplicationServiceDependencies {
   workspacesService: WorkspaceDomainService;
   /** The workspace membership domain service. */
   membershipsService: WorkspaceMembershipService;
+  /** The workspace installation (plugin lifecycle) domain service. */
+  installationsService: WorkspaceInstallationService;
+  /** The marketplace catalog (defaults to the first-party apps). */
+  catalog?: AppCatalog;
   /** Publishes domain events to the platform event stream. */
   publisher: EventPublisher;
 }
@@ -43,11 +59,15 @@ export interface WorkspaceApplicationServiceDependencies {
 export class WorkspaceApplicationService {
   readonly #workspacesService: WorkspaceDomainService;
   readonly #membershipsService: WorkspaceMembershipService;
+  readonly #installationsService: WorkspaceInstallationService;
+  readonly #catalog: AppCatalog;
   readonly #publisher: EventPublisher;
 
   constructor(dependencies: WorkspaceApplicationServiceDependencies) {
     this.#workspacesService = dependencies.workspacesService;
     this.#membershipsService = dependencies.membershipsService;
+    this.#installationsService = dependencies.installationsService;
+    this.#catalog = dependencies.catalog ?? new AppCatalog();
     this.#publisher = dependencies.publisher;
   }
 
@@ -119,6 +139,176 @@ export class WorkspaceApplicationService {
       return err(listed.error);
     }
     return ok(listed.value.map((workspace) => toWorkspaceDto(workspace)));
+  }
+
+  /**
+   * Installs a catalog app into a workspace (S19 marketplace). The install
+   * is gated by the permission review: the caller must confirm the app's
+   * declared scopes, and the app must exist in the catalog. Events are
+   * published once after the domain records the installation.
+   */
+  async installApp(command: InstallAppCommand): Promise<Result<InstallAppResult, NexoraError>> {
+    try {
+      validateInstallApp(command);
+      const manifest = this.#catalog.resolve(command.appId);
+      if (manifest === undefined) {
+        return err(new MarketplaceAppNotFoundError({ appId: command.appId }));
+      }
+
+      // Permission review (PRD §20.2): the client must explicitly confirm
+      // the app's declared scopes — never install with implicit consent.
+      if (command.permissionsConfirmed !== true) {
+        return err(
+          new PermissionReviewRequiredError({
+            appId: command.appId,
+            scopes: manifest.permissions.required,
+          }),
+        );
+      }
+
+      const context = workspaceContext(
+        command.actorId,
+        command.correlationId,
+        command.organizationId,
+      );
+      const installed = await this.#installationsService.installPlugin(
+        command.workspaceId,
+        command.appId,
+        manifest.version,
+        context,
+      );
+      if (!installed.ok) {
+        return err(installed.error);
+      }
+
+      await this.#publisher.publish(installed.value.events);
+      return ok({
+        installation: installed.value.installation,
+        events: installed.value.events,
+      });
+    } catch (error) {
+      return err(toNexoraError(error, 'Unexpected app install error'));
+    }
+  }
+
+  /**
+   * Updates an installed app to the catalog's current version (S19
+   * marketplace update, FR-17). The domain rejects a same-version update;
+   * the emitted `workspace.plugin_updated` event is the audit trail.
+   */
+  async updateApp(command: UpdateAppCommand): Promise<Result<UpdateAppResult, NexoraError>> {
+    try {
+      const manifest = this.#catalog.resolve(command.appId);
+      if (manifest === undefined) {
+        return err(new MarketplaceAppNotFoundError({ appId: command.appId }));
+      }
+
+      const context = workspaceContext(
+        command.actorId,
+        command.correlationId,
+        command.organizationId,
+      );
+      const updated = await this.#installationsService.updatePlugin(
+        command.workspaceId,
+        command.appId,
+        manifest.version,
+        context,
+      );
+      if (!updated.ok) {
+        return err(updated.error);
+      }
+
+      // The previous version is read from the domain event (the trusted
+      // audit record) — the aggregate reports only the new version.
+      const updatedEvent = updated.value.events.find(
+        (event) => event.type === 'workspace.plugin_updated',
+      );
+      const updatedPayload = updatedEvent?.payload as { previousVersion?: unknown } | undefined;
+      const previousVersion =
+        typeof updatedPayload?.previousVersion === 'string'
+          ? updatedPayload.previousVersion
+          : manifest.version;
+
+      await this.#publisher.publish(updated.value.events);
+      return ok({
+        installation: updated.value.installation,
+        previousVersion,
+        updatedVersion: updated.value.installation.pluginVersion,
+        events: updated.value.events,
+      });
+    } catch (error) {
+      return err(toNexoraError(error, 'Unexpected app update error'));
+    }
+  }
+
+  /**
+   * Uninstalls an app from a workspace (S19 marketplace uninstall, FR-14).
+   * The domain performs the hard delete and emits `workspace.plugin_removed`
+   * for the audit trail.
+   */
+  async uninstallApp(
+    command: UninstallAppCommand,
+  ): Promise<Result<UninstallAppResult, NexoraError>> {
+    try {
+      const context = workspaceContext(
+        command.actorId,
+        command.correlationId,
+        command.organizationId,
+      );
+      const removed = await this.#installationsService.removePlugin(
+        command.workspaceId,
+        command.appId,
+        context,
+      );
+      if (!removed.ok) {
+        return err(removed.error);
+      }
+
+      await this.#publisher.publish(removed.value.events);
+      return ok({
+        installation: removed.value.installation,
+        events: removed.value.events,
+      });
+    } catch (error) {
+      return err(toNexoraError(error, 'Unexpected app uninstall error'));
+    }
+  }
+
+  /**
+   * Lists the marketplace catalog with each app's installed state in the
+   * requesting workspace (S19 marketplace browse).
+   */
+  async listMarketplaceApps(
+    workspaceId: WorkspaceId,
+  ): Promise<Result<readonly MarketplaceAppDto[], WorkspaceNotFoundError>> {
+    const installed = await this.#installationsService.listByWorkspace(workspaceId);
+    if (!installed.ok) {
+      return err(installed.error);
+    }
+    const versions = new Map(
+      installed.value.map((installation) => [installation.pluginId, installation.pluginVersion]),
+    );
+    return ok(
+      this.#catalog
+        .list()
+        .map((manifest) => toMarketplaceAppDto(manifest, versions.get(manifest.id))),
+    );
+  }
+
+  /**
+   * Lists the apps installed in a workspace with update availability (S19
+   * "My Apps" read).
+   */
+  async listInstalledApps(
+    workspaceId: WorkspaceId,
+  ): Promise<Result<readonly InstalledAppDto[], WorkspaceNotFoundError>> {
+    const installed = await this.#installationsService.listByWorkspace(workspaceId);
+    if (!installed.ok) {
+      return err(installed.error);
+    }
+    return ok(
+      installed.value.map((installation) => toInstalledAppDto(installation, this.#catalog)),
+    );
   }
 
   /**

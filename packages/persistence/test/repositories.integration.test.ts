@@ -321,13 +321,31 @@ describeDb('repository integration (Postgres)', () => {
     expect(await wsMemberships.findByWorkspaceAndUser(wsId, 'usr_member' as UserId)).toBeDefined();
 
     const installation = WorkspaceInstallation.create(
-      { workspaceId: wsId, pluginId: 'plugin-hr', pluginVersion: '1.0.0' },
+      { workspaceId: wsId, pluginId: 'com.nexora.hr', pluginVersion: '1.0.0' },
       wsContext(),
     );
     await wsInstallations.save(installation);
     expect((await wsInstallations.listByWorkspace(wsId)).map((i) => i.pluginId)).toEqual([
-      'plugin-hr',
+      'com.nexora.hr',
     ]);
+    // The unique (workspace, plugin) lookup resolves the same aggregate.
+    const found = await wsInstallations.findByWorkspaceAndPlugin(wsId, 'com.nexora.hr');
+    expect(found?.id).toBe(installation.id);
+    expect(
+      await wsInstallations.findByWorkspaceAndPlugin(wsId, 'com.nexora.documents'),
+    ).toBeUndefined();
+
+    // S19 update: the version bump persists and the aggregate reloads with it.
+    installation.updatePlugin('1.1.0', wsContext());
+    installation.pullDomainEvents();
+    await wsInstallations.save(installation);
+    const reloaded = await wsInstallations.findByWorkspaceAndPlugin(wsId, 'com.nexora.hr');
+    expect(reloaded?.pluginVersion).toBe('1.1.0');
+
+    // Removal is a hard delete (S19 uninstall).
+    await wsInstallations.remove(installation);
+    expect(await wsInstallations.findByWorkspaceAndPlugin(wsId, 'com.nexora.hr')).toBeUndefined();
+    expect(await wsInstallations.listByWorkspace(wsId)).toHaveLength(0);
   });
 
   it('round-trips a Project with lifecycle transitions', async () => {

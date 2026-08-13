@@ -9,6 +9,7 @@ import type { TenantId } from '@nexora/contracts/common';
 import {
   PluginAlreadyInstalledError,
   PluginNotFoundError,
+  PluginVersionUnchangedError,
   WorkspaceArchivedError,
   WorkspaceNotFoundError,
   WorkspaceNotActiveError,
@@ -153,6 +154,70 @@ describe('WorkspaceInstallationService.removePlugin', () => {
     await service.installPlugin(id, 'plugin-hr', '1.0.0', context);
     await workspaceService.archive(id, 'done', context);
     const result = await service.removePlugin(id, 'plugin-hr', context);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(WorkspaceArchivedError);
+  });
+});
+
+describe('WorkspaceInstallationService.updatePlugin', () => {
+  it('upgrades the plugin version, keeps the installation identity, and emits PluginUpdated', async () => {
+    const { service, workspaceService } = await createService();
+    const id = await createActiveWorkspace(workspaceService);
+    await service.installPlugin(id, 'plugin-hr', '1.0.0', context);
+
+    const result = await service.updatePlugin(id, 'plugin-hr', '2.0.0', context);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.installation.pluginVersion).toBe('2.0.0');
+    expect(result.value.events.map((event) => event.type)).toEqual([
+      WORKSPACE_EVENT_TYPES.pluginUpdated,
+    ]);
+    const updated = result.value.events[0];
+    if (updated === undefined) return;
+    const payload = updated.payload as { previousVersion?: string; pluginVersion?: string };
+    expect(payload.previousVersion).toBe('1.0.0');
+    expect(payload.pluginVersion).toBe('2.0.0');
+  });
+
+  it('persists the new version (the upgrade is durable)', async () => {
+    const { service, workspaceService, installations } = await createService();
+    const id = await createActiveWorkspace(workspaceService);
+    await service.installPlugin(id, 'plugin-hr', '1.0.0', context);
+    await service.updatePlugin(id, 'plugin-hr', '2.0.0', context);
+
+    const installed = await installations.findByWorkspaceAndPlugin(id, 'plugin-hr');
+    expect(installed?.pluginVersion).toBe('2.0.0');
+    // The installation identity is retained across the upgrade.
+    expect(installed?.installedAt).toBeDefined();
+  });
+
+  it('fails when the plugin is not installed', async () => {
+    const { service, workspaceService } = await createService();
+    const id = await createActiveWorkspace(workspaceService);
+    const result = await service.updatePlugin(id, 'plugin-missing', '2.0.0', context);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(PluginNotFoundError);
+  });
+
+  it('rejects a same-version update (the version bump is the audit trail)', async () => {
+    const { service, workspaceService } = await createService();
+    const id = await createActiveWorkspace(workspaceService);
+    await service.installPlugin(id, 'plugin-hr', '1.0.0', context);
+
+    const result = await service.updatePlugin(id, 'plugin-hr', '1.0.0', context);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBeInstanceOf(PluginVersionUnchangedError);
+  });
+
+  it('fails when the workspace is archived', async () => {
+    const { service, workspaceService } = await createService();
+    const id = await createActiveWorkspace(workspaceService);
+    await service.installPlugin(id, 'plugin-hr', '1.0.0', context);
+    await workspaceService.archive(id, 'done', context);
+    const result = await service.updatePlugin(id, 'plugin-hr', '2.0.0', context);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toBeInstanceOf(WorkspaceArchivedError);

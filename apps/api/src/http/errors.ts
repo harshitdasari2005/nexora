@@ -25,6 +25,7 @@ export interface ApiErrorBody {
 /** HTTP status by canonical error code. */
 const STATUS_BY_CODE: Readonly<Record<string, number>> = {
   VALIDATION_ERROR: 400,
+  PERMISSION_REVIEW_REQUIRED: 400,
   AUTHORIZATION_ERROR: 403,
   NOT_FOUND: 404,
   CONFLICT: 409,

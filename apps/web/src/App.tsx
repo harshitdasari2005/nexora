@@ -14,6 +14,7 @@ import { WorkspaceWizard } from './pages/onboarding/WorkspaceWizard.js';
 import { Dashboard } from './pages/Dashboard.js';
 import { Documents } from './pages/Documents.js';
 import { Knowledge } from './pages/Knowledge.js';
+import { Apps } from './pages/Apps.js';
 import { Employees } from './pages/Employees.js';
 import { Projects } from './pages/Projects.js';
 import { Workflows } from './pages/Workflows.js';
@@ -80,6 +81,14 @@ export function App(): JSX.Element {
             element={
               <RequireAuth>
                 <Knowledge />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app/apps"
+            element={
+              <RequireAuth>
+                <Apps />
               </RequireAuth>
             }
           />

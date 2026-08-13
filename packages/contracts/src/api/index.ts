@@ -20,6 +20,7 @@ import type { CorrelationId } from '../common/index.js';
  */
 export type ApiErrorCode =
   | 'VALIDATION_ERROR'
+  | 'PERMISSION_REVIEW_REQUIRED'
   | 'AUTHORIZATION_ERROR'
   | 'NOT_FOUND'
   | 'CONFLICT'

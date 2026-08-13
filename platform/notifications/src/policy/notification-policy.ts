@@ -310,6 +310,45 @@ export class NotificationPolicy {
             },
           ],
         };
+      case 'workspace.plugin_installed':
+      case 'workspace.plugin_updated':
+      case 'workspace.plugin_removed': {
+        // S19 marketplace audit trail: every install/update/uninstall is
+        // recorded in the workspace activity feed (BKD §10.2 lifecycle,
+        // FR-14/17 audit). The plugin id comes from the trusted event
+        // payload — never from model or client output.
+        const appId = readString(event.payload, 'pluginId') ?? 'App';
+        const verb =
+          event.type === 'workspace.plugin_installed'
+            ? 'installed'
+            : event.type === 'workspace.plugin_updated'
+              ? 'updated'
+              : 'uninstalled';
+        return {
+          notifications: actorId
+            ? [
+                {
+                  recipientId: actorId,
+                  workspaceId,
+                  type: event.type,
+                  category: 'system',
+                  title: `App ${verb}`,
+                  body: `App "${appId}" was ${verb} in this workspace.`,
+                  priority: 'low',
+                },
+              ]
+            : [],
+          activity: [
+            {
+              workspaceId,
+              type: event.type,
+              title: `App ${verb}`,
+              body: `App "${appId}" was ${verb} in this workspace.`,
+              actorId,
+            },
+          ],
+        };
+      }
       case 'calendar.event.created':
       case 'calendar.event.updated':
       case 'calendar.event.cancelled': {
