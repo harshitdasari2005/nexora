@@ -15,9 +15,12 @@ import type { TenantId, WorkspaceId } from '@nexora/contracts/common';
 import { IntegrationApplicationService } from '../src/application/integration-application-service.js';
 import { WebhookDispatcher, type WebhookHttpClient } from '../src/dispatch/webhook-dispatcher.js';
 import type { EmailRecord } from '../src/domain/email-record.js';
-import type { WebhookDelivery } from '../src/domain/webhook-delivery.js';
+import { WebhookDelivery } from '../src/domain/webhook-delivery.js';
 import type { WebhookEndpoint } from '../src/domain/webhook-endpoint.js';
-import type { EmailOutboxRepository } from '../src/repositories/integration-repository.js';
+import type {
+  EmailOutboxRepository,
+  InboundMessageRepository,
+} from '../src/repositories/integration-repository.js';
 
 const TENANT = 'org_tenant_a' as TenantId;
 const WORKSPACE = 'ws_a' as WorkspaceId;
@@ -153,11 +156,33 @@ class FakeEmailSender {
   }
 }
 
+/** An in-memory exactly-once claim ledger (S21 finding IN-01). */
+class FakeInboundMessageLedger implements InboundMessageRepository {
+  readonly claimed = new Set<string>();
+
+  async claim(input: {
+    tenantId: TenantId;
+    workspaceId: WorkspaceId;
+    messageId: string;
+    action: string;
+    targetId: string;
+    handledAt: string;
+  }): Promise<boolean> {
+    const key = `${input.tenantId}:${input.messageId}`;
+    if (this.claimed.has(key)) {
+      return false;
+    }
+    this.claimed.add(key);
+    return true;
+  }
+}
+
 function makeService(): {
   endpoints: FakeEndpointRepository;
   deliveries: FakeDeliveryRepository;
   emailOutbox: FakeEmailOutbox;
   emailSender: FakeEmailSender;
+  inboundMessages: FakeInboundMessageLedger;
   publisher: FakePublisher;
   service: IntegrationApplicationService;
 } {
@@ -165,12 +190,14 @@ function makeService(): {
   const deliveries = new FakeDeliveryRepository();
   const emailOutbox = new FakeEmailOutbox();
   const emailSender = new FakeEmailSender();
+  const inboundMessages = new FakeInboundMessageLedger();
   const publisher = new FakePublisher();
   const service = new IntegrationApplicationService({
     endpoints,
     deliveries,
     emailOutbox,
     emailSender,
+    inboundMessages,
     isSenderAllowed: async ({ from }) => from === 'sarah@nexora.dev',
     routeInboundAction: async ({ action, targetId, decision }) => {
       if (action !== 'approval.decide') {
@@ -183,7 +210,7 @@ function makeService(): {
     },
     publisher,
   });
-  return { endpoints, deliveries, emailOutbox, emailSender, publisher, service };
+  return { endpoints, deliveries, emailOutbox, emailSender, inboundMessages, publisher, service };
 }
 
 describe('IntegrationApplicationService — webhook registry', () => {
@@ -312,6 +339,55 @@ describe('IntegrationApplicationService — webhook registry', () => {
       true,
     );
   });
+
+  it('scopes delivery-receipt reads to the endpoint OWNER workspace (S21 IN-03)', async () => {
+    const { service, deliveries } = makeService();
+    // Endpoint in THIS workspace, with a persisted receipt.
+    const created = await service.createWebhookEndpoint({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      url: 'https://example.com/hooks',
+      eventTypes: ['project.created'],
+      actorId: ACTOR,
+      correlationId: 'corr_scope',
+    });
+    if (!created.ok) {
+      return;
+    }
+    const endpointId = created.value.endpoint.id;
+    const delivery = WebhookDelivery.create({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      endpointId,
+      eventId: 'evt_1',
+      eventType: 'project.created',
+      status: 'delivered',
+      attempt: 1,
+      statusCode: 200,
+    });
+    await deliveries.save(delivery);
+
+    // Owner workspace sees the receipt.
+    const owned = await service.listWebhookDeliveries(TENANT, endpointId, {
+      workspaceId: WORKSPACE,
+      limit: 10,
+    });
+    expect(owned.ok).toBe(true);
+    if (owned.ok) {
+      expect(owned.value).toHaveLength(1);
+    }
+
+    // A DIFFERENT workspace (same tenant) resolves the endpoint to NOT
+    // FOUND — the receipts of the other workspace are never readable.
+    const foreign = await service.listWebhookDeliveries(TENANT, endpointId, {
+      workspaceId: 'ws_other' as WorkspaceId,
+      limit: 10,
+    });
+    expect(foreign.ok).toBe(false);
+    if (!foreign.ok) {
+      expect(foreign.error.code).toBe('NOT_FOUND');
+    }
+  });
 });
 
 describe('IntegrationApplicationService — email outbox', () => {
@@ -414,6 +490,75 @@ describe('IntegrationApplicationService — inbound email actions', () => {
     if (!result.ok) {
       expect(result.error.code).toBe('NOT_FOUND');
     }
+  });
+
+  it('rejects a REPLAYED message id without re-executing the action (S21 IN-01)', async () => {
+    const { service, publisher } = makeService();
+    const first = await service.routeInboundEmail({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      messageId: 'msg_replay',
+      from: 'sarah@nexora.dev',
+      action: 'approval.decide',
+      targetId: 'apr_1',
+      decision: 'grant',
+      actorId: ACTOR,
+      correlationId: 'corr_replay',
+    });
+    expect(first.ok).toBe(true);
+
+    // The same signed message re-delivered: the claim fails BEFORE the
+    // action routes — no second audit event, no double execution.
+    const replay = await service.routeInboundEmail({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      messageId: 'msg_replay',
+      from: 'sarah@nexora.dev',
+      action: 'approval.decide',
+      targetId: 'apr_1',
+      decision: 'grant',
+      actorId: ACTOR,
+      correlationId: 'corr_replay2',
+    });
+    expect(replay.ok).toBe(false);
+    if (!replay.ok) {
+      expect(replay.error.code).toBe('CONFLICT');
+      expect(replay.error.message).toContain('already handled');
+    }
+    expect(
+      publisher.events.filter((event) => event.type === 'integration.email.inbound'),
+    ).toHaveLength(1);
+  });
+
+  it('does not consume the message claim when the sender is NOT allowlisted (S21 IN-01)', async () => {
+    const { service, inboundMessages } = makeService();
+    const denied = await service.routeInboundEmail({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      messageId: 'msg_denied',
+      from: 'attacker@example.com',
+      action: 'approval.decide',
+      targetId: 'apr_1',
+      decision: 'grant',
+      actorId: 'attacker@example.com',
+      correlationId: 'corr_denied',
+    });
+    expect(denied.ok).toBe(false);
+    // The claim is never made for a denied sender, so the allowlisted
+    // recipient can still deliver the same message id legitimately.
+    expect(inboundMessages.claimed.has(`${TENANT}:msg_denied`)).toBe(false);
+    const retried = await service.routeInboundEmail({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      messageId: 'msg_denied',
+      from: 'sarah@nexora.dev',
+      action: 'approval.decide',
+      targetId: 'apr_1',
+      decision: 'grant',
+      actorId: ACTOR,
+      correlationId: 'corr_denied2',
+    });
+    expect(retried.ok).toBe(true);
   });
 });
 

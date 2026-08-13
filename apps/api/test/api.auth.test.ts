@@ -16,6 +16,7 @@ import {
   FakeDocumentTemplateRepository,
   FakeDocumentVersionRepository,
   FakeEmailOutboxRepository,
+  FakeInboundMessageRepository,
   FakeEmployeeRepository,
   FakeKnowledgeArticleRepository,
   FakeKnowledgeCategoryRepository,
@@ -65,6 +66,7 @@ async function makeApp(): Promise<TestApp> {
   const config = loadConfig({
     DATABASE_URL: 'postgres://test:test@localhost:5432/test',
     LOG_LEVEL: 'error',
+    INTEGRATIONS_INBOUND_SECRET: 'test-inbound-secret',
     WEB_ORIGIN: 'http://localhost:5173',
   } as NodeJS.ProcessEnv);
   const repositories: RepositorySet = {
@@ -89,6 +91,7 @@ async function makeApp(): Promise<TestApp> {
     webhookEndpoints: new FakeWebhookEndpointRepository(),
     webhookDeliveries: new FakeWebhookDeliveryRepository(),
     emailOutbox: new FakeEmailOutboxRepository(),
+    inboundMessages: new FakeInboundMessageRepository(),
     searchIndex: new InMemorySearchIndex(),
     documentStorage: new InMemoryDocumentStorage(),
     documentExtractor: new DefaultDocumentTextExtractor(),

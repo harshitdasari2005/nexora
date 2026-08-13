@@ -15,7 +15,7 @@
  * (shared secret) + the workspace-scoped sender allowlist — NOT a session.
  */
 
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import type { FastifyInstance } from 'fastify';
 import type { TenantId, WorkspaceId } from '@nexora/contracts/common';
@@ -337,10 +337,14 @@ export async function registerIntegrationsRoutes(
     const deliveries = await dependencies.integrations.listWebhookDeliveries(
       scope.organizationId as TenantId,
       params.endpointId,
-      { limit: 50 },
+      { workspaceId: scope.workspaceId as WorkspaceId, limit: 50 },
     );
+    if (!deliveries.ok) {
+      const http = toHttpError(deliveries.error, request.id);
+      return reply.code(http.statusCode).send(http.body);
+    }
     return {
-      deliveries: deliveries.map((delivery) => ({
+      deliveries: deliveries.value.map((delivery) => ({
         id: delivery.id,
         endpointId: delivery.endpointId,
         eventId: delivery.eventId,
@@ -504,9 +508,13 @@ export async function registerIntegrationsRoutes(
   });
 }
 
-/** Verifies an HMAC-SHA256 signature over the raw body (constant time). */
+/**
+ * Verifies an HMAC-SHA256 signature over the raw body (constant time).
+ * The HMAC construction (S21 finding IN-02) replaced the previous plain
+ * `sha256(secret:body)` concatenation hash.
+ */
 export function verifySignature(secret: string, body: string, signature: string): boolean {
-  const expected = createHash('sha256').update(`${secret}:${body}`).digest();
+  const expected = createHmac('sha256', secret).update(body).digest();
   const actual = Buffer.from(signature, 'hex');
   if (expected.length !== actual.length) {
     return false;
@@ -516,5 +524,5 @@ export function verifySignature(secret: string, body: string, signature: string)
 
 /** Signs a raw body with the inbound shared secret (test/dev helper). */
 export function signInboundBody(secret: string, body: string): string {
-  return createHash('sha256').update(`${secret}:${body}`).digest('hex');
+  return createHmac('sha256', secret).update(body).digest('hex');
 }

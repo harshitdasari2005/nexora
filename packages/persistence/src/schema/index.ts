@@ -705,6 +705,32 @@ export const emailOutbox = pgTable(
 );
 
 /**
+ * inbound_messages — the S21 replay guard for the signed inbound email
+ * endpoint. An APPEND-ONLY claim ledger: one row per accepted external
+ * message id. The unique (tenant, message_id) index is the atomic
+ * exactly-once guard — the first delivery of a message id wins the claim;
+ * any replayed delivery of the same message id fails the insert and is
+ * rejected without re-executing the routed action (S21 red-team finding
+ * IN-01: the documented "dedupe by message id" contract was not enforced).
+ */
+export const inboundMessages = pgTable(
+  'inbound_messages',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    messageId: varchar('message_id', { length: 254 }).notNull(),
+    action: varchar('action', { length: 64 }).notNull(),
+    targetId: varchar('target_id', { length: 128 }).notNull(),
+    handledAt: timestamp('handled_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('inbound_messages_tenant_idx').on(table.tenantId, table.handledAt),
+    uniqueIndex('inbound_messages_message_unique').on(table.tenantId, table.messageId),
+  ],
+);
+
+/**
  * calendar_events — the {@link @nexora/module-calendar!CalendarEntry}
  * aggregate. One row per calendar entry; the organization id is the tenant
  * scope and the workspace id is the workspace scope — every read is scoped

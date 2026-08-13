@@ -50,6 +50,28 @@ export interface WebhookDeliveryRepository {
   save(delivery: WebhookDelivery): Promise<void>;
 }
 
+/**
+ * The exactly-once claim ledger of the signed inbound email endpoint (S21
+ * red-team finding IN-01). One row per accepted external message id; the
+ * unique (tenant, message_id) constraint makes the claim atomic — the
+ * first delivery of a message id wins, every replayed delivery fails the
+ * insert and is rejected without re-executing the routed action.
+ */
+export interface InboundMessageRepository {
+  /**
+   * Atomically claims a message id for a tenant. Returns `true` only for
+   * the FIRST delivery; `false` when the id was already handled (replay).
+   */
+  claim(input: {
+    tenantId: TenantId;
+    workspaceId: WorkspaceId;
+    messageId: string;
+    action: string;
+    targetId: string;
+    handledAt: string;
+  }): Promise<boolean>;
+}
+
 /** Persistence for the email outbox ({@link EmailRecord}). */
 export interface EmailOutboxRepository {
   /** Loads an outbox record by id scoped to a tenant. */

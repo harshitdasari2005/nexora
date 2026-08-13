@@ -78,6 +78,7 @@ import type {
 } from '@nexora/module-notifications';
 import type {
   EmailOutboxRepository,
+  InboundMessageRepository,
   WebhookDeliveryRepository,
   WebhookEndpointRepository,
 } from '@nexora/module-integrations';
@@ -864,6 +865,27 @@ export class FakeWebhookDeliveryRepository implements WebhookDeliveryRepository 
 
   async save(delivery: WebhookDelivery): Promise<void> {
     this.deliveries.set(delivery.id, delivery);
+  }
+}
+
+/** An in-memory {@link InboundMessageRepository} (exactly-once claims). */
+export class FakeInboundMessageRepository implements InboundMessageRepository {
+  readonly claimed = new Set<string>();
+
+  async claim(input: {
+    tenantId: TenantId;
+    workspaceId: string;
+    messageId: string;
+    action: string;
+    targetId: string;
+    handledAt: string;
+  }): Promise<boolean> {
+    const key = `${input.tenantId}:${input.messageId}`;
+    if (this.claimed.has(key)) {
+      return false;
+    }
+    this.claimed.add(key);
+    return true;
   }
 }
 

@@ -28,6 +28,7 @@ import {
   FakeDocumentTemplateRepository,
   FakeDocumentVersionRepository,
   FakeEmailOutboxRepository,
+  FakeInboundMessageRepository,
   FakeEmployeeRepository,
   FakeKnowledgeArticleRepository,
   FakeKnowledgeCategoryRepository,
@@ -85,6 +86,7 @@ async function clientWithFailingIndex(): Promise<ChatClient> {
   const config = loadConfig({
     DATABASE_URL: 'postgres://test:test@localhost:5432/test',
     LOG_LEVEL: 'error',
+    INTEGRATIONS_INBOUND_SECRET: 'test-inbound-secret',
   } as NodeJS.ProcessEnv);
   const repositories: RepositorySet = {
     users: new FakeUserRepository(),
@@ -108,6 +110,7 @@ async function clientWithFailingIndex(): Promise<ChatClient> {
     webhookEndpoints: new FakeWebhookEndpointRepository(),
     webhookDeliveries: new FakeWebhookDeliveryRepository(),
     emailOutbox: new FakeEmailOutboxRepository(),
+    inboundMessages: new FakeInboundMessageRepository(),
     searchIndex: new FailingSearchIndex(),
     documentStorage: new InMemoryDocumentStorage(),
     documentExtractor: new DefaultDocumentTextExtractor(),

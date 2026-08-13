@@ -8,7 +8,7 @@
  * publishes the canonical events (BKD §9.3: the audit trail is events).
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 
 import type { Result } from '@nexora/shared/result';
 import { err, ok } from '@nexora/shared/result';
@@ -25,8 +25,11 @@ import {
   inboundEmailActionEvent,
   webhookDeletedEvent,
 } from '../events/index.js';
+import { nowIso } from '@nexora/shared/time';
+
 import type { EmailSender } from '../email/email-sender.js';
 import {
+  DuplicateInboundMessageError,
   InboundSenderNotAllowedError,
   InvalidWebhookUrlError,
   UnsubscribableEventError,
@@ -34,6 +37,7 @@ import {
 } from '../errors/index.js';
 import type {
   EmailOutboxRepository,
+  InboundMessageRepository,
   WebhookDeliveryRepository,
   WebhookEndpointRepository,
 } from '../repositories/integration-repository.js';
@@ -77,6 +81,12 @@ export interface IntegrationApplicationServiceDependencies {
     from: string;
   }) => Promise<boolean>;
   /**
+   * The exactly-once claim ledger of the signed inbound endpoint: the
+   * first delivery of an external message id wins; a replay is rejected
+   * before any action executes (S21 finding IN-01).
+   */
+  inboundMessages: InboundMessageRepository;
+  /**
    * Routes an inbound email action to the governing execution path (e.g.
    * the ApprovalEngine). Returns `false` when the target cannot be
    * resolved. Implemented at the composition root so the integration
@@ -108,6 +118,7 @@ export class IntegrationApplicationService {
   readonly #emailOutbox: EmailOutboxRepository;
   readonly #emailSender: EmailSender;
   readonly #isSenderAllowed: IntegrationApplicationServiceDependencies['isSenderAllowed'];
+  readonly #inboundMessages: InboundMessageRepository;
   readonly #routeInboundAction: IntegrationApplicationServiceDependencies['routeInboundAction'];
   readonly #publisher: EventPublisher;
 
@@ -117,6 +128,7 @@ export class IntegrationApplicationService {
     this.#emailOutbox = dependencies.emailOutbox;
     this.#emailSender = dependencies.emailSender;
     this.#isSenderAllowed = dependencies.isSenderAllowed;
+    this.#inboundMessages = dependencies.inboundMessages;
     this.#routeInboundAction = dependencies.routeInboundAction;
     this.#publisher = dependencies.publisher;
   }
@@ -275,13 +287,22 @@ export class IntegrationApplicationService {
     return ok(endpoint);
   }
 
-  /** Lists the delivery receipts of an endpoint (tenant-scoped). */
+  /**
+   * Lists the delivery receipts of an endpoint. The endpoint must belong
+   * to the caller's workspace — a foreign or cross-workspace endpoint id
+   * resolves to NOT FOUND, never to another workspace's receipts (S21
+   * finding IN-03: the receipts read was previously tenant-scoped only).
+   */
   async listWebhookDeliveries(
     tenantId: TenantId,
     endpointId: string,
-    options?: { limit?: number },
-  ): Promise<readonly WebhookDelivery[]> {
-    return this.#deliveries.listByEndpoint(tenantId, endpointId, options);
+    options: { workspaceId: WorkspaceId; limit?: number },
+  ): Promise<Result<readonly WebhookDelivery[], NexoraError>> {
+    const endpoint = await this.#endpoints.findByIdAndTenant(endpointId, tenantId);
+    if (endpoint === undefined || endpoint.workspaceId !== options.workspaceId) {
+      return err(new WebhookEndpointNotFoundError({ endpointId }));
+    }
+    return ok(await this.#deliveries.listByEndpoint(tenantId, endpointId, options));
   }
 
   /** Lists the email outbox of a tenant (newest first). */
@@ -372,6 +393,21 @@ export class IntegrationApplicationService {
     if (!allowed) {
       return err(new InboundSenderNotAllowedError({ from: input.from }));
     }
+    // Exactly-once claim (S21 finding IN-01): the external message id is
+    // claimed atomically BEFORE the action routes. A replayed delivery of
+    // the same message id fails the claim and is rejected — the action
+    // never executes twice and no duplicate audit event is emitted.
+    const claimed = await this.#inboundMessages.claim({
+      tenantId: input.tenantId,
+      workspaceId: input.workspaceId,
+      messageId: input.messageId,
+      action: input.action,
+      targetId: input.targetId,
+      handledAt: nowIso(),
+    });
+    if (!claimed) {
+      return err(new DuplicateInboundMessageError({ messageId: input.messageId }));
+    }
     const routed = await this.#routeInboundAction({
       action: input.action,
       targetId: input.targetId,
@@ -415,9 +451,13 @@ export class IntegrationApplicationService {
     return [...WEBHOOK_SUBSCRIBABLE_EVENTS];
   }
 
-  /** Builds the canonical signature header value for a payload. */
+  /**
+   * Builds the canonical signature header value for a payload
+   * (HMAC-SHA256 — S21 finding IN-02: the previous plain concatenation
+   * hash was replaced with the standard keyed construction).
+   */
   static sign(secret: string, body: string): string {
-    return createHash('sha256').update(`${secret}:${body}`).digest('hex');
+    return createHmac('sha256', secret).update(body).digest('hex');
   }
 
   /** Whether a signature matches (constant-time-ish comparison). */

@@ -148,7 +148,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       model: env['AI_MODEL']?.trim() || 'llama-3.3-70b-versatile',
     },
     integrations: {
-      inboundSecret: required(env, 'INTEGRATIONS_INBOUND_SECRET', 'nexora-inbound-dev-secret'),
+      // REQUIRED (S21 finding IN-04): no hardcoded default — a deployment
+      // that omits the var fails fast instead of signing inbound actions
+      // with a publicly-known secret.
+      inboundSecret: required(env, 'INTEGRATIONS_INBOUND_SECRET'),
     },
     s3: loadS3Config(env),
     logLevel,

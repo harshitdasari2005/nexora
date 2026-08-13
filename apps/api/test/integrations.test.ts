@@ -414,6 +414,54 @@ describe('S20 integrations — signed inbound email actions (API)', () => {
     await client.app.close();
   });
 
+  it('rejects a REPLAYED message id with 409 before the action can re-run (S21 IN-01)', async () => {
+    const client = await chatClient();
+    const scope = await onboardOrgAndWorkspace(client);
+    const userId = currentUserId(client);
+    await seedOrganizationMembership(client.repos, {
+      organizationId: scope.organizationId,
+      userId,
+      role: 'owner',
+    });
+    await seedWorkspaceMembership(client.repos, {
+      workspaceId: scope.workspaceId,
+      userId,
+      role: 'owner',
+      organizationId: scope.organizationId,
+    });
+
+    const messageId = 'msg_replay_api';
+    const { payload, headers } = signedPayload({
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      messageId,
+      from: 'alex@nexora.dev',
+      action: 'approval.decide',
+      targetId: 'apr_forged',
+      decision: 'grant',
+    });
+    const first = await client.app.inject({
+      method: 'POST',
+      url: '/api/integrations/email/inbound',
+      headers: { ...headers, 'content-type': 'application/json' },
+      payload,
+    });
+    expect(first.statusCode).toBe(404); // forged target — but the claim is consumed
+
+    // The SAME signed message re-delivered is a replay: 409, never 404/200,
+    // so the routed action cannot execute twice.
+    const replay = await client.app.inject({
+      method: 'POST',
+      url: '/api/integrations/email/inbound',
+      headers: { ...headers, 'content-type': 'application/json' },
+      payload,
+    });
+    expect(replay.statusCode).toBe(409);
+    expect(replay.json()).toMatchObject({ error: { code: 'CONFLICT' } });
+
+    await client.app.close();
+  });
+
   it('denies a missing or invalid signature with 401 (never reaches routing)', async () => {
     const client = await chatClient();
     const scope = await onboardOrgAndWorkspace(client);

@@ -1,3 +1,5 @@
+import { randomUUID as cryptoRandomUUID } from 'node:crypto';
+
 /**
  * @nexora/persistence — integrations repositories.
  *
@@ -19,12 +21,18 @@ import {
   WebhookDelivery,
   WebhookEndpoint,
   type EmailOutboxRepository,
+  type InboundMessageRepository,
   type WebhookDeliveryRepository,
   type WebhookEndpointRepository,
 } from '@nexora/module-integrations';
 
 import type { NexoraDatabase } from '../db.js';
-import { emailOutbox, webhookDeliveries, webhookEndpoints } from '../schema/index.js';
+import {
+  emailOutbox,
+  inboundMessages,
+  webhookDeliveries,
+  webhookEndpoints,
+} from '../schema/index.js';
 
 /** Converts a persisted timestamp (Date or string) to an ISO string. */
 function toIso(value: Date | string): string {
@@ -347,8 +355,47 @@ export class PgEmailOutboxRepository implements EmailOutboxRepository {
   }
 }
 
+/**
+ * The PostgreSQL {@link InboundMessageRepository} — the exactly-once claim
+ * ledger of the signed inbound email endpoint (S21 finding IN-01). The
+ * unique (tenant, message_id) index makes the claim atomic: `onConflictDoNothing`
+ * returns the row count — 1 only for the first delivery, 0 for a replay.
+ */
+export class PgInboundMessageRepository implements InboundMessageRepository {
+  readonly #db: NexoraDatabase;
+
+  constructor(db: NexoraDatabase) {
+    this.#db = db;
+  }
+
+  async claim(input: {
+    tenantId: TenantId;
+    workspaceId: WorkspaceId;
+    messageId: string;
+    action: string;
+    targetId: string;
+    handledAt: string;
+  }): Promise<boolean> {
+    const rows = await this.#db
+      .insert(inboundMessages)
+      .values({
+        id: `inm_${cryptoRandomUUID()}`,
+        tenantId: input.tenantId,
+        workspaceId: input.workspaceId,
+        messageId: input.messageId,
+        action: input.action,
+        targetId: input.targetId,
+        handledAt: new Date(input.handledAt),
+      })
+      .onConflictDoNothing({ target: [inboundMessages.tenantId, inboundMessages.messageId] })
+      .returning({ id: inboundMessages.id });
+    return rows.length === 1;
+  }
+}
+
 /** Drop-all helper used by tests that truncate the integration tables. */
 export async function clearIntegrationTables(db: NexoraDatabase): Promise<void> {
+  await db.delete(inboundMessages);
   await db.delete(emailOutbox);
   await db.delete(webhookDeliveries);
   await db.delete(webhookEndpoints);

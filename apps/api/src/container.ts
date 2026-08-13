@@ -25,6 +25,7 @@ import type {
 import type { CalendarEntryRepository } from '@nexora/module-calendar';
 import type {
   EmailOutboxRepository,
+  InboundMessageRepository,
   WebhookDeliveryRepository,
   WebhookEndpointRepository,
 } from '@nexora/module-integrations';
@@ -171,6 +172,7 @@ export interface RepositorySet {
   webhookEndpoints: WebhookEndpointRepository;
   webhookDeliveries: WebhookDeliveryRepository;
   emailOutbox: EmailOutboxRepository;
+  inboundMessages: InboundMessageRepository;
   searchIndex: SearchIndexPort;
   documentStorage: DocumentStorage;
   documentExtractor: DocumentTextExtractor;

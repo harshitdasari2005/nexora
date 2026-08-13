@@ -17,6 +17,7 @@ import {
   FakeDocumentTemplateRepository,
   FakeDocumentVersionRepository,
   FakeEmailOutboxRepository,
+  FakeInboundMessageRepository,
   FakeEmployeeRepository,
   FakeKnowledgeArticleRepository,
   FakeKnowledgeCategoryRepository,
@@ -73,6 +74,7 @@ async function onboard(): Promise<OnboardingClient> {
   const config = loadConfig({
     DATABASE_URL: 'postgres://test:test@localhost:5432/test',
     LOG_LEVEL: 'error',
+    INTEGRATIONS_INBOUND_SECRET: 'test-inbound-secret',
   } as NodeJS.ProcessEnv);
   const repositories: RepositorySet = {
     users: new FakeUserRepository(),
@@ -96,6 +98,7 @@ async function onboard(): Promise<OnboardingClient> {
     webhookEndpoints: new FakeWebhookEndpointRepository(),
     webhookDeliveries: new FakeWebhookDeliveryRepository(),
     emailOutbox: new FakeEmailOutboxRepository(),
+    inboundMessages: new FakeInboundMessageRepository(),
     searchIndex: new InMemorySearchIndex(),
     documentStorage: new InMemoryDocumentStorage(),
     documentExtractor: new DefaultDocumentTextExtractor(),
@@ -231,6 +234,7 @@ describe('Nexora onboarding slice (E2E via inject)', () => {
     const config = loadConfig({
       DATABASE_URL: 'postgres://test:test@localhost:5432/test',
       LOG_LEVEL: 'error',
+      INTEGRATIONS_INBOUND_SECRET: 'test-inbound-secret',
     } as NodeJS.ProcessEnv);
     const repositories: RepositorySet = {
       users: new FakeUserRepository(),
@@ -254,6 +258,7 @@ describe('Nexora onboarding slice (E2E via inject)', () => {
       webhookEndpoints: new FakeWebhookEndpointRepository(),
       webhookDeliveries: new FakeWebhookDeliveryRepository(),
       emailOutbox: new FakeEmailOutboxRepository(),
+      inboundMessages: new FakeInboundMessageRepository(),
       searchIndex: new InMemorySearchIndex(),
       documentStorage: new InMemoryDocumentStorage(),
       documentExtractor: new DefaultDocumentTextExtractor(),

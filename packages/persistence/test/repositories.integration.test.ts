@@ -61,6 +61,7 @@ import {
   PgDocumentVersionRepository,
   PgEmailOutboxRepository,
   PgEmployeeRepository,
+  PgInboundMessageRepository,
   PgMembershipRepository,
   PgNotificationPreferencesRepository,
   PgNotificationRepository,
@@ -1284,6 +1285,31 @@ describeDb('repository integration (Postgres)', () => {
 
       // Tenant scoping: a foreign tenant never resolves the record.
       expect(await repo.findByIdAndTenant(record.id, 'org_other' as TenantId)).toBeUndefined();
+    });
+
+    it('claims an inbound message id EXACTLY ONCE per tenant (S21 IN-01 replay guard)', async () => {
+      const repo = new PgInboundMessageRepository(db);
+      const input = {
+        tenantId: TENANT,
+        workspaceId: 'ws_int_1' as never,
+        messageId: 'msg_int_replay_1',
+        action: 'approval.decide',
+        targetId: 'apr_1',
+        handledAt: new Date().toISOString(),
+      };
+
+      // First delivery wins the claim.
+      expect(await repo.claim(input)).toBe(true);
+      // Replay of the same message id loses the claim (unique index).
+      expect(await repo.claim(input)).toBe(false);
+
+      // A DIFFERENT message id in the same tenant is claimable.
+      expect(await repo.claim({ ...input, messageId: 'msg_int_replay_2' })).toBe(true);
+
+      // The SAME message id under a different tenant is claimable (tenant
+      // scoping of the replay guard — one tenant's replay cannot block
+      // another tenant's legitimate delivery).
+      expect(await repo.claim({ ...input, tenantId: 'org_other' as TenantId })).toBe(true);
     });
   });
 });

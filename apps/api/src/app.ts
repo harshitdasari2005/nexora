@@ -21,6 +21,7 @@ import {
   PgDocumentTemplateRepository,
   PgDocumentVersionRepository,
   PgEmailOutboxRepository,
+  PgInboundMessageRepository,
   PgEmployeeRepository,
   PgKnowledgeArticleRepository,
   PgKnowledgeCategoryRepository,
@@ -300,6 +301,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     endpoints: repositories.webhookEndpoints,
     deliveries: repositories.webhookDeliveries,
     emailOutbox: repositories.emailOutbox,
+    inboundMessages: repositories.inboundMessages,
     emailSender: new DevEmailSink((record) => {
       app.log.info(
         { emailId: record.id, to: record.recipientEmail, subject: record.subject },
@@ -450,6 +452,7 @@ function buildPgRepositories(
     webhookEndpoints: new PgWebhookEndpointRepository(database),
     webhookDeliveries: new PgWebhookDeliveryRepository(database),
     emailOutbox: new PgEmailOutboxRepository(database),
+    inboundMessages: new PgInboundMessageRepository(database),
     searchIndex: new PgKnowledgeIndexStore(database),
     // Durable content when S3/MinIO is configured; in-memory storage for
     // local dev without object storage (the port contract is identical).

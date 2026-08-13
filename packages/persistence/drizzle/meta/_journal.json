@@ -85,6 +85,13 @@
       "when": 1786622315652,
       "tag": "0011_clear_payback",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786624686787,
+      "tag": "0012_inbound_messages_claims",
+      "breakpoints": true
     }
   ]
 }

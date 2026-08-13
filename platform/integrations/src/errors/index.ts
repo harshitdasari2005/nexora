@@ -59,6 +59,17 @@ export class InboundSenderNotAllowedError extends AuthorizationError {
   }
 }
 
+/**
+ * The inbound email message id was already handled (replay). The claim
+ * ledger rejects it before the routed action can execute again (S21
+ * finding IN-01 — exactly-once inbound processing).
+ */
+export class DuplicateInboundMessageError extends ConflictError {
+  constructor(input: { messageId: string }) {
+    super(`Inbound email message "${input.messageId}" was already handled`);
+  }
+}
+
 /** The inbound email action references an unknown target. */
 export class InboundActionTargetNotFoundError extends NotFoundError {
   constructor(input: { action: string; targetId: string }) {

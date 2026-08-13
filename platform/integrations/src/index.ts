@@ -32,6 +32,7 @@ export {
 } from './domain/webhook-endpoint.js';
 export { DevEmailSink, EmailSendError, type EmailSender } from './email/email-sender.js';
 export {
+  DuplicateInboundMessageError,
   InboundActionTargetNotFoundError,
   InboundSenderNotAllowedError,
   InboundSignatureInvalidError,
@@ -66,6 +67,7 @@ export {
 } from './events/index.js';
 export type {
   EmailOutboxRepository,
+  InboundMessageRepository,
   WebhookDeliveryRepository,
   WebhookEndpointRepository,
 } from './repositories/integration-repository.js';
