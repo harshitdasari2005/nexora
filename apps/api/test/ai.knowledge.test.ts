@@ -353,6 +353,76 @@ describe('AI knowledge slice (grounded answer + permission-filtered retrieval)',
     await client.app.close();
   });
 
+  it('BW-8: a question is answered from the combined document + article corpus', async () => {
+    const client = await knowledgeClient();
+    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);
+    const userId = currentUserId(client);
+
+    // A document in the corpus.
+    await seedDocumentAndKnowledge(client.repos, {
+      id: 'doc_77777777-7777-4777-8777-777777777777',
+      organizationId,
+      workspaceId,
+      uploaderId: userId,
+      title: 'Leave Allowance Policy',
+      text: 'Annual leave is 25 days for all employees.',
+    });
+
+    // A published knowledge base article in the SAME corpus (S18).
+    const article = await client.post('/api/knowledge/articles', {
+      organizationId,
+      workspaceId,
+      title: 'Leave Policy FAQ',
+      body: 'Employees may bank up to 5 unused leave days per year.',
+    });
+    expect(article.statusCode).toBe(201);
+    const articleId = (article.json() as { article: { id: string } }).article.id;
+    const published = await client.post(`/api/knowledge/articles/${articleId}/publish`, {
+      organizationId,
+      workspaceId,
+    });
+    expect(published.statusCode).toBe(200);
+
+    const { done } = await chat(client, {
+      message: 'How many unused leave days can employees bank?',
+      workspaceId,
+    });
+
+    expect(done.status).toBe('completed');
+    expect(done.steps[0]).toMatchObject({
+      capabilityId: 'knowledge.search',
+      toolId: 'knowledge.search',
+      status: 'succeeded',
+    });
+    // The article (not the unrelated document) grounds the answer.
+    expect(done.response).toContain('bank');
+    expect(done.response).toContain('5');
+    await client.app.close();
+  });
+
+  it('a draft article never answers the AI (publication is the freshness gate)', async () => {
+    const client = await knowledgeClient();
+    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);
+
+    // An article left in draft (S18: drafts are never indexed).
+    const article = await client.post('/api/knowledge/articles', {
+      organizationId,
+      workspaceId,
+      title: 'Unpublished Secret',
+      body: 'The unpublished launch date is February 29.',
+    });
+    expect(article.statusCode).toBe(201);
+
+    const { done } = await chat(client, {
+      message: 'When is the unpublished launch date?',
+      workspaceId,
+    });
+    expect(done.status).toBe('completed');
+    expect(done.response).not.toMatch(/February 29/);
+    expect(done.response).not.toContain('Unpublished Secret');
+    await client.app.close();
+  });
+
   it('model-supplied scope is ignored — retrieval stays in the trusted workspace', async () => {
     const client = await knowledgeClient();
     const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);

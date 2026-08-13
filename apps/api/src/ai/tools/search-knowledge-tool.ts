@@ -42,7 +42,7 @@ export const SEARCH_KNOWLEDGE_MANIFEST: ToolManifest = {
   id: 'knowledge.search',
   name: 'Search workspace knowledge',
   description:
-    'Searches the documents available to the current user in the current workspace and returns grounded references with citations',
+    'Searches the documents and published knowledge base articles available to the current user in the current workspace and returns grounded references with citations',
   sideEffectClass: 'read_only',
   idempotent: true,
   timeoutMs: 15_000,

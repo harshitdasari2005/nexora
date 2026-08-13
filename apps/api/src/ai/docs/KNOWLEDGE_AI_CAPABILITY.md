@@ -1,10 +1,14 @@
 # Knowledge AI Capability — SearchKnowledgeTool & permission-filtered retrieval
 
 The **Documents + Knowledge vertical slice** capability surface: upload a
-document (REST) → process → index → answer questions about it through the
-`knowledge.search` capability, with citations to the authorized sources.
-This document is the capability-specific contract; the general security
-model is in `platform/ai-runtime/docs/APPROVAL.md` and
+document (REST) → process → index, and author + publish knowledge base
+articles (REST) → index on publish, then answer questions about BOTH
+through the `knowledge.search` capability, with citations to the
+authorized sources. The search corpus is a single permission-filtered
+index whose entries are `kind = document` or `kind = article`; only
+PUBLISHED articles are indexed (drafts never answer; archived articles are
+removed). This document is the capability-specific contract; the general
+security model is in `platform/ai-runtime/docs/APPROVAL.md` and
 `platform/ai-runtime/docs/SECURITY.md`.
 
 ## Domain ownership (single source of truth)
@@ -15,13 +19,18 @@ model is in `platform/ai-runtime/docs/APPROVAL.md` and
 | Document binary content (bytes)          | Storage port (`DocumentStorage` — never PostgreSQL)    |
 | Text extraction (processing seam)        | Extractor port (`DocumentTextExtractor` — replaceable) |
 | Knowledge sources + citations            | `domains/knowledge` (Knowledge)                        |
+| Knowledge base articles + categories     | `domains/knowledge` (Knowledge, S18)                   |
 | Indexing + permission-filtered retrieval | `platform/search` (SearchIndexPort, BR-7)              |
 
 Documents owns **metadata + lifecycle**; Knowledge owns **the searchable
-projection of a document version**; Search is the **generic permission-
-filtered projection** the Knowledge application uses. There is exactly one
-search implementation (the SearchIndexPort) and one authorization model
-(trusted tenant + workspace membership).
+projection of a document version** AND **the knowledge base articles
+(S18)** — an article is authoritative for its own content, and its corpus
+entry is a projection of the PUBLISHED article only; Search is the
+**generic permission-filtered projection** the Knowledge application
+uses. There is exactly one search implementation (the SearchIndexPort),
+one version counter per article (a monotonic `contentVersion` — NOT a
+second document-version system), and one authorization model (trusted
+tenant + workspace membership).
 
 ## Search workspace knowledge (read)
 
@@ -71,11 +80,15 @@ narrow, deterministic fallback:
 ## Citation behavior
 
 The retrieval result is a list of `KnowledgeReferenceDto` citations
-(source id, document id, title, workspace, bounded snippet). Citations only
-ever reference sources the caller's trusted tenant + workspace can access —
-the permission filter runs before any content reaches the model. When the
-authorized documents do not establish an answer, the narration says so
-rather than fabricating a citation.
+(source id, document id, title, workspace, bounded snippet) extended with
+`kind` (document | article) and `version` (the document revision or the
+article content version) — AIR §9.3: source + version + passage. The
+citation metadata comes from the trusted search entry, never from model
+output, so the model can never manufacture a source, kind, version, or
+scope. Citations only ever reference sources the caller's trusted tenant +
+workspace can access — the permission filter runs before any content
+reaches the model. When the authorized sources do not establish an
+answer, the narration says so rather than fabricating a citation.
 
 ## Document → Knowledge flow
 

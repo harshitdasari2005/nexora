@@ -103,6 +103,48 @@ export interface DocumentTemplateDto {
   createdAt: string;
 }
 
+/** A knowledge base article as seen by the client (S18 Knowledge Base). */
+export interface KnowledgeArticleDto {
+  /** The article id. */
+  id: string;
+  /** The owning organization (tenant) id. */
+  tenantId: string;
+  /** The owning workspace id. */
+  workspaceId: string;
+  /** The article title. */
+  title: string;
+  /** The article body. */
+  body: string;
+  /** The optional owning category id. */
+  categoryId?: string;
+  /** The lifecycle status (`draft` | `published` | `archived`). */
+  status: string;
+  /** The monotonic content version (cited by retrieval). */
+  contentVersion: number;
+  /** The authoring user id. */
+  author: string;
+  /** ISO-8601 UTC creation time. */
+  createdAt: string;
+  /** ISO-8601 UTC last mutation time. */
+  updatedAt: string;
+}
+
+/** A knowledge base category as seen by the client (S18). */
+export interface KnowledgeCategoryDto {
+  /** The category id. */
+  id: string;
+  /** The owning organization (tenant) id. */
+  tenantId: string;
+  /** The owning workspace id. */
+  workspaceId: string;
+  /** The category name. */
+  name: string;
+  /** Whether the category is archived (terminal). */
+  archived: boolean;
+  /** ISO-8601 UTC creation time. */
+  createdAt: string;
+}
+
 /** A project as seen by the client. */
 export interface ProjectDto {
   id: string;

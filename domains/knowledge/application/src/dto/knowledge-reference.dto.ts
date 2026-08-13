@@ -10,10 +10,14 @@
 
 /** A retrieval citation to an authorized source. */
 export interface KnowledgeReferenceDto {
-  /** The indexed source id. */
+  /** The indexed source id (the document or article id). */
   sourceId: string;
-  /** The source document id (for deep links). */
+  /** The scope id (the document id or article id — for deep links). */
   documentId: string;
+  /** The corpus member kind (`document` | `article`). */
+  kind: string;
+  /** The cited content version (document revision or article contentVersion). */
+  version: number;
   /** The display title (the citation label). */
   title: string;
   /** The owning workspace id. */

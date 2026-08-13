@@ -42,7 +42,16 @@ import type {
   DocumentVersionRepository,
 } from '@nexora/domain-documents';
 import type { DocumentId } from '@nexora/domain-documents';
-import type { KnowledgeSource, KnowledgeSourceRepository } from '@nexora/domain-knowledge';
+import type {
+  KnowledgeArticle,
+  KnowledgeArticleRepository,
+  KnowledgeCategory,
+  KnowledgeCategoryRepository,
+  KnowledgeSource,
+  KnowledgeSourceRepository,
+} from '@nexora/domain-knowledge';
+import type { KnowledgeArticleId } from '@nexora/domain-knowledge';
+import type { KnowledgeCategoryId } from '@nexora/domain-knowledge';
 import type { KnowledgeSourceId } from '@nexora/domain-knowledge';
 import type {
   Workspace,
@@ -448,6 +457,59 @@ export class FakeKnowledgeSourceRepository implements KnowledgeSourceRepository 
         this.sources.delete(id);
       }
     }
+  }
+}
+
+/** An in-memory {@link KnowledgeArticleRepository}. */
+export class FakeKnowledgeArticleRepository implements KnowledgeArticleRepository {
+  readonly articles = new Map<string, KnowledgeArticle>();
+
+  async findById(id: KnowledgeArticleId): Promise<KnowledgeArticle | undefined> {
+    return this.articles.get(id);
+  }
+
+  async listByWorkspace(
+    tenantId: TenantId,
+    workspaceId: string,
+  ): Promise<readonly KnowledgeArticle[]> {
+    return [...this.articles.values()]
+      .filter((article) => article.tenantId === tenantId && article.workspaceId === workspaceId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async save(article: KnowledgeArticle): Promise<void> {
+    this.articles.set(article.id, article);
+  }
+}
+
+/** An in-memory {@link KnowledgeCategoryRepository}. */
+export class FakeKnowledgeCategoryRepository implements KnowledgeCategoryRepository {
+  readonly categories = new Map<string, KnowledgeCategory>();
+
+  async findById(id: KnowledgeCategoryId): Promise<KnowledgeCategory | undefined> {
+    return this.categories.get(id);
+  }
+
+  async listByWorkspace(
+    tenantId: TenantId,
+    workspaceId: string,
+  ): Promise<readonly KnowledgeCategory[]> {
+    return [...this.categories.values()]
+      .filter((category) => category.tenantId === tenantId && category.workspaceId === workspaceId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async existsByName(tenantId: TenantId, workspaceId: string, name: string): Promise<boolean> {
+    return [...this.categories.values()].some(
+      (category) =>
+        category.tenantId === tenantId &&
+        category.workspaceId === workspaceId &&
+        category.name === name,
+    );
+  }
+
+  async save(category: KnowledgeCategory): Promise<void> {
+    this.categories.set(category.id, category);
   }
 }
 

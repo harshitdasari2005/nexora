@@ -40,6 +40,31 @@ export class KnowledgeSourceNotFoundError extends KnowledgeDomainError {
   }
 }
 
+/** The knowledge article does not exist (or is not visible to the caller). */
+export class KnowledgeArticleNotFoundError extends KnowledgeDomainError {
+  constructor(details?: unknown) {
+    super('Knowledge article not found', 'NOT_FOUND', details);
+  }
+}
+
+/** The knowledge category does not exist (or is not visible to the caller). */
+export class KnowledgeCategoryNotFoundError extends KnowledgeDomainError {
+  constructor(details?: unknown) {
+    super('Knowledge category not found', 'NOT_FOUND', details);
+  }
+}
+
+/** A category with the same name already exists in the workspace (name is unique per scope). */
+export class KnowledgeCategoryNameAlreadyExistsError extends KnowledgeDomainError {
+  constructor(details?: unknown) {
+    super(
+      'A knowledge category with this name already exists in the workspace',
+      'CONFLICT',
+      details,
+    );
+  }
+}
+
 /**
  * Maps any thrown value onto the Knowledge domain error vocabulary.
  */

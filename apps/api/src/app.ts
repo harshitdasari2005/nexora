@@ -21,6 +21,8 @@ import {
   PgDocumentTemplateRepository,
   PgDocumentVersionRepository,
   PgEmployeeRepository,
+  PgKnowledgeArticleRepository,
+  PgKnowledgeCategoryRepository,
   PgKnowledgeIndexStore,
   PgKnowledgeSourceRepository,
   PgMembershipRepository,
@@ -74,6 +76,7 @@ import {
 import { registerCalendarRoutes } from './routes/calendar.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
+import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { registerOrganizationRoutes } from './routes/organizations.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
@@ -165,6 +168,20 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     indexDocument: container.indexDocument,
     removeDocumentIndex: container.removeDocumentIndex,
     retrieveKnowledge: container.retrieveKnowledge,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+  });
+  registerKnowledgeRoutes(app, {
+    createArticle: container.createArticle,
+    updateArticle: container.updateArticle,
+    publishArticle: container.publishArticle,
+    archiveArticle: container.archiveArticle,
+    getArticle: container.getArticle,
+    listArticles: container.listArticles,
+    createCategory: container.createCategory,
+    listCategories: container.listCategories,
+    indexArticle: container.indexArticle,
+    removeArticleIndex: container.removeArticleIndex,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
   });
@@ -287,6 +304,8 @@ function buildPgRepositories(
     documentVersions: new PgDocumentVersionRepository(database),
     documentTemplates: new PgDocumentTemplateRepository(database),
     knowledgeSources: new PgKnowledgeSourceRepository(database),
+    knowledgeArticles: new PgKnowledgeArticleRepository(database),
+    knowledgeCategories: new PgKnowledgeCategoryRepository(database),
     calendarEvents: new PgCalendarEventRepository(database),
     searchIndex: new PgKnowledgeIndexStore(database),
     // Durable content when S3/MinIO is configured; in-memory storage for

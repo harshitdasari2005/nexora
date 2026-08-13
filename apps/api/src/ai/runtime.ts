@@ -332,7 +332,8 @@ export const HR_CREATE_TOOL: ToolContract = {
 /** The skill that implements the knowledge-search capability (read). */
 export const KNOWLEDGE_SEARCH_SKILL: AgentSkill = {
   id: 'knowledge.search',
-  description: 'Searches the documents available to the user in the current workspace',
+  description:
+    'Searches the documents and published knowledge base articles available to the user in the current workspace',
   toolIds: ['knowledge.search'],
   autonomyTier: 'supervised',
   requiresApproval: false,
@@ -343,7 +344,7 @@ export const KNOWLEDGE_SEARCH_CAPABILITY: CapabilityDeclaration = {
   id: 'knowledge.search',
   name: 'Search Workspace Knowledge',
   description:
-    'Searches the documents available to the user in the current workspace and returns grounded references with citations',
+    'Searches the documents and published knowledge base articles available to the user in the current workspace and returns grounded references with citations',
   skillId: 'knowledge.search',
   sideEffectClass: 'read_only',
 };
@@ -352,7 +353,7 @@ export const KNOWLEDGE_SEARCH_CAPABILITY: CapabilityDeclaration = {
 export const KNOWLEDGE_SEARCH_TOOL: ToolContract = {
   id: 'knowledge.search',
   description:
-    'Searches the documents available to the user in the current workspace and returns grounded references with citations',
+    'Searches the documents and published knowledge base articles available to the user in the current workspace and returns grounded references with citations',
   sideEffectClass: 'read_only',
   idempotent: true,
   timeoutMs: 15_000,
@@ -1090,7 +1091,16 @@ function knowledgeAgentManifest(): AgentManifest {
     tools: [KNOWLEDGE_SEARCH_TOOL],
     knowledgeScopes: [],
     policyIds: [],
-    emittedEventTypes: ['knowledge.indexed', 'knowledge.removed'],
+    emittedEventTypes: [
+      'knowledge.indexed',
+      'knowledge.removed',
+      'knowledge.article.created',
+      'knowledge.article.updated',
+      'knowledge.article.published',
+      'knowledge.article.archived',
+      'knowledge.category.created',
+      'knowledge.category.archived',
+    ],
     subscribedEventTypes: ['document.available'],
     updatedAt: new Date().toISOString(),
   };

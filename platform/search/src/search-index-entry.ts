@@ -9,9 +9,10 @@
  * and answers only queries filtered by tenant + workspace scope.
  */
 
-/** The canonical kinds of indexed content (v1: knowledge documents). */
+/** The canonical kinds of indexed content (S18: documents + KB articles). */
 export const SEARCH_ENTRY_KINDS = {
   document: 'document',
+  article: 'article',
 } as const;
 
 /** The kind of an indexed entry. */
@@ -30,9 +31,9 @@ export interface SearchIndexEntry {
   tenantId: string;
   /** The owning workspace id — immutable scope. */
   workspaceId: string;
-  /** The owning business entity id (e.g. the source document id). */
+  /** The owning business entity id (e.g. the source document or article id). */
   scopeId: string;
-  /** The content kind (v1: `document`). */
+  /** The content kind (`document` | `article`). */
   kind: SearchEntryKind;
   /** The display title (used for citations). */
   title: string;

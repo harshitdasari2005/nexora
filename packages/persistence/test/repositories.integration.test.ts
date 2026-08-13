@@ -41,6 +41,7 @@ import { CalendarEntry } from '@nexora/module-calendar';
 import { ActivityItem, Notification, NotificationPreferences } from '@nexora/module-notifications';
 import { ContentRef, DocumentTemplate, DocumentVersion } from '@nexora/domain-documents';
 import { Document } from '@nexora/domain-documents';
+import { KnowledgeArticle, KnowledgeCategory } from '@nexora/domain-knowledge';
 
 import { createDatabaseFromPool, type NexoraDatabase } from '../src/db.js';
 import { ScryptPasswordHasher } from '../src/hasher/index.js';
@@ -63,6 +64,9 @@ import {
   PgWorkspaceInstallationRepository,
   PgWorkspaceMembershipRepository,
   PgWorkspaceRepository,
+  PgKnowledgeArticleRepository,
+  PgKnowledgeCategoryRepository,
+  PgKnowledgeIndexStore,
 } from '../src/repositories/index.js';
 import {
   activityItems,
@@ -70,6 +74,9 @@ import {
   documentTemplates,
   documentVersions,
   employees,
+  knowledgeArticles,
+  knowledgeCategories,
+  knowledgeSources,
   notifications,
   notificationPreferences,
   organizationMemberships,
@@ -140,6 +147,9 @@ describeDb('repository integration (Postgres)', () => {
   afterAll(async () => {
     await db.delete(documentVersions);
     await db.delete(documentTemplates);
+    await db.delete(knowledgeSources);
+    await db.delete(knowledgeArticles);
+    await db.delete(knowledgeCategories);
     await db.delete(calendarEvents);
     await db.delete(activityItems);
     await db.delete(notifications);
@@ -921,5 +931,184 @@ describeDb('repository integration (Postgres)', () => {
     const loaded = await pgDocuments.findById(document.id);
     expect(loaded?.contentRef.value).toBe(`doc/${document.id}/v2`);
     expect(loaded?.contentVersion).toBe(3);
+  });
+
+  describe('knowledge articles + categories (S18 Knowledge Base)', () => {
+    function kbContext() {
+      return {
+        actor: { kind: 'user' as const, id: 'usr_alice' as UserId },
+        correlationId: 'corr_kb',
+        organizationId: TENANT,
+      };
+    }
+
+    it('round-trips a KnowledgeArticle through save/findById preserving lifecycle', async () => {
+      const articlesRepo = new PgKnowledgeArticleRepository(db);
+      const article = KnowledgeArticle.create(
+        {
+          tenantId: TENANT,
+          workspaceId: 'ws_kb_1' as never,
+          title: 'Leave Policy',
+          body: 'Employees may take 25 days of leave per year.',
+          author: 'usr_alice' as UserId,
+        },
+        kbContext(),
+      );
+      article.pullDomainEvents();
+      article.publish(kbContext());
+      article.pullDomainEvents();
+      await articlesRepo.save(article);
+
+      const loaded = await articlesRepo.findById(article.id);
+      expect(loaded?.id).toBe(article.id);
+      expect(loaded?.tenantId).toBe(TENANT);
+      expect(loaded?.workspaceId).toBe('ws_kb_1');
+      expect(loaded?.status.value).toBe('published');
+      expect(loaded?.contentVersion).toBe(1);
+      expect(loaded?.body).toBe('Employees may take 25 days of leave per year.');
+    });
+
+    it('lists only the articles of the requested workspace', async () => {
+      const articlesRepo = new PgKnowledgeArticleRepository(db);
+      const scoped = KnowledgeArticle.create(
+        {
+          tenantId: TENANT,
+          workspaceId: 'ws_kb_scope_1' as never,
+          title: 'Scoped Article',
+          body: 'Only this workspace sees me.',
+          author: 'usr_alice' as UserId,
+        },
+        kbContext(),
+      );
+      const alien = KnowledgeArticle.create(
+        {
+          tenantId: TENANT,
+          workspaceId: 'ws_kb_scope_2' as never,
+          title: 'Alien Article',
+          body: 'Another workspace.',
+          author: 'usr_alice' as UserId,
+        },
+        kbContext(),
+      );
+      scoped.pullDomainEvents();
+      alien.pullDomainEvents();
+      await articlesRepo.save(scoped);
+      await articlesRepo.save(alien);
+
+      const listed = await articlesRepo.listByWorkspace(TENANT, 'ws_kb_scope_1' as never);
+      expect(listed.map((item) => item.id)).toEqual([scoped.id]);
+    });
+
+    it('round-trips a KnowledgeCategory and lists it scope-bound', async () => {
+      const categoriesRepo = new PgKnowledgeCategoryRepository(db);
+      const category = KnowledgeCategory.create(
+        { tenantId: TENANT, workspaceId: 'ws_kb_1' as never, name: 'Policies' },
+        kbContext(),
+      );
+      category.pullDomainEvents();
+      await categoriesRepo.save(category);
+
+      const loaded = await categoriesRepo.findById(category.id);
+      expect(loaded?.name).toBe('Policies');
+      expect(loaded?.archived).toBe(false);
+      expect(loaded?.tenantId).toBe(TENANT);
+      const listed = await categoriesRepo.listByWorkspace(TENANT, 'ws_kb_1' as never);
+      expect(listed.map((item) => item.id)).toEqual([category.id]);
+    });
+
+    it('existsByName is scope-bound: same name in another workspace/tenant is not a duplicate', async () => {
+      const categoriesRepo = new PgKnowledgeCategoryRepository(db);
+      const category = KnowledgeCategory.create(
+        { tenantId: TENANT, workspaceId: 'ws_kb_dup_1' as never, name: 'Policies' },
+        kbContext(),
+      );
+      category.pullDomainEvents();
+      await categoriesRepo.save(category);
+
+      // Same tenant + workspace + name → duplicate.
+      expect(await categoriesRepo.existsByName(TENANT, 'ws_kb_dup_1' as never, 'Policies')).toBe(
+        true,
+      );
+      // Different name in the same scope → not a duplicate.
+      expect(await categoriesRepo.existsByName(TENANT, 'ws_kb_dup_1' as never, 'Onboarding')).toBe(
+        false,
+      );
+      // Same name in a DIFFERENT workspace of the same tenant → not a duplicate.
+      expect(await categoriesRepo.existsByName(TENANT, 'ws_kb_dup_2' as never, 'Policies')).toBe(
+        false,
+      );
+      // Same name in a DIFFERENT tenant → not a duplicate.
+      expect(
+        await categoriesRepo.existsByName(
+          'org_alien' as TenantId,
+          'ws_kb_dup_1' as never,
+          'Policies',
+        ),
+      ).toBe(false);
+    });
+
+    it('preserves kind + version end-to-end through PgKnowledgeIndexStore', async () => {
+      const store = new PgKnowledgeIndexStore(db);
+      const now = new Date().toISOString();
+      await store.put({
+        id: 'ksrc_doc_kb',
+        tenantId: TENANT,
+        workspaceId: 'ws_kb_1',
+        scopeId: 'doc_kb_1',
+        kind: 'document',
+        title: 'Banking Plan',
+        text: 'mobile banking deadline june 30',
+        version: 2,
+        indexedAt: now,
+      });
+      const articleId = 'art_11111111-1111-4111-8111-111111111111';
+      await store.put({
+        id: articleId,
+        tenantId: TENANT,
+        workspaceId: 'ws_kb_1',
+        scopeId: articleId,
+        kind: 'article',
+        title: 'Leave Policy',
+        text: 'leave policy thirty days',
+        version: 3,
+        indexedAt: now,
+      });
+
+      const entries = await store.query({
+        tenantId: TENANT,
+        workspaceId: 'ws_kb_1',
+        query: 'mobile banking leave policy',
+      });
+      const byId = new Map(entries.map((entry) => [entry.id, entry]));
+      expect(byId.get('ksrc_doc_kb')?.kind).toBe('document');
+      expect(byId.get('ksrc_doc_kb')?.version).toBe(2);
+      expect(byId.get(articleId)?.kind).toBe('article');
+      expect(byId.get(articleId)?.version).toBe(3);
+
+      // Re-indexing the article with a new version REPLACES the entry.
+      await store.put({
+        id: articleId,
+        tenantId: TENANT,
+        workspaceId: 'ws_kb_1',
+        scopeId: articleId,
+        kind: 'article',
+        title: 'Leave Policy',
+        text: 'leave policy thirty five days',
+        version: 4,
+        indexedAt: now,
+      });
+      const fresh = await store.query({
+        tenantId: TENANT,
+        workspaceId: 'ws_kb_1',
+        query: 'thirty',
+      });
+      expect(fresh.map((entry) => entry.id)).toEqual([articleId]);
+      expect(fresh[0]?.version).toBe(4);
+
+      // Archiving removes the article scope from the corpus.
+      await store.removeByScope(articleId, TENANT);
+      const after = await store.query({ tenantId: TENANT, workspaceId: 'ws_kb_1', query: 'leave' });
+      expect(after.map((entry) => entry.id)).not.toContain(articleId);
+    });
   });
 });

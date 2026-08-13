@@ -13,7 +13,15 @@ import {
   type SearchIndexEntry,
   type SearchIndexPort,
 } from '@nexora/module-search';
-import type { KnowledgeSource, KnowledgeSourceRepository } from '@nexora/domain-knowledge';
+import {
+  KnowledgeDomainService,
+  type KnowledgeArticle as KnowledgeArticleType,
+  type KnowledgeArticleRepository,
+  type KnowledgeCategory as KnowledgeCategoryType,
+  type KnowledgeCategoryRepository,
+  type KnowledgeSource,
+  type KnowledgeSourceRepository,
+} from '@nexora/domain-knowledge';
 
 import {
   KnowledgeApplicationService,
@@ -92,18 +100,128 @@ function recordingPublisher(): EventPublisher & { published: readonly EventEnvel
   } as unknown as EventPublisher & { published: readonly EventEnvelope[] };
 }
 
+/** An in-memory {@link KnowledgeArticleRepository}. */
+class InMemoryKnowledgeArticleRepository implements KnowledgeArticleRepository {
+  readonly articles = new Map<string, KnowledgeArticleType>();
+
+  async findById(id: string): Promise<KnowledgeArticleType | undefined> {
+    return this.articles.get(id);
+  }
+
+  async listByWorkspace(
+    tenantId: TenantId,
+    workspaceId: WorkspaceId,
+  ): Promise<readonly KnowledgeArticleType[]> {
+    return [...this.articles.values()]
+      .filter((article) => article.tenantId === tenantId && article.workspaceId === workspaceId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async save(article: KnowledgeArticleType): Promise<void> {
+    this.articles.set(article.id, article);
+  }
+}
+
+/** An in-memory {@link KnowledgeCategoryRepository}. */
+class InMemoryKnowledgeCategoryRepository implements KnowledgeCategoryRepository {
+  readonly categories = new Map<string, KnowledgeCategoryType>();
+
+  async findById(id: string): Promise<KnowledgeCategoryType | undefined> {
+    return this.categories.get(id);
+  }
+
+  async listByWorkspace(
+    tenantId: TenantId,
+    workspaceId: WorkspaceId,
+  ): Promise<readonly KnowledgeCategoryType[]> {
+    return [...this.categories.values()]
+      .filter((category) => category.tenantId === tenantId && category.workspaceId === workspaceId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async existsByName(tenantId: TenantId, workspaceId: WorkspaceId, name: string): Promise<boolean> {
+    return [...this.categories.values()].some(
+      (category) =>
+        category.tenantId === tenantId &&
+        category.workspaceId === workspaceId &&
+        category.name === name,
+    );
+  }
+
+  async save(category: KnowledgeCategoryType): Promise<void> {
+    this.categories.set(category.id, category);
+  }
+}
+
 function buildService(
   options: {
     sources?: InMemoryKnowledgeSourceRepository;
     searchIndex?: SearchIndexPort;
     publisher?: EventPublisher & { published: readonly EventEnvelope[] };
+    articles?: InMemoryKnowledgeArticleRepository;
+    categories?: InMemoryKnowledgeCategoryRepository;
   } = {},
 ) {
   const sources = options.sources ?? new InMemoryKnowledgeSourceRepository();
   const searchIndex = options.searchIndex ?? new InMemorySearchIndex();
   const publisher = options.publisher ?? recordingPublisher();
-  const service = new KnowledgeApplicationService({ sources, searchIndex, publisher });
-  return { service, sources, searchIndex, publisher };
+  const articles = options.articles ?? new InMemoryKnowledgeArticleRepository();
+  const categories = options.categories ?? new InMemoryKnowledgeCategoryRepository();
+  const knowledgeService = new KnowledgeDomainService({ articles, categories });
+  const service = new KnowledgeApplicationService({
+    sources,
+    searchIndex,
+    publisher,
+    knowledgeService,
+  });
+  return { service, sources, searchIndex, publisher, articles, categories };
+}
+
+/** Seeds an active category and a published article (freshness helpers). */
+async function seedPublishedArticle(
+  service: KnowledgeApplicationService,
+  categories: InMemoryKnowledgeCategoryRepository,
+  overrides: { tenantId?: TenantId; workspaceId?: WorkspaceId; categoryTenantId?: TenantId } = {},
+): Promise<{ articleId: string; categoryId?: string }> {
+  const tenantId = overrides.tenantId ?? TENANT;
+  const workspaceId = overrides.workspaceId ?? WORKSPACE;
+  const createdCategory = await service.createCategory({
+    tenantId,
+    workspaceId,
+    actorId: 'usr_alice' as never,
+    name: 'Policies',
+    correlationId: 'corr_cat',
+  });
+  if (!createdCategory.ok) throw new Error('category seed failed');
+  categories.categories.set(createdCategory.value.category.id, createdCategory.value.category);
+
+  const created = await service.createArticle({
+    tenantId,
+    workspaceId,
+    actorId: 'usr_alice' as never,
+    title: 'Leave Policy',
+    body: 'Employees may take 25 days of leave per year. The deadline to submit is June 30.',
+    categoryId: createdCategory.value.category.id,
+    correlationId: 'corr_art',
+  });
+  if (!created.ok) throw new Error('article seed failed');
+  const published = await service.publishArticle({
+    tenantId,
+    workspaceId,
+    actorId: 'usr_alice' as never,
+    articleId: created.value.article.id,
+    correlationId: 'corr_pub',
+  });
+  if (!published.ok) throw new Error('article publish failed');
+  await service.indexArticle({
+    tenantId,
+    workspaceId,
+    articleId: published.value.article.id,
+    title: published.value.article.title,
+    text: published.value.article.body,
+    version: published.value.article.contentVersion,
+  });
+  return { articleId: published.value.article.id, categoryId: createdCategory.value.category.id };
 }
 
 function indexCommand(overrides: Partial<IndexDocumentCommand> = {}): IndexDocumentCommand {
@@ -290,5 +408,315 @@ describe('buildSnippet', () => {
     const snippet = buildSnippet('The Mobile Banking project deadline is June 30.', 'deadline', 40);
     expect(snippet).toContain('June 30');
     expect(snippet.length).toBeLessThanOrEqual(43); // 40 + ellipses
+  });
+});
+
+describe('KnowledgeApplicationService articles (S18 Knowledge Base)', () => {
+  it('creates an article as a draft and never indexes it', async () => {
+    const { service, searchIndex, publisher } = buildService();
+    const created = await service.createArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      title: 'Leave Policy',
+      body: 'Employees may take 25 days of leave per year.',
+      correlationId: 'corr_1',
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.value.article.status.value).toBe('draft');
+    expect(created.value.article.contentVersion).toBe(1);
+    // A draft is NEVER in the search corpus.
+    expect((searchIndex as InMemorySearchIndex).entries.size).toBe(0);
+    expect(publisher.published.map((event) => event.type)).toEqual(['knowledge.article.created']);
+  });
+
+  it('rejects a category that does not belong to the trusted scope', async () => {
+    const { service } = buildService();
+    const created = await service.createArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      title: 'Leave Policy',
+      body: 'Body.',
+      categoryId: 'kcat_99999999-9999-4999-8999-999999999999',
+      correlationId: 'corr_1',
+    });
+    expect(created.ok).toBe(false);
+  });
+
+  it('publishing indexes the article with kind=article and version=contentVersion', async () => {
+    const { service, searchIndex, publisher } = buildService();
+    const created = await service.createArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      title: 'Leave Policy',
+      body: 'Employees may take 25 days of leave per year.',
+      correlationId: 'corr_1',
+    });
+    if (!created.ok) return;
+    const published = await service.publishArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      articleId: created.value.article.id,
+      correlationId: 'corr_2',
+    });
+    expect(published.ok).toBe(true);
+    if (!published.ok) return;
+
+    await service.indexArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      articleId: published.value.article.id,
+      title: published.value.article.title,
+      text: published.value.article.body,
+      version: published.value.article.contentVersion,
+    });
+    const entries = [...(searchIndex as InMemorySearchIndex).entries.values()];
+    expect(entries.length).toBe(1);
+    expect(entries[0]?.kind).toBe('article');
+    expect(entries[0]?.scopeId).toBe(published.value.article.id);
+    expect(entries[0]?.version).toBe(1);
+    expect(publisher.published.map((event) => event.type)).toContain('knowledge.article.published');
+  });
+
+  it('a draft is never retrieved; a published article is retrieved with kind + version citation', async () => {
+    const { service, categories } = buildService();
+    await seedPublishedArticle(service, categories);
+    const draft = await service.createArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      title: 'Draft Secret',
+      body: 'This draft must never answer retrieval queries about leave.',
+      correlationId: 'corr_draft',
+    });
+    if (!draft.ok) return;
+
+    const result = await service.retrieve({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      query: 'leave policy deadline',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.references.length).toBe(1);
+    const reference = result.value.references[0];
+    expect(reference?.kind).toBe('article');
+    expect(reference?.version).toBe(1);
+    expect(reference?.title).toBe('Leave Policy');
+  });
+
+  it('editing a published article bumps the version and the re-indexed content replaces the old', async () => {
+    const { service, categories } = buildService();
+    const { articleId } = await seedPublishedArticle(service, categories);
+
+    const updated = await service.updateArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      articleId,
+      title: 'Leave Policy',
+      body: 'Employees may now take 30 days of leave per year. The deadline to submit is December 15.',
+      correlationId: 'corr_upd',
+    });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.value.article.contentVersion).toBe(2);
+    await service.indexArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      articleId,
+      title: updated.value.article.title,
+      text: updated.value.article.body,
+      version: updated.value.article.contentVersion,
+    });
+
+    // New content answers; old content never leaks.
+    const fresh = await service.retrieve({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      query: 'december fifteen',
+    });
+    expect(fresh.ok).toBe(true);
+    if (!fresh.ok) return;
+    expect(fresh.value.references[0]?.snippet).toContain('December 15');
+    expect(fresh.value.references[0]?.version).toBe(2);
+
+    const stale = await service.retrieve({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      query: '25',
+    });
+    expect(stale.ok).toBe(true);
+    if (!stale.ok) return;
+    expect(stale.value.references).toEqual([]); // the old '25 days' content never leaks
+  });
+
+  it('archiving removes the article from the corpus — an archived article never answers', async () => {
+    const { service, categories, searchIndex } = buildService();
+    const { articleId } = await seedPublishedArticle(service, categories);
+
+    const archived = await service.archiveArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      articleId,
+      correlationId: 'corr_arch',
+    });
+    expect(archived.ok).toBe(true);
+    if (!archived.ok) return;
+    expect(archived.value.article.status.value).toBe('archived');
+    await service.removeArticleIndex({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      articleId,
+    });
+    expect((searchIndex as InMemorySearchIndex).entries.size).toBe(0);
+
+    const result = await service.retrieve({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      query: 'leave policy',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.references).toEqual([]);
+  });
+
+  it('a foreign article id resolves to NOT FOUND (workspace isolation)', async () => {
+    const { service } = buildService();
+    const got = await service.getArticle(
+      TENANT,
+      WORKSPACE,
+      'art_00000000-0000-4000-8000-000000000000',
+    );
+    expect(got.ok).toBe(false);
+    const updated = await service.updateArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      articleId: 'art_00000000-0000-4000-8000-000000000000',
+      title: 'x',
+      body: 'y',
+      correlationId: 'corr_x',
+    });
+    expect(updated.ok).toBe(false);
+    const published = await service.publishArticle({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      articleId: 'art_00000000-0000-4000-8000-000000000000',
+      correlationId: 'corr_x',
+    });
+    expect(published.ok).toBe(false);
+  });
+
+  it('a cross-workspace article is invisible (get + retrieval leak nothing)', async () => {
+    const { service, categories } = buildService();
+    await seedPublishedArticle(service, categories, { workspaceId: WORKSPACE_B });
+
+    const got = await service.getArticle(TENANT, WORKSPACE, 'art_none');
+    expect(got.ok).toBe(false);
+    const result = await service.retrieve({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      query: 'leave policy',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.references).toEqual([]);
+  });
+
+  it('documents and articles coexist in retrieval with correct kind citations', async () => {
+    const { service, categories } = buildService();
+    await service.indexDocument(indexCommand()); // kind=document
+    await seedPublishedArticle(service, categories); // kind=article
+
+    const result = await service.retrieve({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      query: 'leave mobile banking',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.references.length).toBe(2);
+    const kinds = result.value.references.map((reference) => reference.kind).sort();
+    expect(kinds).toEqual(['article', 'document']);
+  });
+});
+
+describe('KnowledgeApplicationService categories (S18 Knowledge Base)', () => {
+  it('creates a category and lists the workspace categories', async () => {
+    const { service } = buildService();
+    const created = await service.createCategory({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      name: 'Policies',
+      correlationId: 'corr_1',
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.value.category.name).toBe('Policies');
+    expect(created.value.category.archived).toBe(false);
+
+    const listed = await service.listCategoriesByWorkspace(TENANT, WORKSPACE);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.value.map((category) => category.name)).toEqual(['Policies']);
+  });
+
+  it('rejects a duplicate category name in the same workspace with CONFLICT (no leaked 500)', async () => {
+    const { service } = buildService();
+    const first = await service.createCategory({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      name: 'Policies',
+      correlationId: 'corr_1',
+    });
+    expect(first.ok).toBe(true);
+
+    const duplicate = await service.createCategory({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      name: 'Policies',
+      correlationId: 'corr_2',
+    });
+    expect(duplicate.ok).toBe(false);
+    if (!duplicate.ok) {
+      expect(duplicate.error.code).toBe('CONFLICT');
+      expect(duplicate.error.message).toContain('already exists');
+    }
+    // Zero mutation: only the first category exists.
+    const listed = await service.listCategoriesByWorkspace(TENANT, WORKSPACE);
+    expect(listed.ok).toBe(true);
+    if (listed.ok) {
+      expect(listed.value).toHaveLength(1);
+    }
+  });
+
+  it('allows the same category name in a DIFFERENT workspace (scope-bound uniqueness)', async () => {
+    const { service } = buildService();
+    const inA = await service.createCategory({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: 'usr_alice' as never,
+      name: 'Policies',
+      correlationId: 'corr_1',
+    });
+    expect(inA.ok).toBe(true);
+    const inB = await service.createCategory({
+      tenantId: TENANT,
+      workspaceId: WORKSPACE_B,
+      actorId: 'usr_alice' as never,
+      name: 'Policies',
+      correlationId: 'corr_2',
+    });
+    expect(inB.ok).toBe(true);
   });
 });

@@ -22,6 +22,12 @@ export const KNOWLEDGE_EVENT_CATEGORY = 'knowledge' as const;
 export const KNOWLEDGE_EVENT_TYPES = {
   knowledgeIndexed: 'knowledge.indexed',
   knowledgeRemoved: 'knowledge.removed',
+  articleCreated: 'knowledge.article.created',
+  articleUpdated: 'knowledge.article.updated',
+  articlePublished: 'knowledge.article.published',
+  articleArchived: 'knowledge.article.archived',
+  categoryCreated: 'knowledge.category.created',
+  categoryArchived: 'knowledge.category.archived',
 } as const;
 
 /** Payload of the {@link knowledgeIndexedEvent}. */
@@ -42,6 +48,82 @@ export interface KnowledgeIndexedPayload {
 export interface KnowledgeRemovedPayload {
   /** The removed source document id. */
   documentId: string;
+  /** The owning organization (tenant) id. */
+  tenantId: TenantId;
+  /** The owning workspace id. */
+  workspaceId: WorkspaceId;
+}
+
+/** Payload of the {@link articleCreatedEvent}. */
+export interface KnowledgeArticleCreatedPayload {
+  /** The created article. */
+  articleId: string;
+  /** The owning organization (tenant) id. */
+  tenantId: TenantId;
+  /** The owning workspace id. */
+  workspaceId: WorkspaceId;
+  /** The article title at creation. */
+  title: string;
+  /** The initial status (`draft` — never indexed). */
+  status: string;
+}
+
+/** Payload of the {@link articleUpdatedEvent}. */
+export interface KnowledgeArticleUpdatedPayload {
+  /** The updated article. */
+  articleId: string;
+  /** The owning organization (tenant) id. */
+  tenantId: TenantId;
+  /** The owning workspace id. */
+  workspaceId: WorkspaceId;
+  /** The article title. */
+  title: string;
+  /** The lifecycle status after the update. */
+  status: string;
+  /** The new monotonic content version. */
+  version: number;
+}
+
+/** Payload of the {@link articlePublishedEvent}. */
+export interface KnowledgeArticlePublishedPayload {
+  /** The published article. */
+  articleId: string;
+  /** The owning organization (tenant) id. */
+  tenantId: TenantId;
+  /** The owning workspace id. */
+  workspaceId: WorkspaceId;
+  /** The content version that becomes retrievable. */
+  version: number;
+}
+
+/** Payload of the {@link articleArchivedEvent}. */
+export interface KnowledgeArticleArchivedPayload {
+  /** The archived article. */
+  articleId: string;
+  /** The owning organization (tenant) id. */
+  tenantId: TenantId;
+  /** The owning workspace id. */
+  workspaceId: WorkspaceId;
+}
+
+/** Payload of the {@link categoryCreatedEvent}. */
+export interface KnowledgeCategoryCreatedPayload {
+  /** The created category. */
+  categoryId: string;
+  /** The owning organization (tenant) id. */
+  tenantId: TenantId;
+  /** The owning workspace id. */
+  workspaceId: WorkspaceId;
+  /** The category name. */
+  name: string;
+  /** The initial status (`active`). */
+  status: string;
+}
+
+/** Payload of the {@link categoryArchivedEvent}. */
+export interface KnowledgeCategoryArchivedPayload {
+  /** The archived category. */
+  categoryId: string;
   /** The owning organization (tenant) id. */
   tenantId: TenantId;
   /** The owning workspace id. */
@@ -95,4 +177,52 @@ export function knowledgeRemovedEvent(
   payload: KnowledgeRemovedPayload,
 ): EventEnvelope<KnowledgeRemovedPayload> {
   return knowledgeEvent(KNOWLEDGE_EVENT_TYPES.knowledgeRemoved, context, payload);
+}
+
+/** An article was created as a draft (knowledge.article.created). */
+export function articleCreatedEvent(
+  context: KnowledgeEventContext,
+  payload: KnowledgeArticleCreatedPayload,
+): EventEnvelope<KnowledgeArticleCreatedPayload> {
+  return knowledgeEvent(KNOWLEDGE_EVENT_TYPES.articleCreated, context, payload);
+}
+
+/** An article's content was updated (knowledge.article.updated). */
+export function articleUpdatedEvent(
+  context: KnowledgeEventContext,
+  payload: KnowledgeArticleUpdatedPayload,
+): EventEnvelope<KnowledgeArticleUpdatedPayload> {
+  return knowledgeEvent(KNOWLEDGE_EVENT_TYPES.articleUpdated, context, payload);
+}
+
+/** An article was published (knowledge.article.published — retrievable now). */
+export function articlePublishedEvent(
+  context: KnowledgeEventContext,
+  payload: KnowledgeArticlePublishedPayload,
+): EventEnvelope<KnowledgeArticlePublishedPayload> {
+  return knowledgeEvent(KNOWLEDGE_EVENT_TYPES.articlePublished, context, payload);
+}
+
+/** An article was archived (knowledge.article.archived — leaves the index). */
+export function articleArchivedEvent(
+  context: KnowledgeEventContext,
+  payload: KnowledgeArticleArchivedPayload,
+): EventEnvelope<KnowledgeArticleArchivedPayload> {
+  return knowledgeEvent(KNOWLEDGE_EVENT_TYPES.articleArchived, context, payload);
+}
+
+/** A category was created (knowledge.category.created). */
+export function categoryCreatedEvent(
+  context: KnowledgeEventContext,
+  payload: KnowledgeCategoryCreatedPayload,
+): EventEnvelope<KnowledgeCategoryCreatedPayload> {
+  return knowledgeEvent(KNOWLEDGE_EVENT_TYPES.categoryCreated, context, payload);
+}
+
+/** A category was archived (knowledge.category.archived). */
+export function categoryArchivedEvent(
+  context: KnowledgeEventContext,
+  payload: KnowledgeCategoryArchivedPayload,
+): EventEnvelope<KnowledgeCategoryArchivedPayload> {
+  return knowledgeEvent(KNOWLEDGE_EVENT_TYPES.categoryArchived, context, payload);
 }

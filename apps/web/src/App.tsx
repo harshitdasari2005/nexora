@@ -13,6 +13,7 @@ import { OrganizationWizard } from './pages/onboarding/OrganizationWizard.js';
 import { WorkspaceWizard } from './pages/onboarding/WorkspaceWizard.js';
 import { Dashboard } from './pages/Dashboard.js';
 import { Documents } from './pages/Documents.js';
+import { Knowledge } from './pages/Knowledge.js';
 import { Employees } from './pages/Employees.js';
 import { Projects } from './pages/Projects.js';
 import { Workflows } from './pages/Workflows.js';
@@ -71,6 +72,14 @@ export function App(): JSX.Element {
             element={
               <RequireAuth>
                 <Documents />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app/knowledge"
+            element={
+              <RequireAuth>
+                <Knowledge />
               </RequireAuth>
             }
           />

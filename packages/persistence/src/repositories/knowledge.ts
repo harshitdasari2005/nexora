@@ -19,7 +19,12 @@ import { and, desc, eq, notInArray } from 'drizzle-orm';
 import type { TenantId, WorkspaceId } from '@nexora/contracts/common';
 import type { KnowledgeSourceRepository } from '@nexora/domain-knowledge';
 import { KnowledgeSource, KnowledgeSourceId } from '@nexora/domain-knowledge';
-import type { SearchIndexEntry, SearchIndexPort, SearchQueryFilter } from '@nexora/module-search';
+import type {
+  SearchEntryKind,
+  SearchIndexEntry,
+  SearchIndexPort,
+  SearchQueryFilter,
+} from '@nexora/module-search';
 import { rankEntries, tokenize } from '@nexora/module-search';
 
 import type { NexoraDatabase } from '../db.js';
@@ -54,6 +59,9 @@ function sourceSnapshotToRow(snapshot: ReturnType<typeof KnowledgeSource.snapsho
     tenantId: snapshot.tenantId,
     workspaceId: snapshot.workspaceId,
     documentId: snapshot.documentId,
+    // A KnowledgeSource is always document-shaped; the `kind` column is the
+    // generic corpus discriminator (articles never create KnowledgeSources).
+    kind: 'document',
     title: snapshot.title,
     text: snapshot.text,
     version: snapshot.version,
@@ -148,6 +156,7 @@ export class PgKnowledgeIndexStore implements SearchIndexPort {
         tenantId: entry.tenantId,
         workspaceId: entry.workspaceId,
         documentId: entry.scopeId,
+        kind: entry.kind,
         title: entry.title,
         text: entry.text,
         version: entry.version,
@@ -156,6 +165,7 @@ export class PgKnowledgeIndexStore implements SearchIndexPort {
       .onConflictDoUpdate({
         target: knowledgeSources.id,
         set: {
+          kind: entry.kind,
           title: entry.title,
           text: entry.text,
           version: entry.version,
@@ -195,7 +205,7 @@ export class PgKnowledgeIndexStore implements SearchIndexPort {
       tenantId: row.tenantId,
       workspaceId: row.workspaceId,
       scopeId: row.documentId,
-      kind: 'document',
+      kind: row.kind as SearchEntryKind,
       title: row.title,
       text: row.text,
       version: row.version,

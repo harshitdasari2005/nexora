@@ -11,9 +11,14 @@
 
 // Entities
 export * from './entities/knowledge-source.js';
+export * from './entities/knowledge-article.js';
+export * from './entities/knowledge-category.js';
 
 // Value objects
 export * from './value-objects/knowledge-source-id.js';
+export * from './value-objects/knowledge-article-id.js';
+export * from './value-objects/knowledge-category-id.js';
+export * from './value-objects/knowledge-article-status.js';
 
 // Events
 export * from './events/index.js';
@@ -23,3 +28,6 @@ export * from './errors/index.js';
 
 // Repositories (ports)
 export * from './repositories/index.js';
+
+// Services
+export * from './services/knowledge-domain-service.js';

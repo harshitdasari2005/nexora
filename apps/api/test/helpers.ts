@@ -31,7 +31,14 @@ import {
   DocumentTemplate as DocumentTemplateFactory,
   DocumentVersion as DocumentVersionFactory,
 } from '@nexora/domain-documents';
-import { KnowledgeSource, type KnowledgeSourceId } from '@nexora/domain-knowledge';
+import {
+  KnowledgeArticle as KnowledgeArticleFactory,
+  KnowledgeCategory as KnowledgeCategoryFactory,
+  KnowledgeSource,
+  type KnowledgeArticleId,
+  type KnowledgeCategoryId,
+  type KnowledgeSourceId,
+} from '@nexora/domain-knowledge';
 import type { TenantId as ProjectTenantId } from '@nexora/contracts/common';
 
 import { loadConfig } from '../src/config.js';
@@ -45,6 +52,8 @@ import {
   FakeDocumentTemplateRepository,
   FakeDocumentVersionRepository,
   FakeEmployeeRepository,
+  FakeKnowledgeArticleRepository,
+  FakeKnowledgeCategoryRepository,
   FakeKnowledgeSourceRepository,
   FakeMembershipRepository,
   FakeNotificationPreferencesRepository,
@@ -148,6 +157,8 @@ export async function buildTestApp(
     documentVersions: new FakeDocumentVersionRepository(),
     documentTemplates: new FakeDocumentTemplateRepository(),
     knowledgeSources: new FakeKnowledgeSourceRepository(),
+    knowledgeArticles: new FakeKnowledgeArticleRepository(),
+    knowledgeCategories: new FakeKnowledgeCategoryRepository(),
     calendarEvents: new FakeCalendarEntryRepository(),
     searchIndex: new InMemorySearchIndex(),
     documentStorage: new InMemoryDocumentStorage(),
@@ -511,6 +522,104 @@ export async function seedDocumentTemplate(
   template.pullDomainEvents();
   await repos.documentTemplates.save(template);
   return template;
+}
+
+/**
+ * Seeds a KnowledgeCategory aggregate with a fixed id directly into the fake
+ * repository (real domain construction). Used to model categories the API
+ * cannot create in a foreign scope (other tenant / archived).
+ */
+export async function seedKnowledgeCategory(
+  repos: RepositorySet,
+  input: {
+    id: string;
+    organizationId: string;
+    workspaceId: string;
+    name: string;
+    archived?: boolean;
+  },
+): Promise<KnowledgeCategoryId> {
+  const context = {
+    actor: { kind: 'user' as const, id: 'usr_seed' as UserId },
+    correlationId: 'corr_seed_cat',
+    organizationId: input.organizationId as TenantId,
+  };
+  const created = KnowledgeCategoryFactory.create(
+    {
+      tenantId: input.organizationId as TenantId,
+      workspaceId: input.workspaceId as WorkspaceId,
+      name: input.name,
+    },
+    context,
+  );
+  created.pullDomainEvents();
+  const category =
+    input.archived === true
+      ? (() => {
+          created.archive(context);
+          created.pullDomainEvents();
+          return KnowledgeCategoryFactory.hydrate({
+            ...KnowledgeCategoryFactory.snapshot(created),
+            id: input.id as KnowledgeCategoryId,
+          });
+        })()
+      : KnowledgeCategoryFactory.hydrate({
+          ...KnowledgeCategoryFactory.snapshot(created),
+          id: input.id as KnowledgeCategoryId,
+        });
+  await repos.knowledgeCategories.save(category);
+  return category.id;
+}
+
+/**
+ * Seeds a KnowledgeArticle aggregate with a fixed id directly into the fake
+ * repository (real domain construction). Used to model articles the API
+ * cannot create in a foreign scope (other tenant / other statuses).
+ */
+export async function seedKnowledgeArticle(
+  repos: RepositorySet,
+  input: {
+    id: string;
+    organizationId: string;
+    workspaceId: string;
+    author: string;
+    title: string;
+    body: string;
+    categoryId?: string;
+    status?: 'draft' | 'published' | 'archived';
+  },
+): Promise<KnowledgeArticleId> {
+  const context = {
+    actor: { kind: 'user' as const, id: input.author as UserId },
+    correlationId: 'corr_seed_art',
+    organizationId: input.organizationId as TenantId,
+  };
+  const created = KnowledgeArticleFactory.create(
+    {
+      tenantId: input.organizationId as TenantId,
+      workspaceId: input.workspaceId as WorkspaceId,
+      title: input.title,
+      body: input.body,
+      categoryId: input.categoryId as KnowledgeCategoryId | undefined,
+      author: input.author as UserId,
+    },
+    context,
+  );
+  created.pullDomainEvents();
+  if (input.status === 'published') {
+    created.publish(context);
+    created.pullDomainEvents();
+  } else if (input.status === 'archived') {
+    created.publish(context);
+    created.archive(context);
+    created.pullDomainEvents();
+  }
+  const article = KnowledgeArticleFactory.hydrate({
+    ...KnowledgeArticleFactory.snapshot(created),
+    id: input.id as KnowledgeArticleId,
+  });
+  await repos.knowledgeArticles.save(article);
+  return article.id;
 }
 
 /** Seeds a WorkspaceMembership aggregate into the fake repository. */

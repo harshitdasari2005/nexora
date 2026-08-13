@@ -412,8 +412,12 @@ export const documentTemplates = pgTable(
 /**
  * knowledge_sources — the {@link @nexora/domain-knowledge!KnowledgeSource}
  * aggregate AND the persisted search projection (DOMAIN_MODEL.md Search
- * IndexEntry). One row per indexed document within a scope; re-indexing a
- * document version UPSERTS the row (stale entries never answer).
+ * IndexEntry). One row per indexed document OR published KB article within a
+ * scope; re-indexing a version UPSERTS the row (stale entries never answer).
+ * The `kind` discriminates the corpus member (`document` | `article`, S18);
+ * `document_id` is the generic scope reference (the document id for
+ * documents, the article id for articles). Existing S17 document rows keep
+ * `kind = 'document'` (the backward-compatible default).
  */
 export const knowledgeSources = pgTable(
   'knowledge_sources',
@@ -422,6 +426,7 @@ export const knowledgeSources = pgTable(
     tenantId: varchar('tenant_id', { length: 64 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
     documentId: varchar('document_id', { length: 64 }).notNull(),
+    kind: varchar('kind', { length: 16 }).notNull().default('document'),
     title: varchar('title', { length: 200 }).notNull(),
     text: text('text').notNull(),
     version: integer('version').notNull().default(1),
@@ -433,6 +438,64 @@ export const knowledgeSources = pgTable(
       table.tenantId,
       table.workspaceId,
       table.documentId,
+    ),
+  ],
+);
+
+/**
+ * knowledge_articles — the {@link @nexora/domain-knowledge!KnowledgeArticle}
+ * aggregate (S18 Knowledge Base). One row per article; the tenant + workspace
+ * are the immutable isolation scope. The article is the AUTHORITATIVE source
+ * of its own text content (the search corpus entry is a projection of the
+ * PUBLISHED article only). `category_id` is an optional, workspace-scoped
+ * reference (flat model: one category per article, no hierarchy).
+ */
+export const knowledgeArticles = pgTable(
+  'knowledge_articles',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    title: varchar('title', { length: 200 }).notNull(),
+    body: text('body').notNull(),
+    categoryId: varchar('category_id', { length: 64 }),
+    status: varchar('status', { length: 32 }).notNull(),
+    contentVersion: integer('content_version').notNull().default(1),
+    author: varchar('author', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('knowledge_articles_tenant_idx').on(table.tenantId, table.workspaceId),
+    index('knowledge_articles_category_idx').on(table.categoryId),
+  ],
+);
+
+/**
+ * knowledge_categories — the {@link @nexora/domain-knowledge!KnowledgeCategory}
+ * aggregate (S18 Knowledge Base). A flat, workspace-scoped category; the
+ * tenant + workspace are the immutable isolation scope. No nesting and no
+ * many-to-many in v1 — an article references at most one category.
+ */
+export const knowledgeCategories = pgTable(
+  'knowledge_categories',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    name: varchar('name', { length: 100 }).notNull(),
+    archived: boolean('archived').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('knowledge_categories_tenant_idx').on(table.tenantId, table.workspaceId),
+    uniqueIndex('knowledge_categories_scope_name_unique').on(
+      table.tenantId,
+      table.workspaceId,
+      table.name,
     ),
   ],
 );

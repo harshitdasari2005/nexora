@@ -17,7 +17,11 @@ import type {
   DocumentTemplateRepository,
   DocumentVersionRepository,
 } from '@nexora/domain-documents';
-import type { KnowledgeSourceRepository } from '@nexora/domain-knowledge';
+import type {
+  KnowledgeArticleRepository,
+  KnowledgeCategoryRepository,
+  KnowledgeSourceRepository,
+} from '@nexora/domain-knowledge';
 import type { CalendarEntryRepository } from '@nexora/module-calendar';
 import type { SearchIndexPort } from '@nexora/module-search';
 import type {
@@ -41,6 +45,7 @@ import { ProjectDomainService, ResourceAssignmentDomainService } from '@nexora/d
 import { EmployeeDomainService } from '@nexora/domain-hr';
 import { DocumentDomainService } from '@nexora/domain-documents';
 import { CalendarEntryDomainService } from '@nexora/module-calendar';
+import { KnowledgeDomainService } from '@nexora/domain-knowledge';
 import { WorkspaceDomainService, WorkspaceMembershipService } from '@nexora/domain-workspaces';
 import {
   AuthenticateWithOidcHandler,
@@ -100,10 +105,20 @@ import {
   UpdateCalendarEventHandler,
 } from '@nexora/application-calendar';
 import {
+  ArchiveArticleHandler,
+  CreateArticleHandler,
+  CreateCategoryHandler,
+  GetArticleHandler,
+  IndexArticleHandler,
   IndexDocumentHandler,
   KnowledgeApplicationService,
+  ListArticlesHandler,
+  ListCategoriesHandler,
+  PublishArticleHandler,
+  RemoveArticleIndexHandler,
   RemoveDocumentIndexHandler,
   RetrieveKnowledgeHandler,
+  UpdateArticleHandler,
 } from '@nexora/application-knowledge';
 import {
   GetNotificationPreferencesHandler,
@@ -136,6 +151,8 @@ export interface RepositorySet {
   documentVersions: DocumentVersionRepository;
   documentTemplates: DocumentTemplateRepository;
   knowledgeSources: KnowledgeSourceRepository;
+  knowledgeArticles: KnowledgeArticleRepository;
+  knowledgeCategories: KnowledgeCategoryRepository;
   calendarEvents: CalendarEntryRepository;
   searchIndex: SearchIndexPort;
   documentStorage: DocumentStorage;
@@ -225,6 +242,26 @@ export interface Container {
   indexDocument: IndexDocumentHandler;
   /** Knowledge index-removal handler (archive cleans the projection). */
   removeDocumentIndex: RemoveDocumentIndexHandler;
+  /** Article creation handler (S18). */
+  createArticle: CreateArticleHandler;
+  /** Article update handler (S18). */
+  updateArticle: UpdateArticleHandler;
+  /** Article publish handler (S18). */
+  publishArticle: PublishArticleHandler;
+  /** Article archive handler (S18). */
+  archiveArticle: ArchiveArticleHandler;
+  /** Single-article read handler (S18). */
+  getArticle: GetArticleHandler;
+  /** Workspace-scoped article listing handler (S18). */
+  listArticles: ListArticlesHandler;
+  /** Category creation handler (S18). */
+  createCategory: CreateCategoryHandler;
+  /** Workspace-scoped category listing handler (S18). */
+  listCategories: ListCategoriesHandler;
+  /** Published-article corpus indexing handler (S18). */
+  indexArticle: IndexArticleHandler;
+  /** Article corpus-removal handler (S18). */
+  removeArticleIndex: RemoveArticleIndexHandler;
   /** Notification inbox listing handler (recipient = authenticated user). */
   listNotifications: ListNotificationsHandler;
   /** Unread notification count handler. */
@@ -351,10 +388,15 @@ export function buildContainer(options: BuildContainerOptions): Container {
     entriesService: calendarEntriesService,
     publisher,
   });
+  const knowledgeDomainService = new KnowledgeDomainService({
+    articles: repositories.knowledgeArticles,
+    categories: repositories.knowledgeCategories,
+  });
   const knowledgeService = new KnowledgeApplicationService({
     sources: repositories.knowledgeSources,
     searchIndex: repositories.searchIndex,
     publisher,
+    knowledgeService: knowledgeDomainService,
   });
   const notificationService = new NotificationApplicationService({
     notifications: repositories.notifications,
@@ -401,6 +443,16 @@ export function buildContainer(options: BuildContainerOptions): Container {
     retrieveKnowledge: new RetrieveKnowledgeHandler(knowledgeService),
     indexDocument: new IndexDocumentHandler(knowledgeService),
     removeDocumentIndex: new RemoveDocumentIndexHandler(knowledgeService),
+    createArticle: new CreateArticleHandler(knowledgeService),
+    updateArticle: new UpdateArticleHandler(knowledgeService),
+    publishArticle: new PublishArticleHandler(knowledgeService),
+    archiveArticle: new ArchiveArticleHandler(knowledgeService),
+    getArticle: new GetArticleHandler(knowledgeService),
+    listArticles: new ListArticlesHandler(knowledgeService),
+    createCategory: new CreateCategoryHandler(knowledgeService),
+    listCategories: new ListCategoriesHandler(knowledgeService),
+    indexArticle: new IndexArticleHandler(knowledgeService),
+    removeArticleIndex: new RemoveArticleIndexHandler(knowledgeService),
     listNotifications: new ListNotificationsHandler(notificationService),
     unreadNotifications: new UnreadNotificationsCountHandler(notificationService),
     markNotificationRead: new MarkNotificationReadHandler(notificationService),
