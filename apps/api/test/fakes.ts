@@ -33,7 +33,14 @@ import type {
 import type { AssignmentId } from '@nexora/domain-projects';
 import type { Employee, EmployeeRepository } from '@nexora/domain-hr';
 import type { CalendarEntry, CalendarEntryRepository } from '@nexora/module-calendar';
-import type { Document, DocumentRepository } from '@nexora/domain-documents';
+import type {
+  Document,
+  DocumentRepository,
+  DocumentTemplate,
+  DocumentTemplateRepository,
+  DocumentVersion,
+  DocumentVersionRepository,
+} from '@nexora/domain-documents';
 import type { DocumentId } from '@nexora/domain-documents';
 import type { KnowledgeSource, KnowledgeSourceRepository } from '@nexora/domain-knowledge';
 import type { KnowledgeSourceId } from '@nexora/domain-knowledge';
@@ -335,6 +342,55 @@ export class FakeDocumentRepository implements DocumentRepository {
 
   async save(document: Document): Promise<void> {
     this.documents.set(document.id, document);
+  }
+}
+
+/** An in-memory {@link DocumentVersionRepository} (immutable history). */
+export class FakeDocumentVersionRepository implements DocumentVersionRepository {
+  readonly versions = new Map<string, DocumentVersion>();
+
+  async listByDocument(documentId: DocumentId): Promise<readonly DocumentVersion[]> {
+    return [...this.versions.values()]
+      .filter((version) => version.documentId === documentId)
+      .sort((a, b) => a.version - b.version);
+  }
+
+  async findByDocumentAndVersion(
+    documentId: DocumentId,
+    version: number,
+  ): Promise<DocumentVersion | undefined> {
+    return [...this.versions.values()].find(
+      (record) => record.documentId === documentId && record.version === version,
+    );
+  }
+
+  async save(version: DocumentVersion): Promise<void> {
+    this.versions.set(version.id, version);
+  }
+}
+
+/** An in-memory {@link DocumentTemplateRepository}. */
+export class FakeDocumentTemplateRepository implements DocumentTemplateRepository {
+  readonly templates = new Map<string, DocumentTemplate>();
+
+  async findById(templateId: string): Promise<DocumentTemplate | undefined> {
+    return this.templates.get(templateId);
+  }
+
+  async listActiveByWorkspace(
+    organizationId: TenantId,
+    workspaceId: string,
+  ): Promise<readonly DocumentTemplate[]> {
+    return [...this.templates.values()].filter(
+      (template) =>
+        template.organizationId === organizationId &&
+        template.workspaceId === workspaceId &&
+        template.isActive(),
+    );
+  }
+
+  async save(template: DocumentTemplate): Promise<void> {
+    this.templates.set(template.id, template);
   }
 }
 

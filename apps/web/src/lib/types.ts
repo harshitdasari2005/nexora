@@ -65,6 +65,44 @@ export interface DocumentDto {
   createdAt: string;
 }
 
+/** An immutable content revision of a document (S17 version history). */
+export interface DocumentVersionDto {
+  /** The version record id. */
+  id: string;
+  /** The owning document id. */
+  documentId: string;
+  /** The monotonic content revision number. */
+  version: number;
+  /** The content type of the revision. */
+  contentType: string;
+  /** The historical version this revision was restored from, when applicable. */
+  restoredFromVersion?: number;
+  /** The user that created the revision. */
+  createdBy: string;
+  /** ISO-8601 UTC creation time. */
+  createdAt: string;
+}
+
+/** A document template as seen by the client (S17). */
+export interface DocumentTemplateDto {
+  /** The template id. */
+  id: string;
+  /** The owning organization (tenant) id. */
+  organizationId: string;
+  /** The owning workspace id. */
+  workspaceId: string;
+  /** The template name. */
+  name: string;
+  /** An optional human-readable description. */
+  description?: string;
+  /** The starter content type. */
+  contentType: string;
+  /** The lifecycle status (`active` | `archived`). */
+  status: string;
+  /** ISO-8601 UTC creation time. */
+  createdAt: string;
+}
+
 /** A project as seen by the client. */
 export interface ProjectDto {
   id: string;

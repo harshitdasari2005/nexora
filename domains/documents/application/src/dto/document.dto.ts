@@ -26,7 +26,12 @@ export interface DocumentDto {
   status: string;
   /** A safe failure reason, when processing failed. */
   failureReason?: string;
-  /** The content version. */
+  /**
+   * The legacy processing counter (bumped on each successful processing).
+   * The authoritative content-revision number is the current entry of the
+   * document version history — `contentVersion` is `maxRevision + 1` and
+   * must never be presented as the current version.
+   */
   contentVersion: number;
   /** ISO-8601 UTC creation time. */
   createdAt: string;

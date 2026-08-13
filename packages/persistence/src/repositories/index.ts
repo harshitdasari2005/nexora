@@ -10,6 +10,7 @@ export * from './hr.js';
 export * from './resource-assignments.js';
 export * from './workflows.js';
 export * from './documents.js';
+export * from './documents-versions.js';
 export * from './knowledge.js';
 export * from './notifications.js';
 export * from './calendar.js';

@@ -5,4 +5,5 @@
 export * from './content-ref.js';
 export * from './document-id.js';
 export * from './document-status.js';
+export * from './document-template-status.js';
 export * from './document-title.js';

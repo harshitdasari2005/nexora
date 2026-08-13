@@ -18,6 +18,8 @@ import {
   PgActivityRepository,
   PgCalendarEventRepository,
   PgDocumentRepository,
+  PgDocumentTemplateRepository,
+  PgDocumentVersionRepository,
   PgEmployeeRepository,
   PgKnowledgeIndexStore,
   PgKnowledgeSourceRepository,
@@ -40,6 +42,8 @@ import {
   DefaultDocumentTextExtractor,
   InMemoryDocumentStorage,
 } from '@nexora/application-documents';
+
+import { MinioDocumentStorage } from './storage/minio-document-storage.js';
 
 import {
   NotificationEventConsumer,
@@ -97,7 +101,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   const app = Fastify({ logger: { level: dependencies.config.logLevel } });
   await app.register(cookie);
 
-  const repositories = dependencies.repositories ?? buildPgRepositories(dependencies.database);
+  const repositories =
+    dependencies.repositories ?? buildPgRepositories(dependencies.database, dependencies.config);
   const basePublisher = dependencies.publisher ?? new LoggingEventPublisher(app.log);
 
   // Notification platform: the consumer projects business events into
@@ -149,6 +154,14 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     archiveDocument: container.archiveDocument,
     listDocuments: container.listDocuments,
     getDocument: container.getDocument,
+    listDocumentVersions: container.listDocumentVersions,
+    uploadDocumentVersion: container.uploadDocumentVersion,
+    restoreDocumentVersion: container.restoreDocumentVersion,
+    getDocumentVersionContent: container.getDocumentVersionContent,
+    createDocumentTemplate: container.createDocumentTemplate,
+    listDocumentTemplates: container.listDocumentTemplates,
+    archiveDocumentTemplate: container.archiveDocumentTemplate,
+    createDocumentFromTemplate: container.createDocumentFromTemplate,
     indexDocument: container.indexDocument,
     removeDocumentIndex: container.removeDocumentIndex,
     retrieveKnowledge: container.retrieveKnowledge,
@@ -249,7 +262,10 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 }
 
 /** Builds the PostgreSQL repository set from the database client. */
-function buildPgRepositories(database: NexoraDatabase | undefined): RepositorySet {
+function buildPgRepositories(
+  database: NexoraDatabase | undefined,
+  config: ApiConfig,
+): RepositorySet {
   if (database === undefined) {
     throw new Error(
       'No repositories or database provided: pass either `repositories` (fakes) or `database` (PostgreSQL).',
@@ -268,10 +284,15 @@ function buildPgRepositories(database: NexoraDatabase | undefined): RepositorySe
     resourceAssignments: new PgResourceAssignmentRepository(database),
     employees: new PgEmployeeRepository(database),
     documents: new PgDocumentRepository(database),
+    documentVersions: new PgDocumentVersionRepository(database),
+    documentTemplates: new PgDocumentTemplateRepository(database),
     knowledgeSources: new PgKnowledgeSourceRepository(database),
     calendarEvents: new PgCalendarEventRepository(database),
     searchIndex: new PgKnowledgeIndexStore(database),
-    documentStorage: new InMemoryDocumentStorage(),
+    // Durable content when S3/MinIO is configured; in-memory storage for
+    // local dev without object storage (the port contract is identical).
+    documentStorage:
+      config.s3 === undefined ? new InMemoryDocumentStorage() : new MinioDocumentStorage(config.s3),
     documentExtractor: new DefaultDocumentTextExtractor(),
     workflowInstances: new PgWorkflowInstanceRepository(database),
     workflowStepExecutions: new PgWorkflowStepExecutionRepository(database),

@@ -59,6 +59,20 @@ export class DocumentArchivedError extends DocumentDomainError {
   }
 }
 
+/** The document version does not exist (or is not visible to the caller). */
+export class DocumentVersionNotFoundError extends DocumentDomainError {
+  constructor(details?: unknown) {
+    super('Document version not found', 'NOT_FOUND', details);
+  }
+}
+
+/** The document template does not exist (or is not visible to the caller). */
+export class DocumentTemplateNotFoundError extends DocumentDomainError {
+  constructor(details?: unknown) {
+    super('Document template not found', 'NOT_FOUND', details);
+  }
+}
+
 /**
  * Maps any thrown value onto the Documents domain error vocabulary. Shared
  * {@link ValidationError}s become {@link InvalidDocumentValueError}s; unknown

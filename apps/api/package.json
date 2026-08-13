@@ -41,6 +41,7 @@
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.36.4",
     "fastify": "^5.2.0",
+    "minio": "^8.0.0",
     "openid-client": "^5.7.0"
   },
   "devDependencies": {

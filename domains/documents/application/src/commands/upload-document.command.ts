@@ -12,7 +12,7 @@
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import type { EventEnvelope } from '@nexora/shared/events';
 
-import type { Document } from '@nexora/domain-documents';
+import type { Document, DocumentVersion } from '@nexora/domain-documents';
 
 /** Uploads a new document into a workspace. */
 export interface UploadDocumentCommand {
@@ -36,6 +36,10 @@ export interface UploadDocumentCommand {
 export interface UploadDocumentResult {
   /** The uploaded document aggregate (final processing state). */
   document: Document;
+  /** The immutable version record of the initial content revision (v1). */
+  version: DocumentVersion;
+  /** The initial version number (always 1). */
+  versionNumber: number;
   /** Domain events emitted by the use case (published once). */
   events: readonly EventEnvelope[];
   /** The extracted searchable text, when processing succeeded. */

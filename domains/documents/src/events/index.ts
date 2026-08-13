@@ -27,6 +27,10 @@ export const DOCUMENT_EVENT_TYPES = {
   documentAvailable: 'document.available',
   documentProcessingFailed: 'document.processing_failed',
   documentArchived: 'document.archived',
+  documentVersionUploaded: 'document.version_uploaded',
+  documentVersionRestored: 'document.version_restored',
+  documentTemplateCreated: 'document.template_created',
+  documentTemplateArchived: 'document.template_archived',
 } as const;
 
 /** Payload of the {@link documentUploadedEvent}. */
@@ -73,7 +77,43 @@ export interface DocumentArchivedPayload {
   documentId: DocumentId;
 }
 
-/** Context required to emit a Documents domain event. */
+/** Payload of the {@link documentVersionUploadedEvent}. */
+export interface DocumentVersionUploadedPayload {
+  /** The document whose content changed. */
+  documentId: DocumentId;
+  /** The new current REVISION number (monotonic, from the version history). */
+  version: number;
+}
+
+/** Payload of the {@link documentVersionRestoredEvent}. */
+export interface DocumentVersionRestoredPayload {
+  /** The document whose content was restored. */
+  documentId: DocumentId;
+  /** The new current REVISION number (a NEW revision — never a mutation of history). */
+  version: number;
+  /** The historical version the content was copied from. */
+  restoredFromVersion: number;
+}
+
+/** Payload of the {@link documentTemplateCreatedEvent}. */
+export interface DocumentTemplateCreatedPayload {
+  /** The created template. */
+  templateId: string;
+  /** The owning organization (tenant) id. */
+  organizationId: TenantId;
+  /** The owning workspace id. */
+  workspaceId: WorkspaceId;
+  /** The template name. */
+  name: string;
+  /** The initial status (`active`). */
+  status: string;
+}
+
+/** Payload of the {@link documentTemplateArchivedEvent}. */
+export interface DocumentTemplateArchivedPayload {
+  /** The archived template. */
+  templateId: string;
+}
 export interface DocumentEventContext {
   /** The actor that caused the event. */
   actor: EventActor;
@@ -87,7 +127,7 @@ export interface DocumentEventContext {
 function documentEvent<P>(
   type: string,
   context: DocumentEventContext,
-  documentId: DocumentId,
+  entityId: string,
   payload: P,
   version = 1,
 ): EventEnvelope<P> {
@@ -157,5 +197,62 @@ export function documentArchivedEvent(
 ): EventEnvelope<DocumentArchivedPayload> {
   return documentEvent(DOCUMENT_EVENT_TYPES.documentArchived, context, documentId, {
     documentId,
+  });
+}
+
+/**
+ * New content was adopted as the current revision (document.version_uploaded).
+ * Emitted by the aggregate on `uploadNewContent` — historical versions are
+ * never touched. `version` is the adopted REVISION number (the application
+ * passes it in); the aggregate's legacy `contentVersion` counter is never
+ * used as the revision.
+ */
+export function documentVersionUploadedEvent(
+  context: DocumentEventContext,
+  documentId: DocumentId,
+  version: number,
+): EventEnvelope<DocumentVersionUploadedPayload> {
+  return documentEvent(DOCUMENT_EVENT_TYPES.documentVersionUploaded, context, documentId, {
+    documentId,
+    version,
+  });
+}
+
+/**
+ * A historical version's content was restored as a NEW current version
+ * (document.version_restored). The historical version stays immutable —
+ * restore never mutates history. `version` is the adopted REVISION number;
+ * the aggregate's legacy `contentVersion` counter is never used as the
+ * revision.
+ */
+export function documentVersionRestoredEvent(
+  context: DocumentEventContext,
+  documentId: DocumentId,
+  version: number,
+  restoredFromVersion: number,
+): EventEnvelope<DocumentVersionRestoredPayload> {
+  return documentEvent(DOCUMENT_EVENT_TYPES.documentVersionRestored, context, documentId, {
+    documentId,
+    version,
+    restoredFromVersion,
+  });
+}
+
+/** A document template was created (document.template_created). */
+export function documentTemplateCreatedEvent(
+  context: DocumentEventContext,
+  templateId: string,
+  payload: DocumentTemplateCreatedPayload,
+): EventEnvelope<DocumentTemplateCreatedPayload> {
+  return documentEvent(DOCUMENT_EVENT_TYPES.documentTemplateCreated, context, templateId, payload);
+}
+
+/** A document template was archived (document.template_archived). */
+export function documentTemplateArchivedEvent(
+  context: DocumentEventContext,
+  templateId: string,
+): EventEnvelope<DocumentTemplateArchivedPayload> {
+  return documentEvent(DOCUMENT_EVENT_TYPES.documentTemplateArchived, context, templateId, {
+    templateId,
   });
 }

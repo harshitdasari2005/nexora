@@ -29,6 +29,8 @@ import {
   documentProcessingFailedEvent,
   documentProcessingStartedEvent,
   documentUploadedEvent,
+  documentVersionRestoredEvent,
+  documentVersionUploadedEvent,
 } from '../events/index.js';
 import { DocumentStateTransitionError } from '../errors/index.js';
 import { DOCUMENT_TRANSITIONS } from '../policies/index.js';
@@ -88,14 +90,16 @@ export interface DocumentSnapshot {
  * protected.
  */
 export class Document {
-  // Not `readonly`: reassigned only by `hydrate` (reconstitution).
+  // Not `readonly`: reassigned only by `hydrate` (reconstitution) and by
+  // `uploadNewContent` / `restoreContent` (a new content revision replaces
+  // the current content reference).
   #id: DocumentId;
   readonly #organizationId: TenantId;
   readonly #workspaceId: WorkspaceId;
   readonly #uploaderId: UserId;
   readonly #title: DocumentTitle;
   readonly #contentType: string;
-  readonly #contentRef: ContentRef;
+  #contentRef: ContentRef;
   #status: DocumentStatus;
   #failureReason?: string;
   #contentVersion: number;
@@ -264,6 +268,65 @@ export class Document {
   }
 
   /**
+   * Adopts NEW content as the current revision (a version upload): the
+   * content reference is replaced, the content version is bumped, and a
+   * {@link documentVersionUploadedEvent} is recorded. Historical versions are
+   * NEVER touched — the history lives in the immutable
+   * {@link DocumentVersion} records.
+   *
+   * @param revision - the monotonic revision number being adopted (computed
+   * by the application from the version history). The event carries this
+   * revision — never the aggregate's legacy {@link Document#contentVersion}
+   * processing counter.
+   *
+   * Only `available` documents accept new content; `archived` is terminal
+   * and `uploaded`/`processing`/`failed` are mid-lifecycle.
+   *
+   * @throws {DocumentStateTransitionError} when the document is not available.
+   */
+  uploadNewContent(
+    contentRef: ContentRef,
+    revision: number,
+    context: DocumentEventContext,
+    now = nowIso(),
+  ): void {
+    this.#assertAvailableForNewContent('upload new content');
+    this.#contentRef = contentRef;
+    this.#contentVersion += 1;
+    this.#bump(now);
+    this.#events.push(documentVersionUploadedEvent(context, this.#id, revision));
+  }
+
+  /**
+   * Restores a historical version's content as a NEW current revision: the
+   * content reference is replaced with the restored copy, the content
+   * version is bumped, and a {@link documentVersionRestoredEvent} is
+   * recorded. The historical version stays immutable — restore never mutates
+   * history.
+   *
+   * @param restoredFromVersion - the historical version whose content was copied.
+   * @param revision - the monotonic revision number of the restored copy
+   * (computed by the application from the version history). The event carries
+   * this revision — never the legacy processing counter.
+   * @throws {DocumentStateTransitionError} when the document is not available.
+   */
+  restoreContent(
+    contentRef: ContentRef,
+    restoredFromVersion: number,
+    revision: number,
+    context: DocumentEventContext,
+    now = nowIso(),
+  ): void {
+    this.#assertAvailableForNewContent('restore a version');
+    this.#contentRef = contentRef;
+    this.#contentVersion += 1;
+    this.#bump(now);
+    this.#events.push(
+      documentVersionRestoredEvent(context, this.#id, revision, restoredFromVersion),
+    );
+  }
+
+  /**
    * Produces a persistence snapshot of the document (PERSISTENCE.md §4
    * aggregate ownership).
    */
@@ -317,6 +380,19 @@ export class Document {
     const events = [...this.#events];
     this.#events.length = 0;
     return events;
+  }
+
+  /**
+   * Guards content adoption: only `available` documents accept new content
+   * (archived is terminal; uploaded/processing/failed are mid-lifecycle).
+   */
+  #assertAvailableForNewContent(action: string): void {
+    if (!this.#status.isAvailable()) {
+      throw new DocumentStateTransitionError(
+        `Cannot ${action} on a document in status ${this.#status.value}`,
+        { documentId: this.#id, status: this.#status.value },
+      );
+    }
   }
 
   /** Enforces the document lifecycle transition table (validate → mutate → event). */

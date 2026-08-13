@@ -24,6 +24,22 @@ export interface AiConfig {
   model: string;
 }
 
+/** S3/MinIO object-storage configuration (durable document content). */
+export interface S3Config {
+  /** The S3 endpoint host (e.g. `localhost` for the compose MinIO). */
+  endPoint: string;
+  /** The S3 endpoint port (e.g. `9000`). */
+  port: number;
+  /** Whether the endpoint requires TLS. */
+  useSSL: boolean;
+  /** The access key. */
+  accessKey: string;
+  /** The secret key. */
+  secretKey: string;
+  /** The bucket holding document content. */
+  bucket: string;
+}
+
 /** Session cookie options. */
 export interface CookieConfig {
   /** The cookie name holding the session token. */
@@ -54,6 +70,12 @@ export interface ApiConfig {
   cookie: CookieConfig;
   /** Enterprise AI Runtime configuration. */
   ai: AiConfig;
+  /**
+   * S3/MinIO object storage. `undefined` when S3_ENDPOINT is not set — the
+   * container then falls back to the in-memory storage port (local dev
+   * without MinIO). Durable content requires S3 configured.
+   */
+  s3: S3Config | undefined;
   /** Structured log level. */
   logLevel: 'debug' | 'info' | 'warn' | 'error';
 }
@@ -113,6 +135,31 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       groqApiKey: env['GROQ_API_KEY'] === undefined ? undefined : env['GROQ_API_KEY'],
       model: env['AI_MODEL']?.trim() || 'llama-3.3-70b-versatile',
     },
+    s3: loadS3Config(env),
     logLevel,
+  };
+}
+
+/**
+ * Loads the optional S3/MinIO storage configuration. When `S3_ENDPOINT` is
+ * not set the container uses the in-memory storage port (no durable
+ * documents); set all S3_* values to enable durable content storage.
+ */
+function loadS3Config(env: NodeJS.ProcessEnv): S3Config | undefined {
+  const endPoint = env['S3_ENDPOINT']?.trim();
+  if (endPoint === undefined || endPoint.length === 0) {
+    return undefined;
+  }
+  const port = Number(env['S3_PORT'] ?? 9000);
+  if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error('Invalid S3_PORT: must be an integer between 1 and 65535');
+  }
+  return {
+    endPoint,
+    port,
+    useSSL: env['S3_USE_SSL'] === 'true',
+    accessKey: required(env, 'S3_ACCESS_KEY'),
+    secretKey: required(env, 'S3_SECRET_KEY'),
+    bucket: env['S3_BUCKET']?.trim() || 'nexora-documents',
   };
 }

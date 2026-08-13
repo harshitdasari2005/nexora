@@ -26,6 +26,11 @@ import type { MembershipRole as OrgMembershipRole } from '@nexora/domain-organiz
 import { Project, type ProjectId, type ProjectStatusValue } from '@nexora/domain-projects';
 import { Employee, type EmployeeId } from '@nexora/domain-hr';
 import { Document, type DocumentId } from '@nexora/domain-documents';
+import type { DocumentTemplate } from '@nexora/domain-documents';
+import {
+  DocumentTemplate as DocumentTemplateFactory,
+  DocumentVersion as DocumentVersionFactory,
+} from '@nexora/domain-documents';
 import { KnowledgeSource, type KnowledgeSourceId } from '@nexora/domain-knowledge';
 import type { TenantId as ProjectTenantId } from '@nexora/contracts/common';
 
@@ -37,6 +42,8 @@ import {
   FakeActivityRepository,
   FakeCalendarEntryRepository,
   FakeDocumentRepository,
+  FakeDocumentTemplateRepository,
+  FakeDocumentVersionRepository,
   FakeEmployeeRepository,
   FakeKnowledgeSourceRepository,
   FakeMembershipRepository,
@@ -138,6 +145,8 @@ export async function buildTestApp(
     resourceAssignments: new FakeResourceAssignmentRepository(),
     employees: new FakeEmployeeRepository(),
     documents: new FakeDocumentRepository(),
+    documentVersions: new FakeDocumentVersionRepository(),
+    documentTemplates: new FakeDocumentTemplateRepository(),
     knowledgeSources: new FakeKnowledgeSourceRepository(),
     calendarEvents: new FakeCalendarEntryRepository(),
     searchIndex: new InMemorySearchIndex(),
@@ -423,6 +432,85 @@ export async function seedDocumentAndKnowledge(
     version: 1,
     indexedAt: source.indexedAt,
   });
+}
+
+/**
+ * Seeds an immutable DocumentVersion record into the fake repository (real
+ * domain construction). Used to model version histories the API cannot
+ * create in a foreign scope.
+ */
+export async function seedDocumentVersion(
+  repos: RepositorySet,
+  input: {
+    documentId: string;
+    organizationId: string;
+    workspaceId: string;
+    version: number;
+    contentRef: string;
+    contentType?: string;
+    createdBy: string;
+  },
+): Promise<void> {
+  const record = DocumentVersionFactory.create({
+    documentId: input.documentId as never,
+    organizationId: input.organizationId as TenantId,
+    workspaceId: input.workspaceId as WorkspaceId,
+    version: input.version,
+    contentRef: input.contentRef,
+    contentType: input.contentType ?? 'text/plain',
+    createdBy: input.createdBy as UserId,
+  });
+  await repos.documentVersions.save(record);
+}
+
+/**
+ * Seeds a DocumentTemplate aggregate into the fake repository (real domain
+ * construction). Used to model templates the API cannot create in a foreign
+ * scope.
+ */
+export async function seedDocumentTemplate(
+  repos: RepositorySet,
+  input: {
+    id?: string;
+    organizationId: string;
+    workspaceId: string;
+    createdBy: string;
+    name: string;
+    contentType?: string;
+    contentRef: string;
+    status?: 'active' | 'archived';
+  },
+): Promise<DocumentTemplate> {
+  const context = {
+    actor: { kind: 'user' as const, id: input.createdBy as UserId },
+    correlationId: 'corr_seed_tpl',
+    organizationId: input.organizationId as TenantId,
+  };
+  const created = DocumentTemplateFactory.create(
+    {
+      organizationId: input.organizationId as TenantId,
+      workspaceId: input.workspaceId as WorkspaceId,
+      createdBy: input.createdBy as UserId,
+      name: input.name,
+      contentType: input.contentType ?? 'text/markdown',
+      contentRef: input.contentRef,
+    },
+    context,
+  );
+  created.pullDomainEvents();
+  const template =
+    input.id === undefined
+      ? created
+      : DocumentTemplateFactory.hydrate({
+          ...DocumentTemplateFactory.snapshot(created),
+          id: input.id,
+        });
+  if (input.status === 'archived') {
+    template.archive(context);
+  }
+  template.pullDomainEvents();
+  await repos.documentTemplates.save(template);
+  return template;
 }
 
 /** Seeds a WorkspaceMembership aggregate into the fake repository. */

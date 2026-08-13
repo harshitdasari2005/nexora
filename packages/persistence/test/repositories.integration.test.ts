@@ -39,6 +39,8 @@ import { Project, ResourceAssignment } from '@nexora/domain-projects';
 import { Employee } from '@nexora/domain-hr';
 import { CalendarEntry } from '@nexora/module-calendar';
 import { ActivityItem, Notification, NotificationPreferences } from '@nexora/module-notifications';
+import { ContentRef, DocumentTemplate, DocumentVersion } from '@nexora/domain-documents';
+import { Document } from '@nexora/domain-documents';
 
 import { createDatabaseFromPool, type NexoraDatabase } from '../src/db.js';
 import { ScryptPasswordHasher } from '../src/hasher/index.js';
@@ -46,6 +48,9 @@ import { runMigrations } from '../src/migrate.js';
 import {
   PgActivityRepository,
   PgCalendarEventRepository,
+  PgDocumentRepository,
+  PgDocumentTemplateRepository,
+  PgDocumentVersionRepository,
   PgEmployeeRepository,
   PgMembershipRepository,
   PgNotificationPreferencesRepository,
@@ -62,6 +67,8 @@ import {
 import {
   activityItems,
   calendarEvents,
+  documentTemplates,
+  documentVersions,
   employees,
   notifications,
   notificationPreferences,
@@ -131,6 +138,8 @@ describeDb('repository integration (Postgres)', () => {
   });
 
   afterAll(async () => {
+    await db.delete(documentVersions);
+    await db.delete(documentTemplates);
     await db.delete(calendarEvents);
     await db.delete(activityItems);
     await db.delete(notifications);
@@ -748,5 +757,169 @@ describeDb('repository integration (Postgres)', () => {
     // that would hide workspace-scoped rows.
     const withWorkspace = await repo.listByWorkspace(TENANT, 'ws_cal_eng' as never);
     expect(withWorkspace.some((e) => e.title.value === 'Filter Check')).toBe(true);
+  });
+
+  it('round-trips immutable DocumentVersion records in ascending order', async () => {
+    const repo = new PgDocumentVersionRepository(db);
+    const documentId = 'doc_11111111-1111-4111-8111-111111111111' as never;
+    const workspaceId = 'ws_ver_1' as never;
+
+    const v1 = DocumentVersion.create({
+      documentId,
+      organizationId: TENANT,
+      workspaceId,
+      version: 1,
+      contentRef: `doc/${documentId}/v1`,
+      contentType: 'text/plain',
+      createdBy: 'usr_alice' as UserId,
+    });
+    const v2 = DocumentVersion.create({
+      documentId,
+      organizationId: TENANT,
+      workspaceId,
+      version: 2,
+      contentRef: `doc/${documentId}/v2`,
+      contentType: 'text/plain',
+      createdBy: 'usr_alice' as UserId,
+    });
+    await repo.save(v2);
+    await repo.save(v1);
+
+    // History order is ascending (oldest first) regardless of write order.
+    const listed = await repo.listByDocument(documentId);
+    expect(listed.map((record) => record.version)).toEqual([1, 2]);
+    expect(listed[0]?.contentRef.value).toBe(`doc/${documentId}/v1`);
+    expect(listed[1]?.contentRef.value).toBe(`doc/${documentId}/v2`);
+    expect(listed[1]?.restoredFromVersion).toBeUndefined();
+
+    const found = await repo.findByDocumentAndVersion(documentId, 2);
+    expect(found?.id).toBe(v2.id);
+    expect(await repo.findByDocumentAndVersion(documentId, 99)).toBeUndefined();
+
+    // A duplicate (document, version) is rejected — history is append-only.
+    await expect(repo.save(v1)).rejects.toThrow();
+  });
+
+  it('persists restore provenance on DocumentVersion records', async () => {
+    const repo = new PgDocumentVersionRepository(db);
+    const documentId = 'doc_22222222-2222-4222-8222-222222222222' as never;
+    const restored = DocumentVersion.create({
+      documentId,
+      organizationId: TENANT,
+      workspaceId: 'ws_ver_1' as never,
+      version: 3,
+      contentRef: `doc/${documentId}/v3`,
+      contentType: 'text/markdown',
+      restoredFromVersion: 1,
+      createdBy: 'usr_alice' as UserId,
+    });
+    await repo.save(restored);
+
+    const loaded = await repo.findByDocumentAndVersion(documentId, 3);
+    expect(loaded?.restoredFromVersion).toBe(1);
+    expect(loaded?.contentRef.value).toBe(`doc/${documentId}/v3`);
+    expect(loaded?.createdBy).toBe('usr_alice');
+  });
+
+  it('round-trips DocumentTemplate aggregates with active/archived lifecycle', async () => {
+    const repo = new PgDocumentTemplateRepository(db);
+    const context = {
+      actor: { kind: 'user' as const, id: 'usr_system' },
+      correlationId: 'corr_tpl',
+      organizationId: TENANT,
+    };
+    const template = DocumentTemplate.create(
+      {
+        organizationId: TENANT,
+        workspaceId: 'ws_tpl_1' as never,
+        createdBy: 'usr_alice' as UserId,
+        name: 'Quarterly Plan',
+        description: 'Starter',
+        contentType: 'text/markdown',
+        contentRef: `tpl/${'tpl_0000-0000'}/v1`,
+      },
+      context,
+    );
+    template.pullDomainEvents();
+    await repo.save(template);
+
+    const loaded = await repo.findById(template.id);
+    expect(loaded?.name).toBe('Quarterly Plan');
+    expect(loaded?.isActive()).toBe(true);
+    expect(loaded?.version).toBe(template.version);
+
+    // Archive persists and the picker read excludes archived templates.
+    loaded?.archive(context);
+    await repo.save(loaded as DocumentTemplate);
+    const archived = await repo.findById(template.id);
+    expect(archived?.isActive()).toBe(false);
+
+    const picker = await repo.listActiveByWorkspace(TENANT, 'ws_tpl_1' as never);
+    expect(picker.some((entry) => entry.id === template.id)).toBe(false);
+  });
+
+  it('lists only the ACTIVE templates of the trusted workspace (isolation)', async () => {
+    const repo = new PgDocumentTemplateRepository(db);
+    const context = {
+      actor: { kind: 'user' as const, id: 'usr_system' },
+      correlationId: 'corr_tpl',
+      organizationId: TENANT,
+    };
+    const make = (name: string, workspaceId: string): DocumentTemplate => {
+      const template = DocumentTemplate.create(
+        {
+          organizationId: TENANT,
+          workspaceId: workspaceId as never,
+          createdBy: 'usr_alice' as UserId,
+          name,
+          contentType: 'text/plain',
+          contentRef: `tpl/${name}/v1`,
+        },
+        context,
+      );
+      template.pullDomainEvents();
+      return template;
+    };
+    await repo.save(make('Visible', 'ws_tpl_a'));
+    await repo.save(make('Hidden', 'ws_tpl_b'));
+
+    const visible = await repo.listActiveByWorkspace(TENANT, 'ws_tpl_a' as never);
+    expect(visible.map((entry) => entry.name)).toEqual(['Visible']);
+    expect(visible.every((entry) => entry.workspaceId === 'ws_tpl_a')).toBe(true);
+
+    const alien = await repo.listActiveByWorkspace('org_alien' as TenantId, 'ws_tpl_a' as never);
+    expect(alien.some((entry) => entry.name === 'Visible')).toBe(false);
+  });
+
+  it('round-trips a Document aggregate with a versioned content reference', async () => {
+    const pgDocuments = new PgDocumentRepository(db);
+    const context = {
+      actor: { kind: 'user' as const, id: 'usr_alice' },
+      correlationId: 'corr_doc',
+      organizationId: TENANT,
+    };
+    const document = Document.create(
+      {
+        organizationId: TENANT,
+        workspaceId: 'ws_doc_1' as never,
+        uploaderId: 'usr_alice' as UserId,
+        title: 'Versioned Plan',
+        contentType: 'text/plain',
+      },
+      ContentRef.forDocument('doc_33333333-3333-4333-8333-333333333333', 2),
+      context,
+    );
+    document.pullDomainEvents();
+    // Walk to `available` first (content adoption requires availability).
+    document.markProcessing(context);
+    document.completeProcessing(context);
+    document.pullDomainEvents();
+    document.uploadNewContent(ContentRef.forDocument(document.id, 2), 2, context);
+    document.pullDomainEvents();
+    await pgDocuments.save(document);
+
+    const loaded = await pgDocuments.findById(document.id);
+    expect(loaded?.contentRef.value).toBe(`doc/${document.id}/v2`);
+    expect(loaded?.contentVersion).toBe(3);
   });
 });

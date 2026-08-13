@@ -350,6 +350,66 @@ export const documents = pgTable(
 );
 
 /**
+ * document_versions — the {@link @nexora/domain-documents!DocumentVersion}
+ * aggregate (S17 version history). An IMMUTABLE append-only log of a
+ * document's content revisions: one row per revision, never updated once
+ * written (restore copies content forward into a NEW revision — history is
+ * never mutated). The unique (document_id, version) constraint is the
+ * monotonicity defense; the organization/workspace ids are the trusted
+ * scope columns, and every read goes through the owning document (whose
+ * scope the caller verifies first).
+ */
+export const documentVersions = pgTable(
+  'document_versions',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    documentId: varchar('document_id', { length: 64 }).notNull(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    version: integer('version').notNull(),
+    contentRef: varchar('content_ref', { length: 256 }).notNull(),
+    contentType: varchar('content_type', { length: 64 }).notNull(),
+    restoredFromVersion: integer('restored_from_version'),
+    createdBy: varchar('created_by', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('document_versions_document_idx').on(table.documentId),
+    uniqueIndex('document_versions_document_version_unique').on(table.documentId, table.version),
+  ],
+);
+
+/**
+ * document_templates — the
+ * {@link @nexora/domain-documents!DocumentTemplate} aggregate (S17
+ * templates). One row per template; the organization id is the tenant scope
+ * and the workspace id is the workspace scope — every read is scoped (the
+ * picker lists ACTIVE templates of the trusted workspace only). Metadata is
+ * relational; starter content lives behind the storage port.
+ */
+export const documentTemplates = pgTable(
+  'document_templates',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    createdBy: varchar('created_by', { length: 64 }).notNull(),
+    name: varchar('name', { length: 200 }).notNull(),
+    description: text('description'),
+    contentType: varchar('content_type', { length: 64 }).notNull(),
+    contentRef: varchar('content_ref', { length: 256 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('document_templates_org_idx').on(table.organizationId),
+    index('document_templates_workspace_idx').on(table.workspaceId),
+  ],
+);
+
+/**
  * knowledge_sources — the {@link @nexora/domain-knowledge!KnowledgeSource}
  * aggregate AND the persisted search projection (DOMAIN_MODEL.md Search
  * IndexEntry). One row per indexed document within a scope; re-indexing a

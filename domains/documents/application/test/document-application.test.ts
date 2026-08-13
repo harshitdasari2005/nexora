@@ -14,6 +14,10 @@ import {
   DocumentNotFoundError,
   type Document,
   type DocumentRepository,
+  type DocumentTemplate,
+  type DocumentTemplateRepository,
+  type DocumentVersion,
+  type DocumentVersionRepository,
 } from '@nexora/domain-documents';
 import {
   DefaultDocumentTextExtractor,
@@ -28,6 +32,55 @@ const TENANT = 'org_acme' as TenantId;
 const WORKSPACE = 'wsp_engineering' as WorkspaceId;
 const WORKSPACE_B = 'wsp_other' as WorkspaceId;
 const UPLOADER = 'usr_alice' as UserId;
+
+/** An in-memory {@link DocumentVersionRepository} (immutable history). */
+class InMemoryDocumentVersionRepository implements DocumentVersionRepository {
+  readonly versions = new Map<string, DocumentVersion>();
+
+  async listByDocument(documentId: string): Promise<readonly DocumentVersion[]> {
+    return [...this.versions.values()]
+      .filter((version) => version.documentId === documentId)
+      .sort((a, b) => a.version - b.version);
+  }
+
+  async findByDocumentAndVersion(
+    documentId: string,
+    version: number,
+  ): Promise<DocumentVersion | undefined> {
+    return [...this.versions.values()].find(
+      (record) => record.documentId === documentId && record.version === version,
+    );
+  }
+
+  async save(version: DocumentVersion): Promise<void> {
+    this.versions.set(version.id, version);
+  }
+}
+
+/** An in-memory {@link DocumentTemplateRepository}. */
+class InMemoryDocumentTemplateRepository implements DocumentTemplateRepository {
+  readonly templates = new Map<string, DocumentTemplate>();
+
+  async findById(templateId: string): Promise<DocumentTemplate | undefined> {
+    return this.templates.get(templateId);
+  }
+
+  async listActiveByWorkspace(
+    organizationId: TenantId,
+    workspaceId: WorkspaceId,
+  ): Promise<readonly DocumentTemplate[]> {
+    return [...this.templates.values()].filter(
+      (template) =>
+        template.organizationId === organizationId &&
+        template.workspaceId === workspaceId &&
+        template.isActive(),
+    );
+  }
+
+  async save(template: DocumentTemplate): Promise<void> {
+    this.templates.set(template.id, template);
+  }
+}
 
 /** An in-memory {@link DocumentRepository} (matches the fake used in API tests). */
 class InMemoryDocumentRepository implements DocumentRepository {
@@ -67,23 +120,27 @@ function recordingPublisher(): EventPublisher & { published: readonly EventEnvel
 function buildService(
   options: {
     documents?: InMemoryDocumentRepository;
+    versions?: InMemoryDocumentVersionRepository;
+    templates?: InMemoryDocumentTemplateRepository;
     storage?: DocumentStorage;
     extractor?: DocumentTextExtractor;
     publisher?: EventPublisher & { published: readonly EventEnvelope[] };
   } = {},
 ) {
   const documents = options.documents ?? new InMemoryDocumentRepository();
+  const versions = options.versions ?? new InMemoryDocumentVersionRepository();
+  const templates = options.templates ?? new InMemoryDocumentTemplateRepository();
   const storage = options.storage ?? new InMemoryDocumentStorage();
   const extractor = options.extractor ?? new DefaultDocumentTextExtractor();
   const publisher = options.publisher ?? recordingPublisher();
   const service = new DocumentApplicationService({
-    documentsService: new DocumentDomainService({ documents }),
+    documentsService: new DocumentDomainService({ documents, versions, templates }),
     documents,
     storage,
     extractor,
     publisher,
   });
-  return { service, documents, storage, extractor, publisher };
+  return { service, documents, versions, templates, storage, extractor, publisher };
 }
 
 function uploadCommand(
@@ -266,5 +323,339 @@ describe('DocumentApplicationService reads', () => {
 
     const foreign = await service.getDocument(TENANT, WORKSPACE_B, uploaded.value.document.id);
     expect(foreign.ok).toBe(false);
+  });
+});
+
+describe('DocumentApplicationService.uploadDocumentVersion (S17 versioning)', () => {
+  async function uploadedDocument(service: DocumentApplicationService) {
+    const uploaded = await service.uploadDocument(uploadCommand());
+    expect(uploaded.ok).toBe(true);
+    if (!uploaded.ok) throw new Error('upload failed');
+    return uploaded.value;
+  }
+
+  it('records v1 on upload, then appends a monotonic v2 on new content', async () => {
+    const { service, versions, publisher } = buildService();
+    const initial = await uploadedDocument(service);
+
+    const history = await versions.listByDocument(initial.document.id);
+    expect(history.map((record) => record.version)).toEqual([1]);
+    expect(history[0]?.contentRef.value).toBe(initial.document.contentRef.value);
+
+    const updated = await service.uploadDocumentVersion({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      documentId: initial.document.id,
+      contentType: 'text/plain',
+      content: Buffer.from('The revised deadline is August 15.'),
+      correlationId: 'corr_v2',
+    });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.value.versionNumber).toBe(2);
+    expect(updated.value.document.contentRef.value).toContain('/v2');
+    expect(updated.value.extractedText).toContain('August 15');
+
+    const after = await versions.listByDocument(initial.document.id);
+    expect(after.map((record) => record.version)).toEqual([1, 2]);
+    expect(after[1]?.contentRef.value).toBe(updated.value.document.contentRef.value);
+
+    // The authoritative content-change event was emitted.
+    expect(publisher.published.map((event) => event.type)).toContain('document.version_uploaded');
+  });
+
+  it('does not corrupt the current revision when the new content is not processable', async () => {
+    const { service, versions, publisher } = buildService();
+    const initial = await uploadedDocument(service);
+
+    const failed = await service.uploadDocumentVersion({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      documentId: initial.document.id,
+      contentType: 'application/pdf',
+      content: Buffer.from('not a pdf'),
+      correlationId: 'corr_bad',
+    });
+    expect(failed.ok).toBe(false);
+
+    const reloaded = await service.getDocument(TENANT, WORKSPACE, initial.document.id);
+    expect(reloaded.ok).toBe(true);
+    if (!reloaded.ok) return;
+    expect(reloaded.value.contentVersion).toBe(initial.document.contentVersion);
+    expect(reloaded.value.status).toBe('available');
+
+    // No mutation and no history appended: exactly v1 remains.
+    const history = await versions.listByDocument(initial.document.id);
+    expect(history.map((record) => record.version)).toEqual([1]);
+    expect(publisher.published.some((event) => event.type === 'document.version_uploaded')).toBe(
+      false,
+    );
+  });
+
+  it('rejects a version upload for a foreign-workspace document (isolation)', async () => {
+    const { service } = buildService();
+    const initial = await uploadedDocument(service);
+
+    const foreign = await service.uploadDocumentVersion({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE_B,
+      actorId: UPLOADER,
+      documentId: initial.document.id,
+      contentType: 'text/plain',
+      content: Buffer.from('sneaky'),
+      correlationId: 'corr_forge',
+    });
+    expect(foreign.ok).toBe(false);
+    if (foreign.ok) return;
+    expect(foreign.error instanceof DocumentNotFoundError).toBe(true);
+  });
+});
+
+describe('DocumentApplicationService.restoreDocumentVersion (S17 restore)', () => {
+  async function seededDocument(service: DocumentApplicationService) {
+    const initial = await service.uploadDocument(uploadCommand());
+    expect(initial.ok).toBe(true);
+    if (!initial.ok) throw new Error('upload failed');
+    const updated = await service.uploadDocumentVersion({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      documentId: initial.value.document.id,
+      contentType: 'text/plain',
+      content: Buffer.from('The revised deadline is August 15.'),
+      correlationId: 'corr_v2',
+    });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) throw new Error('version upload failed');
+    return updated.value;
+  }
+
+  it('restores v1 as a NEW v3: history stays immutable, current content changes', async () => {
+    const { service, versions, storage, publisher } = buildService();
+    const updated = await seededDocument(service);
+    const documentId = updated.document.id;
+
+    const restored = await service.restoreDocumentVersion({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      documentId,
+      version: 1,
+      correlationId: 'corr_restore',
+    });
+    expect(restored.ok).toBe(true);
+    if (!restored.ok) return;
+    expect(restored.value.versionNumber).toBe(3);
+    expect(restored.value.restoredFromVersion).toBe(1);
+    expect(restored.value.extractedText).toContain('deadline is June 30');
+
+    // History: v1 and v2 are UNTOUCHED; v3 is the new copy (restoredFrom 1).
+    const history = await versions.listByDocument(documentId);
+    expect(history.map((record) => record.version)).toEqual([1, 2, 3]);
+    expect(history[0]?.restoredFromVersion).toBeUndefined();
+    expect(history[1]?.restoredFromVersion).toBeUndefined();
+    expect(history[2]?.restoredFromVersion).toBe(1);
+    expect(history[2]?.contentRef.value).toBe(restored.value.document.contentRef.value);
+    expect(history[0]?.contentRef.value).not.toBe(history[2]?.contentRef.value);
+
+    // The restored bytes were copied forward into a NEW storage key.
+    const storedKeys = [...(storage as InMemoryDocumentStorage).contents.keys()];
+    expect(storedKeys).toContain(history[0]?.contentRef.value);
+    expect(storedKeys).toContain(history[2]?.contentRef.value);
+
+    // The authoritative restore event was emitted.
+    expect(publisher.published.map((event) => event.type)).toContain('document.version_restored');
+  });
+
+  it('resolves an invalid (document, version) combination to NOT FOUND', async () => {
+    const { service } = buildService();
+    const updated = await seededDocument(service);
+
+    const invalid = await service.restoreDocumentVersion({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      documentId: updated.document.id,
+      version: 99,
+      correlationId: 'corr_bad',
+    });
+    expect(invalid.ok).toBe(false);
+    if (invalid.ok) return;
+    expect(invalid.error.code).toBe('NOT_FOUND');
+  });
+
+  it('never restores a foreign-workspace document version (isolation)', async () => {
+    const { service } = buildService();
+    const updated = await seededDocument(service);
+
+    const foreign = await service.restoreDocumentVersion({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE_B,
+      actorId: UPLOADER,
+      documentId: updated.document.id,
+      version: 1,
+      correlationId: 'corr_forge',
+    });
+    expect(foreign.ok).toBe(false);
+  });
+
+  it('lists versions only for visible documents (foreign workspace resolves NOT FOUND)', async () => {
+    const { service } = buildService();
+    const updated = await seededDocument(service);
+
+    const foreign = await service.listDocumentVersions(TENANT, WORKSPACE_B, updated.document.id);
+    expect(foreign.ok).toBe(false);
+
+    const visible = await service.listDocumentVersions(TENANT, WORKSPACE, updated.document.id);
+    expect(visible.ok).toBe(true);
+    if (!visible.ok) return;
+    // The seeded document has v1 (initial) + v2 (new version) — no restore yet.
+    expect(visible.value.map((record) => record.version)).toEqual([1, 2]);
+  });
+
+  it('serves version content only within the trusted scope', async () => {
+    const { service } = buildService();
+    const updated = await seededDocument(service);
+
+    const content = await service.getDocumentVersionContent(
+      TENANT,
+      WORKSPACE,
+      updated.document.id,
+      2,
+    );
+    expect(content.ok).toBe(true);
+    if (!content.ok) return;
+    expect(content.value.content.toString('utf8')).toContain('August 15');
+
+    const foreign = await service.getDocumentVersionContent(
+      TENANT,
+      WORKSPACE_B,
+      updated.document.id,
+      2,
+    );
+    expect(foreign.ok).toBe(false);
+  });
+});
+
+describe('DocumentApplicationService templates (S17)', () => {
+  it('creates an active template, lists it, and archives it', async () => {
+    const { service } = buildService();
+
+    const created = await service.createDocumentTemplate({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      name: 'Quarterly Plan',
+      description: 'Starter',
+      contentType: 'text/markdown',
+      content: Buffer.from('# Quarterly Plan\nThe launch window opens in May.'),
+      correlationId: 'corr_tpl',
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(created.value.template.isActive()).toBe(true);
+
+    const listed = await service.listDocumentTemplates(TENANT, WORKSPACE);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) return;
+    expect(listed.value.map((template) => template.name)).toEqual(['Quarterly Plan']);
+
+    // Archived templates leave the picker.
+    const archived = await service.archiveDocumentTemplate({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      templateId: created.value.template.id,
+      correlationId: 'corr_arch',
+    });
+    expect(archived.ok).toBe(true);
+    const after = await service.listDocumentTemplates(TENANT, WORKSPACE);
+    expect(after.ok && after.value).toEqual([]);
+  });
+
+  it('templates are workspace-scoped: a foreign workspace never lists or archives them', async () => {
+    const { service } = buildService();
+    const created = await service.createDocumentTemplate({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      name: 'Secret Template',
+      contentType: 'text/plain',
+      content: Buffer.from('confidential starter'),
+      correlationId: 'corr_tpl',
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const foreignList = await service.listDocumentTemplates(TENANT, WORKSPACE_B);
+    expect(foreignList.ok && foreignList.value).toEqual([]);
+
+    const foreignArchive = await service.archiveDocumentTemplate({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE_B,
+      actorId: UPLOADER,
+      templateId: created.value.template.id,
+      correlationId: 'corr_forge',
+    });
+    expect(foreignArchive.ok).toBe(false);
+    if (foreignArchive.ok) return;
+    expect(foreignArchive.error.code).toBe('NOT_FOUND');
+  });
+
+  it('creates a document from a template through the same upload pipeline', async () => {
+    const { service } = buildService();
+    const created = await service.createDocumentTemplate({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      name: 'Onboarding Doc',
+      contentType: 'text/markdown',
+      content: Buffer.from('# Onboarding\nWelcome to the team.'),
+      correlationId: 'corr_tpl',
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const fromTemplate = await service.createDocumentFromTemplate({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      templateId: created.value.template.id,
+      title: 'Alex Onboarding',
+      correlationId: 'corr_use',
+    });
+    expect(fromTemplate.ok).toBe(true);
+    if (!fromTemplate.ok) return;
+    expect(fromTemplate.value.document.status.value).toBe('available');
+    expect(fromTemplate.value.extractedText).toContain('Welcome to the team');
+  });
+
+  it('rejects using a template from a foreign workspace (NOT FOUND)', async () => {
+    const { service } = buildService();
+    const created = await service.createDocumentTemplate({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      name: 'Private Template',
+      contentType: 'text/plain',
+      content: Buffer.from('secret starter'),
+      correlationId: 'corr_tpl',
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const foreign = await service.createDocumentFromTemplate({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE_B,
+      actorId: UPLOADER,
+      templateId: created.value.template.id,
+      title: 'Sneaky',
+      correlationId: 'corr_forge',
+    });
+    expect(foreign.ok).toBe(false);
+    if (foreign.ok) return;
+    expect(foreign.error.code).toBe('NOT_FOUND');
   });
 });

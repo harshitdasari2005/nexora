@@ -11,6 +11,8 @@
 
 // Entities
 export * from './entities/document.js';
+export * from './entities/document-template.js';
+export * from './entities/document-version.js';
 
 // Value objects
 export * from './value-objects/index.js';

@@ -12,7 +12,11 @@ import type { MembershipRepository, OrganizationRepository } from '@nexora/domai
 import type { RoleRepository, SessionRepository, UserRepository } from '@nexora/domain-identity';
 import type { ProjectRepository, ResourceAssignmentRepository } from '@nexora/domain-projects';
 import type { EmployeeRepository } from '@nexora/domain-hr';
-import type { DocumentRepository } from '@nexora/domain-documents';
+import type {
+  DocumentRepository,
+  DocumentTemplateRepository,
+  DocumentVersionRepository,
+} from '@nexora/domain-documents';
 import type { KnowledgeSourceRepository } from '@nexora/domain-knowledge';
 import type { CalendarEntryRepository } from '@nexora/module-calendar';
 import type { SearchIndexPort } from '@nexora/module-search';
@@ -72,10 +76,18 @@ import {
 } from '@nexora/application-hr';
 import {
   ArchiveDocumentHandler,
+  ArchiveDocumentTemplateHandler,
+  CreateDocumentFromTemplateHandler,
+  CreateDocumentTemplateHandler,
   DocumentApplicationService,
   GetDocumentHandler,
+  GetDocumentVersionContentHandler,
+  ListDocumentTemplatesHandler,
+  ListDocumentVersionsHandler,
   ListDocumentsHandler,
+  RestoreDocumentVersionHandler,
   UploadDocumentHandler,
+  UploadDocumentVersionHandler,
   type DocumentStorage,
   type DocumentTextExtractor,
 } from '@nexora/application-documents';
@@ -121,6 +133,8 @@ export interface RepositorySet {
   resourceAssignments: ResourceAssignmentRepository;
   employees: EmployeeRepository;
   documents: DocumentRepository;
+  documentVersions: DocumentVersionRepository;
+  documentTemplates: DocumentTemplateRepository;
   knowledgeSources: KnowledgeSourceRepository;
   calendarEvents: CalendarEntryRepository;
   searchIndex: SearchIndexPort;
@@ -179,6 +193,22 @@ export interface Container {
   listDocuments: ListDocumentsHandler;
   /** Single-document read handler. */
   getDocument: GetDocumentHandler;
+  /** Version-history listing handler (S17). */
+  listDocumentVersions: ListDocumentVersionsHandler;
+  /** New-version upload handler (S17). */
+  uploadDocumentVersion: UploadDocumentVersionHandler;
+  /** Version-restore handler (S17). */
+  restoreDocumentVersion: RestoreDocumentVersionHandler;
+  /** Version-content read handler (S17). */
+  getDocumentVersionContent: GetDocumentVersionContentHandler;
+  /** Template creation handler (S17). */
+  createDocumentTemplate: CreateDocumentTemplateHandler;
+  /** Template-picker listing handler (S17). */
+  listDocumentTemplates: ListDocumentTemplatesHandler;
+  /** Template archive handler (S17). */
+  archiveDocumentTemplate: ArchiveDocumentTemplateHandler;
+  /** Create-document-from-template handler (S17). */
+  createDocumentFromTemplate: CreateDocumentFromTemplateHandler;
   /** Calendar-entry creation handler. */
   createCalendarEvent: CreateCalendarEventHandler;
   /** Calendar-entry reschedule handler. */
@@ -271,9 +301,11 @@ export function buildContainer(options: BuildContainerOptions): Container {
     employees: repositories.employees,
   });
 
-  // Documents domain service.
+  // Documents domain service (lifecycle + S17 version history + templates).
   const documentsService = new DocumentDomainService({
     documents: repositories.documents,
+    versions: repositories.documentVersions,
+    templates: repositories.documentTemplates,
   });
 
   // Calendar domain service.
@@ -353,6 +385,14 @@ export function buildContainer(options: BuildContainerOptions): Container {
     archiveDocument: new ArchiveDocumentHandler(documentService),
     listDocuments: new ListDocumentsHandler(documentService),
     getDocument: new GetDocumentHandler(documentService),
+    listDocumentVersions: new ListDocumentVersionsHandler(documentService),
+    uploadDocumentVersion: new UploadDocumentVersionHandler(documentService),
+    restoreDocumentVersion: new RestoreDocumentVersionHandler(documentService),
+    getDocumentVersionContent: new GetDocumentVersionContentHandler(documentService),
+    createDocumentTemplate: new CreateDocumentTemplateHandler(documentService),
+    listDocumentTemplates: new ListDocumentTemplatesHandler(documentService),
+    archiveDocumentTemplate: new ArchiveDocumentTemplateHandler(documentService),
+    createDocumentFromTemplate: new CreateDocumentFromTemplateHandler(documentService),
     createCalendarEvent: new CreateCalendarEventHandler(calendarService),
     updateCalendarEvent: new UpdateCalendarEventHandler(calendarService),
     cancelCalendarEvent: new CancelCalendarEventHandler(calendarService),
