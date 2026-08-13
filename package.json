@@ -12,6 +12,8 @@
   "scripts": {
     "dev": "turbo run dev",
     "dev:infra": "docker compose -f infrastructure/compose/docker-compose.yml up -d",
+    "dev:local": "bash scripts/dev-local.sh",
+    "dev:local:down": "bash scripts/dev-local-down.sh",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
