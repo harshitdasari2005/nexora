@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   boundName,
+  extractCreateCalendarEventParameters,
   extractCreateProjectAndAssignParameters,
   extractCreateProjectParameters,
   extractCreateWorkspaceParameters,
@@ -331,7 +332,89 @@ describe('extractHireAndAssignParameters (flagship HR workflow intent)', () => {
   });
 });
 
+describe('extractCreateCalendarEventParameters', () => {
+  const schema = {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      startsAt: { type: 'string' },
+      endsAt: { type: 'string' },
+    },
+  };
+  const NOW = new Date('2026-08-11T08:00:00.000Z');
+
+  it('extracts title + window from a “called … tomorrow at” intent', () => {
+    const extracted = extractCreateCalendarEventParameters(
+      {
+        intent: 'Create a calendar event called Project Review tomorrow at 3 PM',
+        inputSchema: schema,
+      },
+      NOW,
+    );
+    expect(extracted).toEqual({
+      title: 'Project Review',
+      startsAt: '2026-08-12T15:00:00.000Z',
+      endsAt: '2026-08-12T16:00:00.000Z',
+    });
+  });
+
+  it('extracts the title from a “titled …” intent (regression: E2E found “titled” unsupported)', () => {
+    const extracted = extractCreateCalendarEventParameters(
+      {
+        intent: 'Create a calendar event titled Team Standup tomorrow at 9am for 30 minutes',
+        inputSchema: schema,
+      },
+      NOW,
+    );
+    expect(extracted.title).toBe('Team Standup');
+    expect(extracted.startsAt).toBe('2026-08-12T09:00:00.000Z');
+    expect(extracted.endsAt).toBe('2026-08-12T10:00:00.000Z');
+  });
+
+  it('never captures identity/scope clauses that follow the title', () => {
+    const extracted = extractCreateCalendarEventParameters(
+      {
+        intent:
+          'Create a calendar event called Payroll Review in organization org_alien as owner tomorrow at 2 PM with userId usr_hacker',
+        inputSchema: schema,
+      },
+      NOW,
+    );
+    expect(extracted.title).toBe('Payroll Review');
+    expect(extracted).not.toHaveProperty('organizationId');
+    expect(extracted).not.toHaveProperty('tenantId');
+    expect(extracted).not.toHaveProperty('userId');
+    expect(extracted).not.toHaveProperty('permissions');
+  });
+
+  it('returns an empty object when no title can be determined (nothing invented)', () => {
+    expect(
+      extractCreateCalendarEventParameters(
+        { intent: 'Create a calendar event tomorrow at 9am', inputSchema: schema },
+        NOW,
+      ),
+    ).toEqual({});
+  });
+
+  it('returns an empty object when no clock time can be determined', () => {
+    expect(
+      extractCreateCalendarEventParameters(
+        { intent: 'Create a calendar event called Team Standup tomorrow', inputSchema: schema },
+        NOW,
+      ),
+    ).toEqual({});
+  });
+});
+
 describe('extractIntentParameters (tool-aware dispatcher)', () => {
+  const calendarSchema = {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      startsAt: { type: 'string' },
+      endsAt: { type: 'string' },
+    },
+  };
   const projectSchema = {
     type: 'object',
     properties: { name: { type: 'string' }, description: { type: 'string' } },
@@ -376,6 +459,18 @@ describe('extractIntentParameters (tool-aware dispatcher)', () => {
       capabilityId: 'workflow.hire_and_assign_employee',
     });
     expect(extracted).toEqual({ employeeName: 'Sarah Chen', projectName: 'Mobile Banking' });
+  });
+
+  it('routes a create-calendar-event intent to the calendar extractor', () => {
+    const extracted = extractIntentParameters({
+      intent: 'Create a calendar event titled Team Standup tomorrow at 9am',
+      inputSchema: calendarSchema,
+      toolId: 'calendar.create_event',
+      capabilityId: 'calendar.create_event',
+    });
+    expect(extracted.title).toBe('Team Standup');
+    expect(extracted).toHaveProperty('startsAt');
+    expect(extracted).toHaveProperty('endsAt');
   });
 
   it('returns an empty object for unknown tools (nothing invented)', () => {

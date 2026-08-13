@@ -77,7 +77,12 @@ import type {
   NotificationRepository,
 } from '@nexora/module-notifications';
 
-import type { OidcGateway, OidcIdentity, PkceParameters } from '../src/oidc/gateway.js';
+import type {
+  OidcCallbackParams,
+  OidcGateway,
+  OidcIdentity,
+  PkceParameters,
+} from '../src/oidc/gateway.js';
 
 /** An in-memory {@link UserRepository}. */
 export class FakeUserRepository implements UserRepository {
@@ -920,7 +925,7 @@ export class FakeOidcGateway implements OidcGateway {
   }
 
   async exchangeCode(
-    _code: string,
+    _params: OidcCallbackParams,
     expectedState: string,
     codeVerifier: string,
   ): Promise<OidcIdentity> {

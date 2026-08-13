@@ -291,11 +291,12 @@ export function extractCreateCalendarEventParameters(
   },
   now: Date = new Date(),
 ): Record<string, unknown> {
-  // Title: "called Project Review" / "named Project Review" — clause-bounded
-  // so trailing claims ("in organization X", "ignore permissions") and the
-  // time clause ("tomorrow at 3 PM") are never part of the title.
+  // Title: "called Project Review" / "named Project Review" / "titled
+  // Project Review" — clause-bounded so trailing claims ("in organization
+  // X", "ignore permissions") and the time clause ("tomorrow at 3 PM") are
+  // never part of the title.
   const titleMatch = input.intent.match(
-    /(?:called|named)\s+["'`]?([A-Za-z0-9][A-Za-z0-9 _-]{0,118})["'`]?(?=[\s.,!?]|$)/i,
+    /(?:called|named|titled)\s+["'`]?([A-Za-z0-9][A-Za-z0-9 _-]{0,118})["'`]?(?=[\s.,!?]|$)/i,
   );
   if (titleMatch === null) {
     return {};

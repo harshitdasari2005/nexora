@@ -47,6 +47,12 @@ import { createDatabaseFromPool, type NexoraDatabase } from '../src/db.js';
 import { ScryptPasswordHasher } from '../src/hasher/index.js';
 import { runMigrations } from '../src/migrate.js';
 import {
+  dropTestDatabase,
+  ensureTestDatabase,
+  maintenanceUrlOf,
+  resolveTestDatabaseUrl,
+} from './db-isolation.js';
+import {
   PgActivityRepository,
   PgCalendarEventRepository,
   PgDocumentRepository,
@@ -90,8 +96,7 @@ import {
   workspaces,
 } from '../src/schema/index.js';
 
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgres://nexora:nexora_dev_password@localhost:5433/nexora';
+const DATABASE_URL = resolveTestDatabaseUrl();
 
 const TENANT = 'tenant_1' as TenantId;
 
@@ -119,9 +124,16 @@ function projectContext() {
   };
 }
 
-/** Probes whether Postgres is reachable; used to skip when infra is down. */
+/**
+ * Probes whether Postgres is reachable; used to skip when infra is down.
+ * Targets the maintenance `postgres` database — the dedicated test database
+ * may not exist yet (it is created in `beforeAll`).
+ */
 async function isDatabaseReachable(): Promise<boolean> {
-  const pool = new Pool({ connectionString: DATABASE_URL, connectionTimeoutMillis: 1500 });
+  const pool = new Pool({
+    connectionString: maintenanceUrlOf(DATABASE_URL),
+    connectionTimeoutMillis: 1500,
+  });
   try {
     await pool.query('SELECT 1');
     return true;
@@ -139,6 +151,10 @@ describeDb('repository integration (Postgres)', () => {
   let pool: Pool;
 
   beforeAll(async () => {
+    // Isolation (stabilization): the suite runs against a dedicated
+    // `nexora_test` database that is created here and dropped in afterAll —
+    // the live dev database (compose `nexora`) is never touched.
+    await ensureTestDatabase(DATABASE_URL);
     await runMigrations(DATABASE_URL);
     pool = new Pool({ connectionString: DATABASE_URL });
     db = createDatabaseFromPool(pool);
@@ -165,6 +181,7 @@ describeDb('repository integration (Postgres)', () => {
     await db.delete(sessions);
     await db.delete(users);
     await pool.end();
+    await dropTestDatabase(DATABASE_URL);
   });
 
   it('round-trips a User through save/findById', async () => {

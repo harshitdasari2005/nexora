@@ -55,11 +55,29 @@ export interface OidcGateway {
   buildAuthorizationUrl(state: string, pkce: PkceParameters): Promise<string>;
   /**
    * Exchanges an authorization code (validating the state) for an identity,
-   * proving possession of the PKCE verifier.
+   * proving possession of the PKCE verifier. `params` is the parsed callback
+   * query (code, state, iss, ...) — openid-client validates these against
+   * the issuer metadata and the expected checks.
    */
-  exchangeCode(code: string, expectedState: string, codeVerifier: string): Promise<OidcIdentity>;
+  exchangeCode(
+    params: OidcCallbackParams,
+    expectedState: string,
+    codeVerifier: string,
+  ): Promise<OidcIdentity>;
   /** Builds the IdP logout URL that returns to the given post-logout target. */
   buildLogoutUrl(redirectTo: string): Promise<string>;
+}
+
+/** The parsed OIDC callback query (the raw IdP redirect parameters). */
+export interface OidcCallbackParams {
+  /** The authorization code. */
+  code?: string;
+  /** The CSRF state echoed by the IdP. */
+  state?: string;
+  /** The issuer that produced the response (Keycloak appends `iss`). */
+  iss?: string;
+  /** Keycloak's session state (informational). */
+  session_state?: string;
 }
 
 /**
@@ -90,14 +108,19 @@ export class KeycloakOidcGateway implements OidcGateway {
   }
 
   async exchangeCode(
-    code: string,
+    params: OidcCallbackParams,
     expectedState: string,
     codeVerifier: string,
   ): Promise<OidcIdentity> {
     const client = await this.#client();
+    // openid-client validates the callback query PARAMS against the issuer
+    // metadata (state AND iss are required when the IdP emits them) — the
+    // real Keycloak redirect appends `state` and `iss`, so the full parsed
+    // callback query is passed through. (Regression: the fake gateway used
+    // in tests never exercised this real flow.)
     const tokenSet = await client.callback(
       this.#redirectUri,
-      { code },
+      { code: params.code, state: params.state, iss: params.iss },
       { state: expectedState, code_verifier: codeVerifier },
     );
     const claims = tokenSet.claims();

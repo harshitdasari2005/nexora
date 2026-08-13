@@ -60,7 +60,12 @@ export function registerAuthRoutes(
 
   // Exchange the authorization code and issue the session cookie.
   app.get('/api/auth/callback', { config: { public: true } }, async (request, reply) => {
-    const query = request.query as { code?: string; state?: string };
+    const query = request.query as {
+      code?: string;
+      state?: string;
+      iss?: string;
+      session_state?: string;
+    };
     const expectedState = request.cookies?.['oidc_state'];
     const codeVerifier = request.cookies?.[OIDC_VERIFIER_COOKIE];
     if (
@@ -85,7 +90,9 @@ export function registerAuthRoutes(
     reply.clearCookie('oidc_state', { path: '/' });
     reply.clearCookie(OIDC_VERIFIER_COOKIE, { path: '/' });
 
-    const identity = await oidc.exchangeCode(query.code, expectedState, codeVerifier);
+    // The full parsed callback query is passed to the gateway so the real
+    // Keycloak flow (state + iss) validates end-to-end.
+    const identity = await oidc.exchangeCode(query, expectedState, codeVerifier);
     const result = await dependencies.authenticate.handle({
       oidcSubject: identity.subject,
       email: identity.email,

@@ -399,6 +399,8 @@ export function AiPanel({
         }}
       >
         <textarea
+          id="nexora-ai-input"
+          name="message"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
