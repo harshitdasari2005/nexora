@@ -92,6 +92,8 @@ import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { registerDomainRoutes } from './routes/domains.js';
+import { registerCommandCenterRoutes } from './routes/command-center.js';
+import { buildCommandCenter } from './command-center/build.js';
 import { registerInsightsRoutes } from './routes/insights.js';
 import { registerMarketplaceRoutes } from './routes/marketplace.js';
 import { registerOrganizationRoutes } from './routes/organizations.js';
@@ -301,6 +303,26 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   });
   registerDomainRoutes(app, {
     listDomainCatalog: container.listDomainCatalog,
+  });
+
+  // S24 Phase 2: the generic role-aware Command Center. Composed here (not
+  // in the container) because its data provider needs the application
+  // handlers AND the AI runtime context is not required — the engine reuses
+  // the existing application services; there is no second data-access layer.
+  registerCommandCenterRoutes(app, {
+    getCommandCenter: buildCommandCenter({
+      memberships: repositories.memberships,
+      workspaceMemberships: repositories.workspaceMemberships,
+      getTenantMeasurements: container.getTenantMeasurements,
+      listProjects: container.listProjects,
+      listEmployees: container.listEmployees,
+      listDocuments: container.listDocuments,
+      listArticles: container.listArticles,
+      listActivity: container.listActivity,
+      listNotifications: container.listNotifications,
+    }),
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
   });
 
   // --- Integrations platform (S20) ----------------------------------------

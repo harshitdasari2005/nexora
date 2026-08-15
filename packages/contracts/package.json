@@ -67,6 +67,10 @@
       "types": "./dist/src/domain/index.d.ts",
       "default": "./dist/src/domain/index.js"
     },
+    "./command-center": {
+      "types": "./dist/src/command-center/index.d.ts",
+      "default": "./dist/src/command-center/index.js"
+    },
     "./versioning": {
       "types": "./dist/src/versioning/index.d.ts",
       "default": "./dist/src/versioning/index.js"

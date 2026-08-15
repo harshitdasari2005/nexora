@@ -43,6 +43,7 @@ interface NavItem {
 
 const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Overview', icon: '◎', to: '/app' },
+  { label: 'Command Center', icon: '✦', to: '/app/command-center' },
   { label: 'Projects', icon: '▤', to: '/app/projects' },
   { label: 'Employees', icon: '⚕', to: '/app/employees' },
   { label: 'Documents', icon: '▤', to: '/app/documents' },

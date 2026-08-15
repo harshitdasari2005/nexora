@@ -18,6 +18,7 @@ import { Apps } from './pages/Apps.js';
 import { Employees } from './pages/Employees.js';
 import { Integrations } from './pages/Integrations.js';
 import { Insights } from './pages/Insights.js';
+import { CommandCenter } from './pages/CommandCenter.js';
 import { Projects } from './pages/Projects.js';
 import { Workflows } from './pages/Workflows.js';
 import { RequireAuth, SessionProvider } from './session.js';
@@ -51,6 +52,14 @@ export function App(): JSX.Element {
             element={
               <RequireAuth>
                 <Dashboard />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app/command-center"
+            element={
+              <RequireAuth>
+                <CommandCenter />
               </RequireAuth>
             }
           />

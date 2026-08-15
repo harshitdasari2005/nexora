@@ -436,3 +436,90 @@ export interface TenantMeasurementsDto {
 export interface InsightsResponse {
   measurements: TenantMeasurementsDto;
 }
+
+// --- S24 Phase 2: dynamic role-aware Command Center --------------------------
+
+/** A widget of the Command Center as rendered by the generic page. */
+export interface CommandCenterWidgetDto {
+  /** Stable widget id. */
+  id: string;
+  /** The widget kind (mapped to a renderer). */
+  type: 'kpi' | 'activity' | 'attention' | 'list';
+  /** Human-readable widget title. */
+  title: string;
+  /** Optional widget description. */
+  description?: string;
+  /** Optional layout hint (1 = half width, 2 = full width). */
+  span?: 1 | 2;
+}
+
+/** An action of the Command Center (read/navigation only in Phase 2). */
+export interface CommandCenterActionDto {
+  /** Stable action id. */
+  id: string;
+  /** Human-readable action label. */
+  label: string;
+  /** The action kind (`navigate` only in Phase 2). */
+  kind: 'navigate';
+  /** The frontend destination. */
+  href: string;
+  /** Optional action icon hint. */
+  icon?: string;
+}
+
+/** An entry of a list/activity/attention widget. */
+export interface CommandCenterEntryDto {
+  /** The underlying record id. */
+  id: string;
+  /** The entry title. */
+  title: string;
+  /** Optional supporting body. */
+  body?: string;
+  /** Optional supporting text. */
+  subtitle?: string;
+  /** Optional lifecycle status. */
+  status?: string;
+  /** Optional destination. */
+  href?: string;
+  /** ISO-8601 UTC time, when time-based. */
+  occurredAt?: string;
+  /** Optional notification priority. */
+  priority?: 'low' | 'normal' | 'high' | 'urgent';
+}
+
+/** The data of one rendered widget (kind-tagged). */
+export type CommandCenterWidgetDataDto =
+  | {
+      kind: 'kpi';
+      value: string;
+      hint?: string;
+      tone?: 'neutral' | 'success' | 'warning' | 'danger';
+    }
+  | {
+      kind: 'activity' | 'attention' | 'list';
+      items: readonly CommandCenterEntryDto[];
+    };
+
+/** The full command-center view returned by `GET /api/command-center`. */
+export interface CommandCenterDto {
+  /** The command center id. */
+  id: string;
+  /** Human-readable command center name. */
+  name: string;
+  /** The owning business domain id. */
+  domainId: string;
+  /** The owning business domain name. */
+  domainName: string;
+  /** The bound business role id. */
+  roleId: string;
+  /** The bound business role name. */
+  roleName: string;
+  /** Optional command center description. */
+  description?: string;
+  /** The composed widgets, in display order. */
+  widgets: readonly CommandCenterWidgetDto[];
+  /** The composed actions. */
+  actions: readonly CommandCenterActionDto[];
+  /** Widget id → widget data. */
+  data: Readonly<Record<string, CommandCenterWidgetDataDto>>;
+}
