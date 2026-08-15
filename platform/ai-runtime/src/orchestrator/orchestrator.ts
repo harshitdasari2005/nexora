@@ -210,6 +210,9 @@ export class EnterpriseAIOrchestrator {
       approvals,
       outcome: status === 'blocked' ? 'blocked' : status === 'failed' ? 'failed' : 'completed',
       madeAt: nowIso(),
+      // S24 Phase 4: the decision record carries the trusted business
+      // context (domain/role/capability affinity) that governed the run.
+      business: aiContext.business,
     });
 
     this.#events.publish({
@@ -603,7 +606,7 @@ export class EnterpriseAIOrchestrator {
     session: ConversationSession,
     runId: string,
     trace: TraceBuilder,
-    _context: AIContext,
+    context: AIContext,
   ): Promise<OrchestratorResponse> {
     trace.complete('failed');
     const decision = buildDecisionRecord({
@@ -614,6 +617,9 @@ export class EnterpriseAIOrchestrator {
       approvals: [],
       outcome: 'failed',
       madeAt: nowIso(),
+      // S24 Phase 4: even a clarification records the trusted business
+      // context that governed the run (auditability).
+      business: context.business,
     });
     this.#events.publish({
       type: 'response.generated',
@@ -643,7 +649,7 @@ export class EnterpriseAIOrchestrator {
     session: ConversationSession,
     runId: string,
     trace: TraceBuilder,
-    _context: AIContext,
+    context: AIContext,
     reason: string,
   ): Promise<OrchestratorResponse> {
     trace.complete('failed');
@@ -655,6 +661,9 @@ export class EnterpriseAIOrchestrator {
       approvals: [],
       outcome: 'failed',
       madeAt: nowIso(),
+      // S24 Phase 4: even a failed plan records the trusted business
+      // context that governed the run (auditability).
+      business: context.business,
     });
     const response = `I could not plan that request: ${reason}`;
     await this.#conversations.addAssistantTurn(session, response);

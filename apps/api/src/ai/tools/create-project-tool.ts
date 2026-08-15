@@ -26,7 +26,7 @@
 
 import type { TenantId, UserId } from '@nexora/contracts/common';
 import type { Tool, ToolExecutionContext, ToolManifest, ToolResult } from '@nexora/agent-sdk/tools';
-import type { CreateProjectHandler } from '@nexora/application-projects';
+import type { CreateProjectHandler, FindProjectByNameHandler } from '@nexora/application-projects';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 
 /** Input contract: ONLY user-controlled business fields (identity is never input). */
@@ -87,15 +87,24 @@ export class CreateProjectTool implements Tool<CreateProjectInput, CreateProject
 
   readonly #createProject: CreateProjectHandler;
   readonly #listOrganizations: ListOrganizationsHandler;
+  readonly #findProjectByName: FindProjectByNameHandler;
 
   constructor(dependencies: {
     /** The application-layer create-project command handler. */
     createProject: CreateProjectHandler;
     /** Resolves the caller's organization memberships (authorization rule). */
     listOrganizations: ListOrganizationsHandler;
+    /**
+     * The tenant-scoped read-back handler (S24 Phase 4 verification):
+     * after creation the tool reads the persisted state back and confirms
+     * the created project exists in the trusted tenant — a failed read-back
+     * is reported as a failure, never as success.
+     */
+    findProjectByName: FindProjectByNameHandler;
   }) {
     this.#createProject = dependencies.createProject;
     this.#listOrganizations = dependencies.listOrganizations;
+    this.#findProjectByName = dependencies.findProjectByName;
   }
 
   async execute(
@@ -143,6 +152,23 @@ export class CreateProjectTool implements Tool<CreateProjectInput, CreateProject
     const project = result.value.project;
     if (project.organizationId !== context.tenantId) {
       return this.#failure('Project verification failed: unexpected organization');
+    }
+
+    // 5. Read-back verification (S24 Phase 4): read the persisted state
+    //    back through the query surface and confirm the created project is
+    //    actually present in the trusted tenant. A failed read-back is
+    //    surfaced as a failure — never reported as success.
+    const readBack = await this.#findProjectByName.handle({
+      organizationId: context.tenantId as TenantId,
+      name: project.name.value,
+    });
+    const persisted =
+      readBack.ok &&
+      readBack.value.some(
+        (candidate) => candidate.id === project.id && candidate.organizationId === context.tenantId,
+      );
+    if (!persisted) {
+      return this.#failure('Project verification failed: created project not found');
     }
 
     return {

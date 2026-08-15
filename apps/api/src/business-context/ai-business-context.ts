@@ -42,6 +42,15 @@ const BUSINESS_CAPABILITY_TO_AI_CAPABILITIES: Readonly<Record<string, readonly s
   'employees.manage': ['hr.create_employee'],
   'approvals.read': ['notifications.what_needs_attention'],
   'calendar.create': ['calendar.create_event'],
+  // S24 Phase 4: `workflows.execute` maps to the workflow-orchestrating
+  // capabilities, so a role WITH the affinity (CEO/Manager) can plan
+  // workflow intents and a role WITHOUT it (Developer) cannot — workflow
+  // proposals are gated by the same trusted affinity (approval is
+  // governance, never privilege escalation).
+  'workflows.execute': [
+    'workflow.create_project_and_assign_employee',
+    'workflow.hire_and_assign_employee',
+  ],
 };
 
 /** Dependencies of the AI business-context builder. */

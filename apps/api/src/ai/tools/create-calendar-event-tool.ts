@@ -30,7 +30,10 @@
 
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import type { Tool, ToolExecutionContext, ToolManifest, ToolResult } from '@nexora/agent-sdk/tools';
-import type { CreateCalendarEventHandler } from '@nexora/application-calendar';
+import type {
+  CreateCalendarEventHandler,
+  ListCalendarEventsHandler,
+} from '@nexora/application-calendar';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 
@@ -101,6 +104,7 @@ export class CreateCalendarEventTool implements Tool<
   readonly #createCalendarEvent: CreateCalendarEventHandler;
   readonly #listOrganizations: ListOrganizationsHandler;
   readonly #listMyWorkspaces: ListMyWorkspacesHandler;
+  readonly #listCalendarEvents: ListCalendarEventsHandler;
 
   constructor(dependencies: {
     /** The application-layer create-calendar-event command handler. */
@@ -109,10 +113,18 @@ export class CreateCalendarEventTool implements Tool<
     listOrganizations: ListOrganizationsHandler;
     /** Resolves the caller's workspace memberships (authorization rule). */
     listMyWorkspaces: ListMyWorkspacesHandler;
+    /**
+     * The workspace-scoped read-back handler (S24 Phase 4 verification):
+     * after creation the tool reads the persisted state back and confirms
+     * the created entry exists in the trusted workspace — a failed
+     * read-back is reported as a failure, never as success.
+     */
+    listCalendarEvents: ListCalendarEventsHandler;
   }) {
     this.#createCalendarEvent = dependencies.createCalendarEvent;
     this.#listOrganizations = dependencies.listOrganizations;
     this.#listMyWorkspaces = dependencies.listMyWorkspaces;
+    this.#listCalendarEvents = dependencies.listCalendarEvents;
   }
 
   async execute(
@@ -183,6 +195,28 @@ export class CreateCalendarEventTool implements Tool<
     const entry = result.value.entry;
     if (entry.organizationId !== context.tenantId || entry.workspaceId !== workspaceId) {
       return this.#failure('Calendar event verification failed: unexpected scope');
+    }
+
+    // 6. Read-back verification (S24 Phase 4): read the persisted state
+    //    back through the query surface and confirm the created entry is
+    //    actually present in the trusted workspace. A failed read-back is
+    //    surfaced as a failure — never reported as success.
+    const readBack = await this.#listCalendarEvents.handle({
+      organizationId: context.tenantId as TenantId,
+      workspaceId: workspaceId as WorkspaceId,
+    });
+    const persisted =
+      readBack.ok &&
+      readBack.value.some(
+        (event) =>
+          event.id === entry.id &&
+          event.workspaceId === workspaceId &&
+          event.organizationId === context.tenantId,
+      );
+    if (!persisted) {
+      return this.#failure(
+        'Calendar event verification failed: created event not found in the workspace',
+      );
     }
 
     return {

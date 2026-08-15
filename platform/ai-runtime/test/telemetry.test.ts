@@ -41,6 +41,47 @@ describe('InMemoryTelemetrySink', () => {
     expect(sink.prompts()[0]?.id).toBe('p1');
   });
 
+  it('records the trusted business context (domain/role/capabilities) on the decision (S24 Phase 4)', () => {
+    const sink = new InMemoryTelemetrySink();
+    const decision = buildDecisionRecord({
+      runId: 'run_1',
+      intent: 'create a calendar event',
+      steps: [],
+      approvals: [],
+      outcome: 'blocked',
+      madeAt: '2026-08-08T00:00:00.000Z',
+      business: {
+        domainId: 'executive',
+        domainName: 'Executive',
+        roleId: 'executive.ceo',
+        roleName: 'CEO',
+        capabilityIds: ['calendar.create_event', 'projects.find_project'],
+      },
+    });
+    sink.record({ kind: 'decision', decision });
+    expect(sink.decisions()[0]?.businessContext).toEqual({
+      domainId: 'executive',
+      domainName: 'Executive',
+      roleId: 'executive.ceo',
+      roleName: 'CEO',
+      capabilityIds: ['calendar.create_event', 'projects.find_project'],
+    });
+  });
+
+  it('omits the business context when none was resolved (safe default)', () => {
+    const sink = new InMemoryTelemetrySink();
+    const decision = buildDecisionRecord({
+      runId: 'run_1',
+      intent: 'do something',
+      steps: [],
+      approvals: [],
+      outcome: 'failed',
+      madeAt: '2026-08-08T00:00:00.000Z',
+    });
+    sink.record({ kind: 'decision', decision });
+    expect(sink.decisions()[0]?.businessContext).toBeUndefined();
+  });
+
   it('accepts every record kind', () => {
     const sink = new InMemoryTelemetrySink();
     const records: TelemetryRecord[] = [

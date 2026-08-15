@@ -6,6 +6,7 @@
  */
 
 import { prefixedId } from '@nexora/shared/ids';
+import type { AIBusinessContext } from '../context/index.js';
 import type { DecisionRecord } from '../reasoning/index.js';
 import type { ExecutionPlan } from '../planner/plan.js';
 import type { ApprovalOutcome, StepOutcome } from './request.js';
@@ -26,6 +27,8 @@ export interface DecisionInput {
   outcome: DecisionRecord['outcome'];
   /** ISO-8601 UTC time of the decision. */
   madeAt: string;
+  /** The trusted business context (domain/role/capability affinity), when resolved. */
+  business?: AIBusinessContext;
 }
 
 /** Builds the decision-time record for a run. */
@@ -58,5 +61,6 @@ export function buildDecisionRecord(input: DecisionInput): DecisionRecord {
     confidence: { score: succeeded === 0 ? 0 : succeeded / Math.max(1, input.steps.length) },
     outcome: input.outcome,
     madeAt: input.madeAt,
+    ...(input.business === undefined ? {} : { businessContext: input.business }),
   };
 }

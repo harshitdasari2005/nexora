@@ -272,6 +272,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     findEmployeeByName: container.findEmployeeByName,
     createEmployee: container.createEmployee,
     createCalendarEvent: container.createCalendarEvent,
+    listCalendarEvents: container.listCalendarEvents,
     assignEmployeeToProject: container.assignEmployeeToProject,
     retrieveKnowledge: container.retrieveKnowledge,
     listOrganizations: container.listOrganizations,

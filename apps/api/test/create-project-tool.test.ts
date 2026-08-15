@@ -12,8 +12,11 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import type { Result } from '@nexora/shared/result';
-import type { CreateProjectHandler } from '@nexora/application-projects';
-import type { CreateProjectResult } from '@nexora/application-projects';
+import type {
+  CreateProjectHandler,
+  CreateProjectResult,
+  FindProjectByNameHandler,
+} from '@nexora/application-projects';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 import type { OrganizationDto } from '@nexora/application-organizations';
 import { Project } from '@nexora/domain-projects';
@@ -80,20 +83,39 @@ function listOrganizationsFailing(): ListOrganizationsHandler {
   } as unknown as ListOrganizationsHandler;
 }
 
+/** A read-back handler that confirms the created project is persisted. */
+function findProjectByNameReturning(projects: Project[]): FindProjectByNameHandler {
+  return {
+    handle: vi.fn(async ({ organizationId, name }) => ({
+      ok: true,
+      value: projects
+        .filter((project) => project.organizationId === organizationId)
+        .filter((project) => project.name.value.toLowerCase().includes(name.toLowerCase())),
+    })),
+  } as unknown as FindProjectByNameHandler;
+}
+
 function buildTool(
   options: {
     createProject?: CreateProjectHandler;
     listOrganizations?: ListOrganizationsHandler;
+    findProjectByName?: FindProjectByNameHandler;
   } = {},
 ) {
+  const created = projectResult().project;
   const createProject =
-    options.createProject ?? createProjectHandlerReturning({ ok: true, value: projectResult() });
+    options.createProject ??
+    createProjectHandlerReturning({ ok: true, value: { project: created, events: [] } });
   const listOrganizations =
     options.listOrganizations ?? listOrganizationsHandlerReturning([organizationDto()]);
+  // The read-back handler confirms the created project is persisted
+  // (S24 Phase 4 read-back verification).
+  const findProjectByName = options.findProjectByName ?? findProjectByNameReturning([created]);
   return {
-    tool: new CreateProjectTool({ createProject, listOrganizations }),
+    tool: new CreateProjectTool({ createProject, listOrganizations, findProjectByName }),
     createProject,
     listOrganizations,
+    findProjectByName,
   };
 }
 
@@ -229,6 +251,20 @@ describe('CreateProjectTool trusted context vs model arguments', () => {
     const result = await tool.execute({ name: 'Mobile Banking' }, trustedContext);
     expect(result.ok).toBe(false);
     expect(result.error).toBe('Project verification failed: unexpected organization');
+  });
+
+  it('fails when the read-back cannot confirm the created project is persisted', async () => {
+    const { tool, createProject } = buildTool({
+      // The read-back finds NO project — the persisted state cannot be
+      // confirmed, so the tool reports failure (never success).
+      findProjectByName: findProjectByNameReturning([]),
+    });
+    const result = await tool.execute({ name: 'Mobile Banking' }, trustedContext);
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('Project verification failed: created project not found');
+    // The write DID go through the application layer — but the outcome is
+    // still a failure because verification against persisted state failed.
+    expect(createProject.handle).toHaveBeenCalledTimes(1);
   });
 
   it('never lets the model decide success — the application result is authoritative', async () => {

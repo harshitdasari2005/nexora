@@ -59,7 +59,10 @@ import type {
 } from '@nexora/application-projects';
 import type { CreateEmployeeHandler, FindEmployeeByNameHandler } from '@nexora/application-hr';
 import type { RetrieveKnowledgeHandler } from '@nexora/application-knowledge';
-import type { CreateCalendarEventHandler } from '@nexora/application-calendar';
+import type {
+  CreateCalendarEventHandler,
+  ListCalendarEventsHandler,
+} from '@nexora/application-calendar';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 import type {
   ListActivityHandler,
@@ -581,6 +584,8 @@ export interface AiRuntimeDependencies {
   createEmployee: CreateEmployeeHandler;
   /** The application-layer create-calendar-event handler (Calendar write tool). */
   createCalendarEvent: CreateCalendarEventHandler;
+  /** The workspace-scoped calendar read-back handler (Calendar write tool verification). */
+  listCalendarEvents: ListCalendarEventsHandler;
   /** The permission-filtered knowledge retrieval handler (Knowledge read tool). */
   retrieveKnowledge: RetrieveKnowledgeHandler;
   /** Resolves organization memberships (the write tools' authorization rule). */
@@ -901,6 +906,8 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
     new CreateProjectTool({
       createProject: dependencies.createProject,
       listOrganizations: dependencies.listOrganizations,
+      // S24 Phase 4: read-back verification against persisted state.
+      findProjectByName: dependencies.findProjectByName,
     }),
   );
   tools.register(new FindProjectTool(dependencies.findProjectByName));
@@ -932,6 +939,8 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
       createCalendarEvent: dependencies.createCalendarEvent,
       listOrganizations: dependencies.listOrganizations,
       listMyWorkspaces: dependencies.listMyWorkspaces,
+      // S24 Phase 4: read-back verification against persisted state.
+      listCalendarEvents: dependencies.listCalendarEvents,
     }),
   );
 

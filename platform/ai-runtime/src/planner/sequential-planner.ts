@@ -81,8 +81,18 @@ export interface WorkflowProposal {
  * are deterministic (keyword/template matching) and MUST return `undefined`
  * for non-workflow intents so individual capabilities plan normally. The
  * planner never executes the workflow — the workflow runtime does.
+ *
+ * The detector receives the caller's TRUSTED business capability affinity
+ * (S24 Phase 4): a workflow proposal is executable only when the workflow's
+ * capability requirement is within the caller's affinity. When the affinity
+ * is absent/empty (unmapped role, safe default) the current unrestricted
+ * behavior applies — matching discovery's rule.
  */
-export type WorkflowProposalDetector = (input: { intent: string }) => WorkflowProposal | undefined;
+export type WorkflowProposalDetector = (input: {
+  intent: string;
+  /** The caller's trusted business capability affinities, when resolved. */
+  businessCapabilityIds?: readonly string[];
+}) => WorkflowProposal | undefined;
 
 /** Options for {@link SequentialPlanner}. */
 export interface SequentialPlannerOptions {
@@ -132,8 +142,14 @@ export class SequentialPlanner implements PlanningStrategy {
     // Workflow first: a deterministic workflow intent becomes ONE plan step
     // (the workflow-orchestrating tool); the workflow runtime executes the
     // internal steps. Individual capability matches are ignored for this
-    // intent — never a mix of workflow and per-capability steps.
-    const proposal = this.#detectWorkflow?.({ intent: context.intent });
+    // intent — never a mix of workflow and per-capability steps. The
+    // detector consults the caller's trusted business capability affinity
+    // (S24 Phase 4): a workflow proposal must be within the role's
+    // affinities — approval is governance, never privilege escalation.
+    const proposal = this.#detectWorkflow?.({
+      intent: context.intent,
+      businessCapabilityIds: context.aiContext.business?.capabilityIds,
+    });
     if (proposal !== undefined) {
       return this.#planWorkflow(proposal, context);
     }

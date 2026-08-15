@@ -70,13 +70,33 @@ export interface WorkflowPlannerOptions {
  * Builds the workflow proposal detector: each spec fires ONLY when its
  * keywords match AND both business values extract — anything less falls
  * through to per-capability planning.
+ *
+ * S24 Phase 4 capability gate: when the caller's TRUSTED business capability
+ * affinity is present, a workflow proposal is produced only when the
+ * workflow's orchestrating capability is WITHIN that affinity. A role
+ * without the capability never gets an executable workflow step — and the
+ * approval system is never used to grant a capability the role does not
+ * possess (approval is governance, not privilege escalation). An absent or
+ * empty affinity (unmapped role) keeps the current unrestricted behavior,
+ * matching discovery's safe default.
  */
 export function createWorkflowProposalDetector(
   options: WorkflowPlannerOptions,
 ): WorkflowProposalDetector {
-  return ({ intent }): WorkflowProposal | undefined => {
+  return ({ intent, businessCapabilityIds }): WorkflowProposal | undefined => {
     for (const spec of options.workflows) {
       if (!spec.keywords.every((keyword) => keyword.test(intent))) {
+        continue;
+      }
+      // Capability gate (S24 Phase 4): a workflow proposal must be within
+      // the caller's trusted affinity. Unknown ids never match (fail
+      // closed); an absent/empty affinity means no role focus — the current
+      // unrestricted behavior applies.
+      if (
+        businessCapabilityIds !== undefined &&
+        businessCapabilityIds.length > 0 &&
+        !businessCapabilityIds.includes(spec.capabilityId)
+      ) {
         continue;
       }
       const params = spec.extract({ intent, inputSchema: {} });

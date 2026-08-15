@@ -9,6 +9,7 @@
 
 import type { ExplanationRecord } from '@nexora/contracts/ai';
 import type { Timestamp } from '@nexora/contracts/common';
+import type { AIBusinessContext } from '../context/index.js';
 
 /** The kind of evidence behind a reasoning step. */
 export type EvidenceKind = 'knowledge' | 'tool_result' | 'policy' | 'user' | 'capability';
@@ -88,6 +89,13 @@ export interface DecisionRecord {
   outcome: 'completed' | 'partial' | 'unverified' | 'failed' | 'blocked';
   /** ISO-8601 UTC time the decision was made. */
   madeAt: Timestamp;
+  /**
+   * The TRUSTED business context of the run (S24 Phase 4): which business
+   * domain/role the user acted in and the role's capability affinities.
+   * Recorded at decision time so every governed action is auditable with
+   * the context that authorized it. CONTEXT, never a grant.
+   */
+  businessContext?: AIBusinessContext;
 }
 
 /** Inputs to {@link buildExplanationRecord}. */
