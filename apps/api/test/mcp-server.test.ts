@@ -328,7 +328,9 @@ describe('Nexora MCP server — governed writes', () => {
     expect(events.entries.size).toBe(before);
 
     // 2. Grant through the EXISTING ApprovalEngine (server-side decision).
-    expect(approvals.decide(approvalId, { decision: 'grant', decidedBy: USER_ID }).ok).toBe(true);
+    expect((await approvals.decide(approvalId, { decision: 'grant', decidedBy: USER_ID })).ok).toBe(
+      true,
+    );
 
     // 3. Resume with the same correlation + args → executes + verifies.
     const resumed = await server.call('nexora.calendar.create_event', args);
@@ -339,7 +341,7 @@ describe('Nexora MCP server — governed writes', () => {
     expect(events.entries.size).toBe(before + 1);
 
     // 4. The approval records the execution outcome (audit trail).
-    const approval = approvals.byId(approvalId);
+    const approval = await approvals.byId(approvalId);
     expect(approval?.status).toBe('completed');
     expect(approval?.result).toEqual(resumed.output);
   });
@@ -355,7 +357,7 @@ describe('Nexora MCP server — governed writes', () => {
 
     const first = await server.call('nexora.calendar.create_event', args);
     const approvalId = first.error?.details?.approvalId as string;
-    approvals.decide(approvalId, { decision: 'grant', decidedBy: USER_ID });
+    await approvals.decide(approvalId, { decision: 'grant', decidedBy: USER_ID });
     await server.call('nexora.calendar.create_event', args); // executes once
 
     const before = events.entries.size;
@@ -375,7 +377,7 @@ describe('Nexora MCP server — governed writes', () => {
 
     const first = await server.call('nexora.calendar.create_event', args);
     const approvalId = first.error?.details?.approvalId as string;
-    approvals.decide(approvalId, { decision: 'reject', decidedBy: USER_ID });
+    await approvals.decide(approvalId, { decision: 'reject', decidedBy: USER_ID });
 
     const denied = await server.call('nexora.calendar.create_event', args);
     expect(denied.ok).toBe(false);

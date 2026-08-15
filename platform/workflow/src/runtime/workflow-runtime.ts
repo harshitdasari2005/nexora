@@ -180,7 +180,7 @@ export class WorkflowRuntime {
           new WorkflowNotRunningError({ workflowId: instance.id, status: instance.status }),
         );
       }
-      const approval = this.#approvals?.byId(input.approvalId);
+      const approval = await this.#approvals?.byId(input.approvalId);
       if (approval === undefined) {
         return err(new WorkflowApprovalError('Approval request not found'));
       }
@@ -189,7 +189,7 @@ export class WorkflowRuntime {
       if (approval.userId !== instance.userId || approval.tenantId !== instance.tenantId) {
         return err(new WorkflowApprovalError('Approval does not belong to this workflow'));
       }
-      const disposition = this.#approvals?.decisionStatus(input.approvalId);
+      const disposition = await this.#approvals?.decisionStatus(input.approvalId);
       if (disposition === 'rejected') {
         const context = this.#eventContext(this.#contextOf(instance));
         instance.fail('A required approval was rejected', context, this.#now());
@@ -203,7 +203,7 @@ export class WorkflowRuntime {
       // Single-flight: atomically claim the granted decision before any step
       // executes — a second resume of the same approval can never re-run the
       // workflow (exactly-once, safe replay).
-      if (this.#approvals?.claim(input.approvalId) !== true) {
+      if ((await this.#approvals?.claim(input.approvalId)) !== true) {
         return err(new WorkflowApprovalError('Approval is already being executed'));
       }
 
@@ -219,7 +219,7 @@ export class WorkflowRuntime {
       // run) — no misleading terminal state is recorded.
       const finalStatus: string = instance.status;
       if (['succeeded', 'failed', 'cancelled', 'compensated'].includes(finalStatus)) {
-        this.#approvals?.recordOutcome(input.approvalId, {
+        await this.#approvals?.recordOutcome(input.approvalId, {
           status: finalStatus === 'succeeded' ? 'completed' : 'failed',
           result: instance.output,
           error: instance.error,
@@ -403,7 +403,7 @@ export class WorkflowRuntime {
       } else if (existing?.approvalId !== undefined) {
         return 'waiting';
       } else {
-        const approval = this.#approvals.open({
+        const approval = await this.#approvals.open({
           userId: instance.userId,
           tenantId: instance.tenantId,
           workspaceId: instance.workspaceId,

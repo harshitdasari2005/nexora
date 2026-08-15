@@ -53,6 +53,8 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "pg": "^8.13.1",
     "tsx": "^4.19.0",
     "vitest": "^2.1.0"
   }

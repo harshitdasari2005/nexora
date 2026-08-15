@@ -71,20 +71,32 @@ export interface OpenWorkflowApprovalInput {
 /**
  * The workflow approval port: the subset of the platform ApprovalEngine the
  * workflow runtime uses. Implementations (including the AI Runtime's
- * `InMemoryApprovalEngine`) must make `claim` atomic (single-flight).
+ * `InMemoryApprovalEngine` and the durable `PgApprovalEngine`) must make
+ * `claim` atomic (single-flight). Every method is async-capable
+ * (`T | Promise<T>`) so the synchronous in-memory engine and the durable
+ * PostgreSQL engine both satisfy the port; callers `await` the result.
  */
 export interface WorkflowApprovalPort {
   /** Opens a new request (`proposed` → `awaiting_approval`). */
-  open(input: OpenWorkflowApprovalInput): WorkflowApprovalRecord;
+  open(input: OpenWorkflowApprovalInput): WorkflowApprovalRecord | Promise<WorkflowApprovalRecord>;
   /** The decision disposition of a request, when one exists. */
-  decisionStatus(id: string): 'pending' | 'granted' | 'rejected' | undefined;
+  decisionStatus(
+    id: string,
+  ):
+    | 'pending'
+    | 'granted'
+    | 'rejected'
+    | undefined
+    | Promise<'pending' | 'granted' | 'rejected' | undefined>;
   /** The request by id, or `undefined`. */
-  byId(id: string): WorkflowApprovalRecord | undefined;
+  byId(
+    id: string,
+  ): WorkflowApprovalRecord | undefined | Promise<WorkflowApprovalRecord | undefined>;
   /** Atomically claims an approved request for execution. */
-  claim(id: string): boolean;
+  claim(id: string): boolean | Promise<boolean>;
   /** Records the execution outcome (`executing` → `completed` | `failed`). */
   recordOutcome(
     id: string,
     outcome: { status: 'completed' | 'failed'; result?: unknown; error?: string },
-  ): void;
+  ): void | Promise<void>;
 }

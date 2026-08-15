@@ -88,6 +88,7 @@ import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { registerDomainRoutes } from './routes/domains.js';
 import { registerCommandCenterRoutes } from './routes/command-center.js';
 import { buildCommandCenter } from './command-center/build.js';
+import { buildNexoraMCPServer } from './ai/mcp/build-server.js';
 import {
   buildAIBusinessContext,
   MembershipBusinessRoleResolver,
@@ -95,6 +96,7 @@ import {
 import { createInitialCatalog } from '@nexora/module-domains';
 import { registerInsightsRoutes } from './routes/insights.js';
 import { registerMarketplaceRoutes } from './routes/marketplace.js';
+import { registerMcpRoutes } from './routes/mcp.js';
 import { registerOrganizationRoutes } from './routes/organizations.js';
 import { registerProjectRoutes } from './routes/projects.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
@@ -296,6 +298,31 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listDomainCatalog: container.listDomainCatalog,
   });
 
+  // S24 Phase 6: the AUTHENTICATED remote MCP surface. The route reuses the
+  // session authentication + membership validation of every other route and
+  // delegates to the SAME Nexora MCP engine (capability-aware discovery,
+  // governed execution, durable approvals) that the stdio entry serves —
+  // one engine, two transports.
+  registerMcpRoutes(app, {
+    // No fixed identity: the HTTP surface resolves each session's trusted
+    // context from the authenticated request (per-session contexts).
+    server: await buildNexoraMCPServer({
+      runtime: { tools: ai.tools, approvals: ai.approvals },
+      resolveBusinessContext: (context) =>
+        buildAIBusinessContext(
+          { roleResolver: businessRoleResolver, catalog: domainCatalog },
+          context,
+        ),
+    }),
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    buildBusinessContext: (context) =>
+      buildAIBusinessContext(
+        { roleResolver: businessRoleResolver, catalog: domainCatalog },
+        context,
+      ),
+  });
+
   // S24 Phase 2: the generic role-aware Command Center. Composed here (not
   // in the container) because its data provider needs the application
   // handlers AND the AI runtime context is not required — the engine reuses
@@ -377,7 +404,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (user === undefined) {
         return { ok: false, reason: 'sender-not-found' };
       }
-      const approval = ai.approvals.byId(targetId);
+      const approval = await ai.approvals.byId(targetId);
       if (approval === undefined || approval.tenantId !== tenantId) {
         // Forged or foreign approval ids resolve to a hard NOT FOUND — the
         // approval never grants another tenant's run.
@@ -388,7 +415,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (!grant && !reject) {
         return { ok: false, reason: 'invalid-decision' };
       }
-      const outcome = ai.approvals.decide(targetId, {
+      const outcome = await ai.approvals.decide(targetId, {
         decision: grant ? 'grant' : 'reject',
         decidedBy: user.id,
         reason: 'inbound email action',

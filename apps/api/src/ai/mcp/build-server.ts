@@ -47,14 +47,21 @@ export interface BuildNexoraMCPServerOptions {
     tenantId: string;
     workspaceId?: string;
   }) => Promise<AIBusinessContext | undefined>;
-  /** The trusted identity of the connection. */
-  identity: NexoraMCPTrustedIdentity;
+  /**
+   * The trusted identity of a single-context connection (stdio: the
+   * spawning parent supplies it out-of-band). OMIT for the authenticated
+   * HTTP surface — each session resolves its own trusted context from the
+   * authenticated request (S24 Phase 6).
+   */
+  identity?: NexoraMCPTrustedIdentity;
 }
 
 /**
- * Builds the Nexora MCP server: resolves the trusted context, wires the
- * governed execution path (ToolExecutor + ApprovalEngine over the AI
- * runtime's tools), and registers the first-party MCP tools.
+ * Builds the Nexora MCP server: wires the governed execution path
+ * (ToolExecutor + ApprovalEngine over the AI runtime's tools) and registers
+ * the first-party MCP tools. With `identity` (stdio) the trusted context is
+ * resolved once at build; without it (HTTP) the server serves per-session
+ * contexts resolved from each authenticated request.
  */
 export async function buildNexoraMCPServer(
   options: BuildNexoraMCPServerOptions,
@@ -68,25 +75,28 @@ export async function buildNexoraMCPServer(
 
   // Trusted business context: derived from trusted membership + the catalog,
   // never from tool arguments or any client claim.
-  const business = await options.resolveBusinessContext({
-    userId: options.identity.userId,
-    tenantId: options.identity.tenantId,
-    workspaceId: options.identity.workspaceId,
-  });
-  const context: NexoraMCPContext = {
-    userId: options.identity.userId,
-    tenantId: options.identity.tenantId,
-    workspaceId: options.identity.workspaceId,
-    businessDomain: business?.domainId,
-    businessRole: business?.roleId,
-    capabilityIds: business?.capabilityIds ?? [],
-    correlationId: options.identity.correlationId ?? prefixedId('mcp'),
-  };
+  let context: NexoraMCPContext | undefined;
+  if (options.identity !== undefined) {
+    const business = await options.resolveBusinessContext({
+      userId: options.identity.userId,
+      tenantId: options.identity.tenantId,
+      workspaceId: options.identity.workspaceId,
+    });
+    context = {
+      userId: options.identity.userId,
+      tenantId: options.identity.tenantId,
+      workspaceId: options.identity.workspaceId,
+      businessDomain: business?.domainId,
+      businessRole: business?.roleId,
+      capabilityIds: business?.capabilityIds ?? [],
+      correlationId: options.identity.correlationId ?? prefixedId('mcp'),
+    };
+  }
 
   return new NexoraMCPServer({
     name: NEXORA_MCP_SERVER_NAME,
     version: NEXORA_MCP_SERVER_VERSION,
     tools,
-    context,
+    ...(context === undefined ? {} : { context }),
   });
 }

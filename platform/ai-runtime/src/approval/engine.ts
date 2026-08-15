@@ -6,7 +6,15 @@
  * execution outcomes. This is the runtime's **minimal approval lifecycle**
  * (Proposed → AwaitingApproval → Approved/Rejected → Executing →
  * Completed/Failed) — it is a seam, not a framework: the platform plugs its
- * durable approval store in behind the same interface.
+ * durable approval store in behind the same interface (S24 Phase 6: the
+ * PostgreSQL `PgApprovalEngine` implements this same contract, so an
+ * approval opened by a remote MCP call survives process restarts and is
+ * decidable through the existing `/api/ai/approvals/:id/decision` route).
+ *
+ * Async-capable contract: every method returns `T | Promise<T>` — the
+ * in-memory implementation stays synchronous (tests and single-process
+ * development), and the durable implementation returns promises. Callers
+ * `await` the result, which works for both.
  *
  * Security contract:
  * - Decisions are server-side state, recorded by an authenticated actor;
@@ -14,7 +22,14 @@
  *   request body.
  * - `claim` is the single-flight guard: an approved request transitions
  *   `approved → executing` exactly once, so a duplicate delivery of the same
- *   approved execution can never run the tool twice.
+ *   approved execution can never run the tool twice. Durable stores make
+ *   the claim an atomic conditional transition (S24 Phase 6: concurrent
+ *   resume attempts across processes — only ONE executes).
+ * - `resumeKey` (when supplied) is the deterministic cross-process resume
+ *   handle: a durable store enforces at most one pending approval per
+ *   (tenant, resumeKey), so a re-invocation of the same governed action
+ *   (even after a restart) resumes the SAME approval instead of opening a
+ *   second one.
  */
 
 import { prefixedId } from '@nexora/shared/ids';
@@ -52,6 +67,11 @@ export interface ApprovalRequestRecord {
   intent: string;
   /** The user-controlled action input (e.g. `{ name }` — never identity). */
   input: Record<string, unknown>;
+  /**
+   * The deterministic cross-process resume handle (durable stores enforce
+   * uniqueness per tenant; absent for one-shot AI approvals).
+   */
+  resumeKey?: string;
   /** The current lifecycle state. */
   status: ApprovalLifecycle;
   /** ISO-8601 UTC time the request was created. */
@@ -98,6 +118,12 @@ export interface OpenApprovalInput {
   intent: string;
   /** The user-controlled action input. */
   input: Record<string, unknown>;
+  /**
+   * Optional deterministic resume handle (see {@link ApprovalRequestRecord}):
+   * a re-invocation of the same governed action resolves to the same
+   * approval, even across process restarts (S24 Phase 6).
+   */
+  resumeKey?: string;
 }
 
 /** An approval decision submitted by an authenticated actor. */
@@ -118,35 +144,61 @@ export type DecideResult =
 /**
  * The approval engine port. Implementations must make {@link claim} atomic
  * (single-flight) — the in-memory implementation relies on the synchronous
- * check-and-transition; durable stores use a conditional update.
+ * check-and-transition; durable stores use a conditional update (S24 Phase
+ * 6: the atomic claim is what makes concurrent cross-process resume safe).
+ *
+ * Every method is async-capable (`T | Promise<T>`): callers `await` the
+ * result, which works for both the synchronous in-memory engine and the
+ * asynchronous durable engine.
  */
 export interface ApprovalEngine {
   /** Opens a new request (`proposed` → `awaiting_approval`). */
-  open(input: OpenApprovalInput): ApprovalRequestRecord;
+  open(input: OpenApprovalInput): ApprovalRequestRecord | Promise<ApprovalRequestRecord>;
   /** Records a decision; a request can be decided exactly once. */
-  decide(id: string, input: ApprovalDecisionInput): DecideResult;
+  decide(id: string, input: ApprovalDecisionInput): DecideResult | Promise<DecideResult>;
   /**
    * Atomically claims an approved request for execution
    * (`approved` → `executing`). Returns false when the request is not in a
    * claimable state (already claimed, completed, failed, or not approved).
    */
-  claim(id: string): boolean;
+  claim(id: string): boolean | Promise<boolean>;
   /** Records the execution outcome (`executing` → `completed` | `failed`). */
   recordOutcome(
     id: string,
     outcome: { status: 'completed' | 'failed'; result?: unknown; error?: string },
-  ): void;
+  ): void | Promise<void>;
   /** The decision disposition of a request, when one exists. */
-  decisionStatus(id: string): 'pending' | 'granted' | 'rejected' | undefined;
+  decisionStatus(
+    id: string,
+  ):
+    | 'pending'
+    | 'granted'
+    | 'rejected'
+    | undefined
+    | Promise<'pending' | 'granted' | 'rejected' | undefined>;
   /** The request by id, or `undefined`. */
-  byId(id: string): ApprovalRequestRecord | undefined;
+  byId(id: string): ApprovalRequestRecord | undefined | Promise<ApprovalRequestRecord | undefined>;
   /** The requests of a conversation (audit trail). */
-  listByConversation(conversationId: string): readonly ApprovalRequestRecord[];
+  listByConversation(
+    conversationId: string,
+  ): readonly ApprovalRequestRecord[] | Promise<readonly ApprovalRequestRecord[]>;
+  /**
+   * Resolves the pending/recorded request for a deterministic resume key
+   * within a tenant — the cross-process resume handle of a governed action
+   * (S24 Phase 6). Optional: stores that cannot resume by key (one-shot
+   * in-memory usage) omit it and callers fall back to their own tracking.
+   */
+  byResumeKey?(
+    tenantId: string,
+    resumeKey: string,
+  ): ApprovalRequestRecord | undefined | Promise<ApprovalRequestRecord | undefined>;
 }
 
 /**
  * An in-memory {@link ApprovalEngine} (tests and local development; the
- * platform replaces it with a durable store behind the same contract).
+ * platform replaces it with a durable store behind the same contract). The
+ * synchronous check-and-transition of `claim` is atomic within the event
+ * loop — concurrent duplicate deliveries cannot both claim.
  */
 export class InMemoryApprovalEngine implements ApprovalEngine {
   readonly #requests = new Map<string, ApprovalRequestRecord>();
@@ -160,6 +212,15 @@ export class InMemoryApprovalEngine implements ApprovalEngine {
     };
     this.#requests.set(request.id, request);
     return request;
+  }
+
+  byResumeKey(tenantId: string, resumeKey: string): ApprovalRequestRecord | undefined {
+    for (const request of this.#requests.values()) {
+      if (request.tenantId === tenantId && request.resumeKey === resumeKey) {
+        return request;
+      }
+    }
+    return undefined;
   }
 
   decide(id: string, input: ApprovalDecisionInput): DecideResult {

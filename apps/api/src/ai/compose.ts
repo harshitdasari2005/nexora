@@ -16,6 +16,7 @@ import type { NexoraDatabase } from '@nexora/persistence';
 import type { ApiConfig } from '../config.js';
 import type { Container, RepositorySet } from '../container.js';
 import { buildAiRuntime, type AiRuntime } from './runtime.js';
+import { PgApprovalEngine } from './pg-approval-engine.js';
 import { PgConversationStore } from './pg-conversation-store.js';
 
 /** Inputs required to compose the AI runtime. */
@@ -60,5 +61,9 @@ export function composeAiRuntime(input: ComposeAiRuntimeInput): AiRuntime {
     store:
       input.aiStore ??
       (input.database === undefined ? undefined : new PgConversationStore(input.database)),
+    // S24 Phase 6: the durable approval engine. Without a database (tests),
+    // the runtime falls back to the in-memory engine behind the SAME
+    // interface — one lifecycle, two stores.
+    approvals: input.database === undefined ? undefined : new PgApprovalEngine(input.database),
   });
 }

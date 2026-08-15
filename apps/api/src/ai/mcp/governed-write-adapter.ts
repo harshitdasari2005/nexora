@@ -1,5 +1,5 @@
 /**
- * @nexora/app-api — governed MCP write adapter (S24 Phase 5).
+ * @nexora/app-api — governed MCP write adapter (S24 Phase 5 + Phase 6).
  *
  * The write-tool governance seam of the Nexora MCP server. A write tool is
  * an ADAPTER over the SAME governed execution path the AI Runtime uses:
@@ -17,16 +17,25 @@
  * - First call: the executor's side-effect guard blocks the consequential
  *   tool (APPROVAL_REQUIRED); the adapter opens a recorded approval and
  *   returns it to the caller.
+ * - The approval carries a deterministic `resumeKey` derived from the
+ *   TRUSTED identity + tool + validated arguments. S24 Phase 6: with the
+ *   durable engine, a re-invocation of the same governed action (even from
+ *   a DIFFERENT process after a restart) resolves to the SAME approval via
+ *   `byResumeKey` — the pending map is only a fallback for engines without
+ *   resume-by-key. The persisted approval is the authority on what executes:
+ *   execution always uses the approval's STORED input, never re-sent
+ *   arguments.
  * - After a server-side grant, the caller re-invokes the SAME tool with the
- *   SAME trusted correlation id + arguments; the adapter claims the approval
- *   (single-flight) and executes once. A replayed delivery replays the
- *   stored result — it can never execute twice.
+ *   SAME arguments; the adapter claims the approval (atomic single-flight)
+ *   and executes once. A replayed delivery replays the stored result — it
+ *   can never execute twice.
  * - A rejected approval denies execution; approval can never grant a
  *   capability the caller's trusted affinity does not include (the tool was
  *   only reachable if the caller could see it, and the capability check is
  *   re-applied at call time by the server).
  */
 
+import { createHash } from 'node:crypto';
 import type { ApprovalEngine, ApprovalRequestRecord } from '@nexora/ai-runtime';
 import type { ToolExecutionResult, ToolExecutor } from '@nexora/ai-runtime/execution';
 import type { NexoraMCPContext, NexoraMCPToolResult } from '@nexora/mcp';
@@ -39,6 +48,18 @@ function stableKey(value: Record<string, unknown>): string {
     sorted[key] = value[key];
   }
   return JSON.stringify(sorted);
+}
+
+/**
+ * The deterministic cross-process resume key of a governed action: derived
+ * from TRUSTED identity + the canonical tool + the validated arguments —
+ * never from a correlation id (which changes across restarts) and never
+ * from any client claim.
+ */
+function resumeKeyFor(userId: string, toolId: string, args: Record<string, unknown>): string {
+  return createHash('sha256')
+    .update(`${userId}\u0000${toolId}\u0000${stableKey(args)}`)
+    .digest('hex');
 }
 
 /** Options of the {@link GovernedWriteAdapter}. */
@@ -64,7 +85,11 @@ export class GovernedWriteAdapter {
   readonly #toolId: string;
   readonly #capabilityId: string;
   readonly #intent: string;
-  /** Open approvals keyed by (correlationId, toolId, input) — the resume handle. */
+  /**
+   * Open approvals keyed by (correlationId, toolId, input) — the resume
+   * handle FALLBACK for engines without resume-by-key (Phase 5 behavior).
+   * With the durable engine the source of truth is the store itself.
+   */
   readonly #pending = new Map<string, ApprovalRequestRecord>();
 
   constructor(options: GovernedWriteAdapterOptions) {
@@ -83,11 +108,19 @@ export class GovernedWriteAdapter {
     args: Record<string, unknown>,
     context: NexoraMCPContext,
   ): Promise<NexoraMCPToolResult> {
-    const key = `${context.correlationId}:${this.#toolId}:${stableKey(args)}`;
-    const existing = this.#pending.get(key);
+    const memoryKey = `${context.correlationId}:${this.#toolId}:${stableKey(args)}`;
+    const resumeKey = resumeKeyFor(context.userId, this.#toolId, args);
+
+    // Resume resolution: the DURABLE store first (same key across process
+    // restarts), then the in-memory fallback for engines without resume-by-key.
+    const existing =
+      (this.#approvals.byResumeKey === undefined
+        ? undefined
+        : await this.#approvals.byResumeKey(context.tenantId, resumeKey)) ??
+      this.#pending.get(memoryKey);
 
     if (existing !== undefined) {
-      const status = this.#approvals.decisionStatus(existing.id);
+      const status = await this.#approvals.decisionStatus(existing.id);
       if (status === 'rejected') {
         return toolError(
           'APPROVAL_DENIED',
@@ -96,7 +129,7 @@ export class GovernedWriteAdapter {
         );
       }
       if (status === 'granted') {
-        return this.#execute(existing, args, context);
+        return this.#execute(existing, context);
       }
       return toolError('APPROVAL_REQUIRED', existing.reason, { approvalId: existing.id });
     }
@@ -108,7 +141,7 @@ export class GovernedWriteAdapter {
       return { ok: true, output: this.#output(first) };
     }
     if (first.blocked) {
-      const approval = this.#approvals.open({
+      const approval = await this.#approvals.open({
         conversationId: `mcp:${context.correlationId}`,
         userId: context.userId,
         tenantId: context.tenantId,
@@ -121,8 +154,10 @@ export class GovernedWriteAdapter {
         reason: first.error?.message ?? 'Approval required',
         intent: this.#intent,
         input: args,
+        // The deterministic cross-process resume handle (durable dedupe).
+        resumeKey,
       });
-      this.#pending.set(key, approval);
+      this.#pending.set(memoryKey, approval);
       return toolError('APPROVAL_REQUIRED', first.error?.message ?? 'Approval required', {
         approvalId: approval.id,
       });
@@ -133,16 +168,21 @@ export class GovernedWriteAdapter {
     );
   }
 
-  /** Executes a granted approval exactly once (single-flight claim). */
+  /**
+   * Executes a granted approval exactly once (atomic single-flight claim).
+   * The execution input is ALWAYS the approval's STORED input — the
+   * persisted approval is the authority on what was approved; re-sent
+   * arguments only locate the approval (via the resume key) and can never
+   * change what executes.
+   */
   async #execute(
     approval: ApprovalRequestRecord,
-    args: Record<string, unknown>,
     context: NexoraMCPContext,
   ): Promise<NexoraMCPToolResult> {
-    if (!this.#approvals.claim(approval.id)) {
+    if (!(await this.#approvals.claim(approval.id))) {
       // Already claimed: a completed approval replays its stored result; a
       // concurrently-executing one is reported as in-flight (never twice).
-      const current = this.#approvals.byId(approval.id);
+      const current = await this.#approvals.byId(approval.id);
       if (current?.status === 'completed') {
         return { ok: true, output: this.#toOutput(current.result) };
       }
@@ -150,8 +190,8 @@ export class GovernedWriteAdapter {
         approvalId: approval.id,
       });
     }
-    const result = await this.#executor.execute(this.#invocation(args, context), true);
-    this.#approvals.recordOutcome(
+    const result = await this.#executor.execute(this.#invocation(approval.input, context), true);
+    await this.#approvals.recordOutcome(
       approval.id,
       result.ok
         ? { status: 'completed', result: result.output }

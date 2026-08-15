@@ -610,6 +610,13 @@ export interface AiRuntimeDependencies {
   publisher: EventPublisher;
   /** Durable conversation store; defaults to in-memory (tests/local). */
   store?: ConversationStore;
+  /**
+   * Server-side approval engine. Defaults to the in-memory engine (tests
+   * and single-process local dev); the platform injects the PostgreSQL
+   * engine so approvals survive process restarts and are decidable by a
+   * different process (S24 Phase 6 — same interface, same lifecycle).
+   */
+  approvals?: ApprovalEngine;
 }
 
 /** The composed AI runtime surface exposed to routes. */
@@ -964,8 +971,10 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
   // Server-side approval state: gated (write) actions execute ONLY after a
   // granted decision. The caller can never approve by modifying the prompt,
   // tool arguments, or request body (AIR.md §12; docs/APPROVAL.md). The same
-  // engine gates workflow step approval points — one approval system.
-  const approvals = new InMemoryApprovalEngine();
+  // engine gates workflow step approval points — one approval system. The
+  // platform injects the durable PostgreSQL engine (S24 Phase 6); without
+  // one, the in-memory engine keeps tests/local development hermetic.
+  const approvals = dependencies.approvals ?? new InMemoryApprovalEngine();
 
   // Workflow runtime: the journaled engine executes workflow steps through
   // the SAME ToolExecutor pipeline as AI tool calls (one execution path).

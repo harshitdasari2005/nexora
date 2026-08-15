@@ -109,7 +109,9 @@ export class EnterpriseAIOrchestrator {
     if (request.approvalId !== undefined) {
       // Resume after a recorded server-side decision: do NOT duplicate the
       // user turn; record the disposition as a system turn (audit trail).
-      const disposition = this.#approvals?.decisionStatus(request.approvalId) ?? 'pending';
+      const disposition =
+        ((await this.#approvals?.decisionStatus(request.approvalId)) as
+          'pending' | 'granted' | 'rejected' | undefined) ?? 'pending';
       await this.#conversations.addTurn(session, {
         role: 'system',
         content: `Approval ${disposition} recorded for ${request.approvalId}`,
@@ -279,7 +281,7 @@ export class EnterpriseAIOrchestrator {
       // decision. The caller can never self-grant (no request flag, prompt,
       // or tool argument influences `approvalGranted` here).
       const approval = approvalRequired
-        ? this.#resolveApproval(
+        ? await this.#resolveApproval(
             request,
             step,
             context.execution.conversationId,
@@ -290,7 +292,7 @@ export class EnterpriseAIOrchestrator {
         : undefined;
       const approvalGranted =
         approvalRequired && approval !== undefined
-          ? this.#approvals?.decisionStatus(approval.id) === 'granted'
+          ? ((await this.#approvals?.decisionStatus(approval.id)) ?? undefined) === 'granted'
           : approvalRequired
             ? this.#requestMayAutoApprove(request)
             : true;
@@ -304,7 +306,7 @@ export class EnterpriseAIOrchestrator {
               ? approvalGranted
                 ? 'granted'
                 : 'pending'
-              : this.#disposition(approval),
+              : await this.#disposition(approval),
           sideEffectClass: step.gate?.sideEffectClass ?? 'state_change',
           ...(approval === undefined
             ? {}
@@ -332,8 +334,8 @@ export class EnterpriseAIOrchestrator {
         // Single-flight: claim the approved request atomically. A duplicate
         // delivery (same approval id re-run) can never execute the tool
         // again — a completed approval replays its stored result.
-        if (!this.#approvals.claim(approval.id)) {
-          const current = this.#approvals.byId(approval.id);
+        if (!(await this.#approvals.claim(approval.id))) {
+          const current = await this.#approvals.byId(approval.id);
           if (current?.status === 'completed') {
             steps.push({
               stepId: step.id,
@@ -393,7 +395,7 @@ export class EnterpriseAIOrchestrator {
           verified: result.verified,
         });
         if (approval !== undefined && this.#approvals !== undefined) {
-          this.#approvals.recordOutcome(approval.id, {
+          await this.#approvals.recordOutcome(approval.id, {
             status: 'completed',
             result: result.output,
           });
@@ -416,7 +418,7 @@ export class EnterpriseAIOrchestrator {
           error: result.error?.message,
         });
         if (approval !== undefined && this.#approvals !== undefined) {
-          this.#approvals.recordOutcome(approval.id, {
+          await this.#approvals.recordOutcome(approval.id, {
             status: 'failed',
             error: result.error?.message,
           });
@@ -518,19 +520,19 @@ export class EnterpriseAIOrchestrator {
    * tool — a foreign or mismatched approval never grants a step. Otherwise
    * opens a new awaiting-approval request.
    */
-  #resolveApproval(
+  async #resolveApproval(
     request: OrchestratorRequest,
     step: { id: string; toolId: string; capabilityId: string; input?: Record<string, unknown> },
     conversationId: string | undefined,
     runId: string,
     sideEffectClass: SideEffectClass,
     reason: string,
-  ): ApprovalRequestRecord | undefined {
+  ): Promise<ApprovalRequestRecord | undefined> {
     if (this.#approvals === undefined) {
       return undefined;
     }
     if (request.approvalId !== undefined) {
-      const approval = this.#approvals.byId(request.approvalId);
+      const approval = await this.#approvals.byId(request.approvalId);
       if (approval === undefined) {
         return undefined;
       }
@@ -566,8 +568,8 @@ export class EnterpriseAIOrchestrator {
   }
 
   /** The disposition of a recorded approval for the approval outcome. */
-  #disposition(approval: ApprovalRequestRecord): 'granted' | 'pending' | 'rejected' {
-    const status = this.#approvals?.decisionStatus(approval.id);
+  async #disposition(approval: ApprovalRequestRecord): Promise<'granted' | 'pending' | 'rejected'> {
+    const status = await this.#approvals?.decisionStatus(approval.id);
     if (status === 'granted') {
       return 'granted';
     }

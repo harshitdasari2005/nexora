@@ -233,7 +233,7 @@ describe('orchestrator approval flow (first AI write)', () => {
     // identity — and the tool never executed.
     const id = response.approvals[0]?.id;
     expect(id).toMatch(/^apr_/);
-    const record = approvals.byId(id as string);
+    const record = await approvals.byId(id as string);
     expect(record).toMatchObject({
       userId: 'usr_alice',
       tenantId: 'org_acme',
@@ -266,7 +266,7 @@ describe('orchestrator approval flow (first AI write)', () => {
     expect(resumed.approvals[0]?.status).toBe('granted');
     expect(createInvocations()).toBe(1);
     // The executed approval is recorded completed with the authoritative result.
-    expect(approvals.byId(approvalId)?.status).toBe('completed');
+    expect((await approvals.byId(approvalId))?.status).toBe('completed');
   });
 
   it('a rejected decision blocks execution with no side effect', async () => {
@@ -410,7 +410,7 @@ describe('orchestrator approval flow (first AI write)', () => {
 
     // Open a second approval for a DIFFERENT tool in the same conversation
     // and grant it — it must not grant the create-workspace step.
-    const other = approvals.open({
+    const other = await approvals.open({
       conversationId: first.conversationId,
       userId: 'usr_alice',
       tenantId: 'org_acme',

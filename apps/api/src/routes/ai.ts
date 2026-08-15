@@ -204,7 +204,7 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
       const { approvalId } = request.params as { approvalId: string };
       const body = request.body as { decision: 'approve' | 'reject'; reason?: string };
 
-      const approval = dependencies.approvals.byId(approvalId);
+      const approval = await dependencies.approvals.byId(approvalId);
       if (approval === undefined) {
         return reply.code(404).send({
           error: {
@@ -239,7 +239,7 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
         });
       }
 
-      const decided = dependencies.approvals.decide(approvalId, {
+      const decided = await dependencies.approvals.decide(approvalId, {
         decision: body.decision === 'approve' ? 'grant' : 'reject',
         decidedBy: auth.userId,
         reason: body.reason,
@@ -266,6 +266,22 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
         });
         return {
           status: 'rejected',
+          conversationId: approval.conversationId,
+          approvalId,
+        };
+      }
+
+      // S24 Phase 6 — cross-process governance: an approval opened by the
+      // REMOTE MCP surface carries a `mcp:` conversation id. The decision is
+      // recorded above (durable state); execution is resumed by the MCP
+      // client's next invocation (the approved action re-resolves the same
+      // approval via its resume key, claims it atomically, and executes) —
+      // the API process never fabricates an AI plan for an MCP action. AI
+      // chat approvals (real conversations) resume through the orchestrator
+      // below, exactly as before.
+      if (approval.conversationId.startsWith('mcp:')) {
+        return {
+          status: 'approved',
           conversationId: approval.conversationId,
           approvalId,
         };

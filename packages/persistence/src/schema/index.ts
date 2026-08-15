@@ -750,6 +750,61 @@ export const inboundMessages = pgTable(
 );
 
 /**
+ * approval_requests — the durable store behind the AI Runtime
+ * `ApprovalEngine` port (S24 Phase 6). One row per approval request; the
+ * tenant id is the isolation scope. The record preserves everything needed
+ * to resume a governed action safely across process restarts: the tool id +
+ * validated `input` (never identity — identity is the trusted relational
+ * scope columns), the decision state, and the execution outcome.
+ *
+ * Exactly-once contract: `claim` is an atomic conditional transition
+ * (`approved → executing`) so concurrent resume attempts across processes
+ * can never both execute; the unique `(tenant_id, resume_key)` index is the
+ * cross-process resume dedupe — a re-invocation of the same governed action
+ * resolves to the SAME pending approval instead of opening a second one
+ * (NULL resume keys — one-shot AI approvals — are distinct in Postgres
+ * unique indexes, so the AI path is unaffected).
+ */
+export const approvalRequests = pgTable(
+  'approval_requests',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    userId: varchar('user_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }),
+    conversationId: varchar('conversation_id', { length: 64 }).notNull(),
+    runId: varchar('run_id', { length: 64 }).notNull(),
+    stepId: varchar('step_id', { length: 64 }).notNull(),
+    toolId: varchar('tool_id', { length: 128 }).notNull(),
+    capabilityId: varchar('capability_id', { length: 128 }).notNull(),
+    sideEffectClass: varchar('side_effect_class', { length: 32 }).notNull(),
+    reason: text('reason').notNull(),
+    intent: text('intent').notNull(),
+    input: jsonb('input').notNull(),
+    resumeKey: varchar('resume_key', { length: 128 }),
+    status: varchar('status', { length: 32 }).notNull(),
+    decision: varchar('decision', { length: 16 }),
+    decisionReason: text('decision_reason'),
+    decidedBy: varchar('decided_by', { length: 64 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    executedAt: timestamp('executed_at', { withTimezone: true }),
+    result: jsonb('result'),
+    error: text('error'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('approval_requests_tenant_idx').on(table.tenantId),
+    index('approval_requests_conversation_idx').on(table.conversationId),
+    index('approval_requests_user_idx').on(table.tenantId, table.userId),
+    // Cross-process resume dedupe (S24 Phase 6): at most one pending
+    // approval per (tenant, resumeKey). NULL resume keys (AI one-shot
+    // approvals) are distinct and unaffected.
+    uniqueIndex('approval_requests_resume_key_unique').on(table.tenantId, table.resumeKey),
+  ],
+);
+
+/**
  * calendar_events — the {@link @nexora/module-calendar!CalendarEntry}
  * aggregate. One row per calendar entry; the organization id is the tenant
  * scope and the workspace id is the workspace scope — every read is scoped
