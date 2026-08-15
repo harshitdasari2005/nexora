@@ -22,6 +22,7 @@ import { createLogger, type Logger } from '@nexora/shared/logger';
 
 import {
   buildAIContext,
+  type AIBusinessContext,
   type AIContext,
   type ExecutionContext as RunExecutionContext,
   type PermissionContext,
@@ -132,6 +133,11 @@ export class EnterpriseAIOrchestrator {
       intent: request.utterance,
       permissions: aiContext.permissions,
       allowedCapabilityIds: request.allowedCapabilityIds,
+      // The trusted business context focuses discovery on the caller's role
+      // affinities. It is server-built — a model-claimed role can never
+      // change it (discovery ≠ authorization; every tool invocation still
+      // passes the existing server-side authorization checks).
+      businessContext: aiContext.business,
     });
     trace.stage('discovery', `${discovery.capabilities.length} capability(ies)`);
 
@@ -496,6 +502,9 @@ export class EnterpriseAIOrchestrator {
           ? undefined
           : { workspaceId: request.workspaceId as WorkspaceId },
       permissions,
+      // Trusted business context flows through untouched: the caller (the
+      // API layer) assembled it from membership + the Phase 1 catalog.
+      business: request.businessContext,
     });
   }
 
@@ -674,9 +683,35 @@ function renderPrompt(prompt: PromptTemplate, context: AIContext, plan: Executio
       variables[name] = context.execution.tenantId;
     } else if (name === 'workspaceId') {
       variables[name] = context.execution.workspaceId ?? '';
+    } else if (name === 'businessContext') {
+      // Trusted business context (S24 Phase 3): describes WHAT the user's
+      // work is about so the model can tailor narration — it grants nothing.
+      // The model can never supply these values; they are assembled
+      // server-side from trusted membership + the Phase 1 catalog.
+      variables[name] = describeBusinessContext(context.business);
     } else {
       variables[name] = '';
     }
   }
   return promptRenderer.render(prompt, variables);
+}
+
+/**
+ * Serializes the trusted business context into a structured prompt block.
+ * Deliberately phrased as context ("the user acts in…"), never as an
+ * authority claim ("you are an administrator") — role/capability affinity
+ * must not be reinterpretable as a grant.
+ */
+function describeBusinessContext(business: AIBusinessContext | undefined): string {
+  if (business === undefined) {
+    return 'None';
+  }
+  const lines = [
+    `Domain: ${business.domainName ?? business.domainId}`,
+    `Role: ${business.roleName ?? business.roleId}`,
+  ];
+  if (business.capabilityIds.length > 0) {
+    lines.push(`Relevant capabilities: ${business.capabilityIds.join(', ')}`);
+  }
+  return lines.join('\n');
 }

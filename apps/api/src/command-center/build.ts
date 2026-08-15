@@ -27,7 +27,7 @@ import {
   INITIAL_COMMAND_CENTERS,
 } from '@nexora/module-command-center';
 
-import { MembershipCommandCenterRoleResolver } from './membership-role-resolver.js';
+import { MembershipBusinessRoleResolver } from '../business-context/business-role-resolver.js';
 import { ApiCommandCenterWidgetDataProvider } from './widget-data-provider.js';
 
 /** Everything the API layer needs to compose the command center surface. */
@@ -62,7 +62,9 @@ export function buildCommandCenter(options: BuildCommandCenterOptions): GetComma
   const service = new CommandCenterApplicationService({
     registry,
     catalog,
-    roleResolver: new MembershipCommandCenterRoleResolver({
+    // The SAME trusted role-resolution seam the AI Runtime uses (Phase 3):
+    // Command Center and AI can never disagree about who the user is.
+    roleResolver: new MembershipBusinessRoleResolver({
       memberships: options.memberships,
       workspaceMemberships: options.workspaceMemberships,
     }),

@@ -287,3 +287,91 @@ describe('CapabilityDiscovery', () => {
     expect(scores[0]?.capabilityId).toBe('projects.close_sprint');
   });
 });
+
+describe('CapabilityDiscovery — role-aware focus (S24 Phase 3)', () => {
+  const { registry, skills } = buildDiscovery();
+  const discovery = new CapabilityDiscovery(registry, skills);
+
+  it('narrows the candidate set to the business context capability affinities', () => {
+    const outcome = discovery.discover({
+      // The intent matches close-sprint better in the full registry, but the
+      // role's affinity excludes it — discovery must surface only what the
+      // trusted business context says the user's work is about.
+      intent: 'create a project',
+      permissions: supervised,
+      businessContext: {
+        domainId: 'technology',
+        roleId: 'technology.developer',
+        capabilityIds: ['projects.create_project'],
+      },
+    });
+    expect(outcome.capabilities.map((c) => c.id)).toEqual(['projects.create_project']);
+    expect(outcome.tools.map((t) => t.id)).toEqual(['tool_create_project']);
+  });
+
+  it('keeps only capabilities that are both in the affinity AND match the intent', () => {
+    const outcome = discovery.discover({
+      intent: 'close the sprint',
+      permissions: supervised,
+      businessContext: {
+        domainId: 'technology',
+        roleId: 'technology.developer',
+        capabilityIds: ['projects.close_sprint', 'projects.create_project'],
+      },
+    });
+    // Both are in the affinity, but only close-sprint matches the intent.
+    expect(outcome.capabilities.map((c) => c.id)).toEqual(['projects.close_sprint']);
+  });
+
+  it('ignores unknown affinity ids safely (never an error, never a match)', () => {
+    const outcome = discovery.discover({
+      intent: 'close the sprint',
+      permissions: supervised,
+      businessContext: {
+        domainId: 'legal',
+        roleId: 'legal.general_counsel',
+        capabilityIds: ['legal.contracts.read', 'unknown.capability'],
+      },
+    });
+    expect(outcome.capabilities).toHaveLength(0);
+    expect(outcome.scores).toHaveLength(0);
+  });
+
+  it('falls back to unrestricted discovery when no affinity is present', () => {
+    const outcome = discovery.discover({
+      intent: 'close the sprint',
+      permissions: supervised,
+      businessContext: undefined,
+    });
+    expect(outcome.capabilities.map((c) => c.id)).toContain('projects.close_sprint');
+  });
+
+  it('an empty affinity set means no focus — unrestricted discovery applies', () => {
+    const outcome = discovery.discover({
+      intent: 'close the sprint',
+      permissions: supervised,
+      businessContext: {
+        domainId: 'finance',
+        roleId: 'finance.cfo',
+        capabilityIds: [],
+      },
+    });
+    expect(outcome.capabilities.map((c) => c.id)).toContain('projects.close_sprint');
+  });
+
+  it('a broad affinity cannot widen past the permission allow-list (allowedActions is the ceiling)', () => {
+    // A role claiming a broad affinity cannot surface a capability the
+    // runtime's allowedActions do not permit: candidates are the
+    // intersection of permissions and affinity, never the affinity alone.
+    const outcome = discovery.discover({
+      intent: 'close the sprint',
+      permissions: { ...supervised, allowedActions: ['projects.close_sprint'] },
+      businessContext: {
+        domainId: 'executive',
+        roleId: 'executive.ceo',
+        capabilityIds: ['projects.create_project', 'projects.close_sprint'],
+      },
+    });
+    expect(outcome.capabilities.map((c) => c.id)).toEqual(['projects.close_sprint']);
+  });
+});

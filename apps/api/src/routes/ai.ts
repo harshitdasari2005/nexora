@@ -17,7 +17,7 @@
 
 import type { FastifyInstance, FastifyReply, FastifySchema } from 'fastify';
 import type { TenantId, WorkspaceId } from '@nexora/contracts/common';
-import type { ApprovalEngine } from '@nexora/ai-runtime';
+import type { AIBusinessContext, ApprovalEngine } from '@nexora/ai-runtime';
 import type { ConversationManager } from '@nexora/ai-runtime/conversation';
 import type { OrchestratorResponse } from '@nexora/ai-runtime/orchestrator';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
@@ -86,6 +86,7 @@ export interface AiRoutesDependencies {
       workspaceId?: string;
       conversationId?: string;
       approvalId?: string;
+      businessContext?: AIBusinessContext;
     }): Promise<OrchestratorResponse>;
   };
   /** Organization listing (resolves the caller's current tenant). */
@@ -95,6 +96,16 @@ export interface AiRoutesDependencies {
    * shared with the tool — one authorization path (membership).
    */
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /**
+   * Builds the TRUSTED business context (domain/role/capability affinity)
+   * for a request from membership + the Phase 1 catalog. The model can never
+   * supply these values (S24 Phase 3).
+   */
+  buildBusinessContext: (context: {
+    userId: string;
+    tenantId: string;
+    workspaceId?: string;
+  }) => Promise<AIBusinessContext | undefined>;
   /** The server-side approval engine (decisions are trusted state). */
   approvals: ApprovalEngine;
   /** The conversation manager (records approval decisions as turns). */
@@ -152,6 +163,14 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
       }
     }
 
+    // Trusted business context: resolved server-side from membership + the
+    // Phase 1 catalog — never from the message, body, or any model claim.
+    const businessContext = await dependencies.buildBusinessContext({
+      userId: auth.userId,
+      tenantId: organizationId,
+      workspaceId: body.workspaceId as WorkspaceId | undefined,
+    });
+
     let response: OrchestratorResponse;
     try {
       response = await dependencies.orchestrator.run({
@@ -160,6 +179,7 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
         tenantId: organizationId,
         workspaceId: body.workspaceId as WorkspaceId | undefined,
         conversationId: body.conversationId,
+        businessContext,
       });
     } catch (error) {
       request.log.error({ err: error, requestId: request.id }, 'ai chat failed');
@@ -254,6 +274,13 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
       // Approve: resume the gated run through the orchestrator with the
       // server-resolved approval id — the run uses the recorded trusted
       // context, never client-supplied identity. Stream the execution.
+      // Rebuild the trusted business context for the SAME trusted context
+      // recorded on the approval — never from client input.
+      const businessContext = await dependencies.buildBusinessContext({
+        userId: approval.userId,
+        tenantId: approval.tenantId,
+        workspaceId: approval.workspaceId as WorkspaceId | undefined,
+      });
       let response: OrchestratorResponse;
       try {
         response = await dependencies.orchestrator.run({
@@ -263,6 +290,7 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
           workspaceId: approval.workspaceId as WorkspaceId | undefined,
           conversationId: approval.conversationId,
           approvalId: approval.id,
+          businessContext,
         });
       } catch (error) {
         request.log.error({ err: error, requestId: request.id }, 'ai approval resume failed');

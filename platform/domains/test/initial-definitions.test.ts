@@ -2,9 +2,10 @@
  * @nexora/module-domains — initial registration tests (S24 Phase 1).
  *
  * The first-party seed registers the 8 initial domains, 15 initial roles,
- * and 13 initial capabilities; every relationship resolves; catalog
- * integrity passes; and re-registration fails fast (startup validation,
- * never silent drift).
+ * and 17 initial capabilities (S24 Phase 3 added the executable AI
+ * vocabulary: workspaces.list/create, projects.assign, calendar.create);
+ * every relationship resolves; catalog integrity passes; and
+ * re-registration fails fast (startup validation, never silent drift).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -41,6 +42,10 @@ const EXPECTED_CAPABILITY_IDS = [
   'workflows.execute',
   'approvals.read',
   'approvals.create',
+  'workspaces.list',
+  'workspaces.create',
+  'projects.assign',
+  'calendar.create',
 ];
 
 describe('initial domain registrations', () => {
@@ -60,7 +65,7 @@ describe('initial domain registrations', () => {
     }
   });
 
-  it('registers the 13 initial capabilities', () => {
+  it('registers the 17 initial capabilities', () => {
     const catalog = createInitialCatalog();
     expect(catalog.capabilities.list().map((capability) => capability.id)).toEqual(
       EXPECTED_CAPABILITY_IDS,

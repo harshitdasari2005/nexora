@@ -89,6 +89,35 @@ export interface PermissionContext {
   roles?: readonly string[];
 }
 
+/**
+ * The trusted BUSINESS context of a run (S24 Phase 3): which business
+ * domain and role the user acts in, and the role's capability affinities.
+ *
+ * Business context is CONTEXT, not authorization: it tells the runtime what
+ * the user's work is ABOUT (to prioritize discovery, planning, and
+ * explanations) but grants NOTHING. It is assembled server-side from trusted
+ * membership + the Phase 1 Domain → Role → Capability catalog — the model
+ * can never supply these values, and a model-claimed role never widens
+ * access (the existing authorization path remains authoritative).
+ */
+export interface AIBusinessContext {
+  /** The resolved business domain id (Phase 1 catalog), e.g. `technology`. */
+  domainId: string;
+  /** The domain display name, when known. */
+  domainName?: string;
+  /** The resolved business role id (Phase 1 catalog), e.g. `technology.developer`. */
+  roleId: string;
+  /** The role display name, when known. */
+  roleName?: string;
+  /**
+   * The executable AI capability ids the role's work is relevant to
+   * (capability affinity — derived from the role's Phase 1 capabilityIds and
+   * mapped to runtime capabilities). Discovery focuses on these; every tool
+   * invocation still passes the existing server-side authorization checks.
+   */
+  capabilityIds: readonly string[];
+}
+
 /** The complete, minimal context of an AI interaction. */
 export interface AIContext {
   /** The run scope. */
@@ -101,6 +130,8 @@ export interface AIContext {
   workspace?: WorkspaceContext;
   /** Effective permissions for this interaction. */
   permissions: PermissionContext;
+  /** The trusted business context (domain/role/capability affinity), when resolved. */
+  business?: AIBusinessContext;
   /** The conversation view, when present. */
   conversation?: ConversationContext;
 }
@@ -117,6 +148,8 @@ export interface BuildAIContextInput {
   workspace?: WorkspaceContext;
   /** Effective permissions for this interaction. */
   permissions: PermissionContext;
+  /** The trusted business context (domain/role/capability affinity). */
+  business?: AIBusinessContext;
   /** The conversation view, when present. */
   conversation?: ConversationContext;
 }
@@ -132,6 +165,7 @@ export function buildAIContext(input: BuildAIContextInput): AIContext {
     organization: input.organization,
     workspace: input.workspace,
     permissions: input.permissions,
+    business: input.business,
     conversation: input.conversation,
   };
 }

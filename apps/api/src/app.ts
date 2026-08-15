@@ -94,6 +94,11 @@ import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { registerDomainRoutes } from './routes/domains.js';
 import { registerCommandCenterRoutes } from './routes/command-center.js';
 import { buildCommandCenter } from './command-center/build.js';
+import {
+  buildAIBusinessContext,
+  MembershipBusinessRoleResolver,
+} from './business-context/index.js';
+import { createInitialCatalog } from '@nexora/module-domains';
 import { registerInsightsRoutes } from './routes/insights.js';
 import { registerMarketplaceRoutes } from './routes/marketplace.js';
 import { registerOrganizationRoutes } from './routes/organizations.js';
@@ -282,10 +287,24 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         ? undefined
         : new PgConversationStore(dependencies.database)),
   });
+  // S24 Phase 3: the TRUSTED business context builder feeds every AI request
+  // with the caller's domain/role/capability affinity — resolved from the
+  // SAME membership seam the Command Center uses (one source of truth) and
+  // the Phase 1 catalog. The model never supplies these values.
+  const businessRoleResolver = new MembershipBusinessRoleResolver({
+    memberships: repositories.memberships,
+    workspaceMemberships: repositories.workspaceMemberships,
+  });
+  const domainCatalog = createInitialCatalog();
   registerAiRoutes(app, {
     orchestrator: ai.orchestrator,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+    buildBusinessContext: (context) =>
+      buildAIBusinessContext(
+        { roleResolver: businessRoleResolver, catalog: domainCatalog },
+        context,
+      ),
     approvals: ai.approvals,
     conversations: ai.conversations,
   });

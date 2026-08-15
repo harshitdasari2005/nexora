@@ -7,6 +7,7 @@
  */
 
 import type { AutonomyTier } from '@nexora/contracts/ai';
+import type { AIBusinessContext } from '../context/index.js';
 import type { ExecutionPlan } from '../planner/plan.js';
 import type { DecisionRecord } from '../reasoning/index.js';
 import type { ExecutionTrace } from '../telemetry/telemetry.js';
@@ -32,6 +33,13 @@ export interface OrchestratorRequest {
   autonomyTier?: AutonomyTier;
   /** Capability allow-list (e.g. command-palette driven); empty = discover all. */
   allowedCapabilityIds?: readonly string[];
+  /**
+   * The trusted business context (domain/role/capability affinity), resolved
+   * server-side from membership + the Phase 1 catalog. CONTEXT, not
+   * authorization: it focuses discovery on the role's relevant capabilities
+   * but never widens access — the model can never supply this value.
+   */
+  businessContext?: AIBusinessContext;
   /** Whether approval gates are treated as granted (test/dev harness only). */
   autoApprove?: boolean;
   /**

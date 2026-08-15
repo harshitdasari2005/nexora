@@ -59,6 +59,18 @@ describe('buildAIContext', () => {
     expect(context.workspace?.workspaceId).toBe('ws_1');
     expect(context.conversation?.conversationId).toBe('conv_1');
   });
+
+  it('flows the trusted business context through untouched (S24 Phase 3)', () => {
+    const business = {
+      domainId: 'technology',
+      domainName: 'Technology',
+      roleId: 'technology.developer',
+      roleName: 'Developer',
+      capabilityIds: ['projects.find_project', 'knowledge.search'],
+    };
+    const context = buildAIContext({ ...base, business });
+    expect(context.business).toEqual(business);
+  });
 });
 
 describe('validateAIContext', () => {

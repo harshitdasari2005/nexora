@@ -48,7 +48,8 @@ describe('GET /api/domains', () => {
       body.domains.find((domain) => domain.id === 'people')?.roles.map((role) => role.id),
     ).toEqual(['people.hr']);
 
-    // The 13 initial capabilities.
+    // The 17 initial capabilities (S24 Phase 3 added the executable
+    // vocabulary: workspaces.list/create, projects.assign, calendar.create).
     expect(body.capabilities.map((capability) => capability.id)).toEqual([
       'projects.read',
       'projects.create',
@@ -63,6 +64,10 @@ describe('GET /api/domains', () => {
       'workflows.execute',
       'approvals.read',
       'approvals.create',
+      'workspaces.list',
+      'workspaces.create',
+      'projects.assign',
+      'calendar.create',
     ]);
   });
 

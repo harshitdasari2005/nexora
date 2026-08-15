@@ -16,7 +16,7 @@ import type {
   ToolContract,
 } from '@nexora/contracts/ai';
 import type { DiscoveryResult } from '@nexora/contracts/registry';
-import type { PermissionContext } from '../context/index.js';
+import type { AIBusinessContext, PermissionContext } from '../context/index.js';
 import { DiscoveryError } from '../errors/index.js';
 import { CapabilityMatcher, type CapabilityScore } from './capability-matcher.js';
 import type { RuntimeRegistry } from '../registry/runtime-registry.js';
@@ -30,6 +30,16 @@ export interface DiscoveryRequest {
   permissions: PermissionContext;
   /** Optional capability-id allow-list (e.g. from a command palette). */
   allowedCapabilityIds?: readonly string[];
+  /**
+   * The trusted business context (S24 Phase 3): the role's capability
+   * affinities FOCUS discovery on the capabilities relevant to the caller's
+   * work. CONTEXT, not authorization — a non-empty affinity narrows the
+   * candidate set (irrelevant tools are not surfaced), but every tool
+   * invocation still passes the existing server-side authorization checks,
+   * and an empty/absent affinity (e.g. an unmapped role) falls back to the
+   * current unrestricted candidate set.
+   */
+  businessContext?: AIBusinessContext;
 }
 
 /** The outcome of a discovery query: matches plus the ranked scores. */
@@ -95,10 +105,22 @@ export class CapabilityDiscovery {
     const hasActionScope =
       request.permissions.allowedActions !== undefined &&
       request.permissions.allowedActions.length > 0;
-    return this.registry
+    const candidates = this.registry
       .capabilities()
       .map((entry) => entry.capability)
       .filter((capability) => !hasActionScope || allowed.has(capability.id));
+
+    // Role-aware focus (S24 Phase 3): when the trusted business context
+    // carries capability affinities, discovery only surfaces capabilities in
+    // that set. Unknown affinity ids never match (filtered out safely); an
+    // empty or absent affinity means the role has no focus — the current
+    // unrestricted candidate set applies.
+    const affinity = request.businessContext?.capabilityIds ?? [];
+    if (affinity.length === 0) {
+      return candidates;
+    }
+    const focus = new Set(affinity);
+    return candidates.filter((capability) => focus.has(capability.id));
   }
 
   #assemble(

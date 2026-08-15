@@ -9,11 +9,16 @@
  * Capabilities are the small set needed to prove the model. Each maps to an
  * existing Nexora operation where one exists; where no executable surface
  * exists yet, the description says so — a definition is never presented as
- * executable (S24: do not pretend). Seed roles carry empty `capabilityIds`:
- * capability affinity is business context assigned when role-aware
- * experiences exist (later phases), never a grant. The role → capability
- * relationship itself is validated and proven by tests and the Legal
- * extensibility fixture.
+ * executable (S24: do not pretend).
+ *
+ * Role `capabilityIds` are BUSINESS AFFINITY, never a grant (ROLE ≠
+ * PERMISSION): they say what the role's work is ABOUT. Phase 3 assigned
+ * affinities to the roles that power role-aware experiences (executive.ceo,
+ * delivery.manager, technology.developer) — each maps to existing executable
+ * AI capabilities via the API-layer bridge. Other roles keep empty
+ * affinities (no AI focus — discovery stays unrestricted for them, which is
+ * the safe default). The role → capability relationship is validated by
+ * tests and the Legal extensibility fixture.
  */
 
 import type {
@@ -81,7 +86,23 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'CEO',
     description: 'Chief Executive Officer',
     domainId: 'executive',
-    capabilityIds: [],
+    // Organization-level oversight: every executable AI surface (S24 Phase 3
+    // affinity — business context, never a grant).
+    capabilityIds: [
+      'workspaces.list',
+      'workspaces.create',
+      'projects.read',
+      'projects.create',
+      'projects.assign',
+      'documents.read',
+      'knowledge.read',
+      'employees.read',
+      'employees.manage',
+      'workflows.read',
+      'workflows.execute',
+      'approvals.read',
+      'calendar.create',
+    ],
   },
   {
     id: 'finance.cfo',
@@ -116,7 +137,16 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'Developer',
     description: 'Builds and maintains software',
     domainId: 'technology',
-    capabilityIds: [],
+    // Individual execution: read/find focus — projects, documents,
+    // knowledge, workflows, approvals (S24 Phase 3 affinity — business
+    // context, never a grant; write capabilities stay out of the AI focus).
+    capabilityIds: [
+      'projects.read',
+      'documents.read',
+      'knowledge.read',
+      'workflows.read',
+      'approvals.read',
+    ],
   },
   {
     id: 'security.ciso',
@@ -172,7 +202,18 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'Manager',
     description: 'Leads a delivery team',
     domainId: 'delivery',
-    capabilityIds: [],
+    // Team and execution focus: projects, people, knowledge, workflows
+    // (S24 Phase 3 affinity — business context, never a grant).
+    capabilityIds: [
+      'projects.read',
+      'projects.create',
+      'documents.read',
+      'knowledge.read',
+      'employees.read',
+      'workflows.read',
+      'workflows.execute',
+      'approvals.read',
+    ],
   },
   {
     id: 'delivery.project_manager',
@@ -254,5 +295,28 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     name: 'Create Approvals',
     description:
       'Open an approval request (created by the approval engine when a gated action runs)',
+  },
+  {
+    id: 'workspaces.list',
+    name: 'List Workspaces',
+    description: "List the caller's workspaces (existing surface: AI list-workspaces tool)",
+  },
+  {
+    id: 'workspaces.create',
+    name: 'Create Workspaces',
+    description:
+      'Create a workspace (existing surface: workspace creation + AI create-workspace tool)',
+  },
+  {
+    id: 'projects.assign',
+    name: 'Assign Projects',
+    description:
+      'Assign an employee to a project (existing surface: project assignment + AI assign tool)',
+  },
+  {
+    id: 'calendar.create',
+    name: 'Create Calendar Events',
+    description:
+      'Create a calendar event (existing surface: calendar creation + AI create-event tool)',
   },
 ];
