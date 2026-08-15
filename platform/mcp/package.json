@@ -1,0 +1,33 @@
+{
+  "name": "@nexora/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora platform module: the Nexora-owned Model Context Protocol server engine (S24 Phase 5) — a capability-aware, governed tool adapter over the standard MCP protocol. The engine is generic (no business logic): apps compose it with canonical Agent SDK tools and a trusted execution context.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@nexora/agent-sdk": "workspace:*",
+    "@nexora/contracts": "workspace:*",
+    "@nexora/shared": "workspace:*",
+    "ajv": "^8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "vitest": "^2.1.0",
+    "zod": "^3.25.0"
+  }
+}

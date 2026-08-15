@@ -33,14 +33,19 @@ import type {
 const BUSINESS_CAPABILITY_TO_AI_CAPABILITIES: Readonly<Record<string, readonly string[]>> = {
   'workspaces.list': ['workspaces.list_workspaces'],
   'workspaces.create': ['workspaces.create_workspace'],
-  'projects.read': ['projects.find_project'],
+  // S24 Phase 5: `projects.read` also maps to the list-projects surface so
+  // the MCP `nexora.projects.list` tool follows the same role affinity as
+  // the AI's find-project capability (ONE capability bridge for both).
+  'projects.read': ['projects.find_project', 'projects.list'],
   'projects.create': ['projects.create_project'],
   'projects.assign': ['projects.assign_employee'],
   'documents.read': ['knowledge.search'],
   'knowledge.read': ['knowledge.search'],
   'employees.read': ['hr.find_employee'],
   'employees.manage': ['hr.create_employee'],
-  'approvals.read': ['notifications.what_needs_attention'],
+  // S24 Phase 5: `approvals.read` also maps to the notifications inbox so
+  // the MCP `nexora.notifications.list` tool follows the same affinity.
+  'approvals.read': ['notifications.what_needs_attention', 'notifications.list'],
   'calendar.create': ['calendar.create_event'],
   // S24 Phase 4: `workflows.execute` maps to the workflow-orchestrating
   // capabilities, so a role WITH the affinity (CEO/Manager) can plan

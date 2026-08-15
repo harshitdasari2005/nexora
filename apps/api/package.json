@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "dev": "tsx watch src/server.ts",
-    "start": "node dist/src/server.js"
+    "start": "node dist/src/server.js",
+    "mcp": "tsx src/mcp-server.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
@@ -40,6 +41,7 @@
     "@nexora/module-notifications": "workspace:*",
     "@nexora/module-search": "workspace:*",
     "@nexora/module-workflow": "workspace:*",
+    "@nexora/mcp": "workspace:*",
     "@nexora/persistence": "workspace:*",
     "@nexora/shared": "workspace:*",
     "dotenv": "^16.4.5",
@@ -49,6 +51,7 @@
     "openid-client": "^5.7.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
     "vitest": "^2.1.0"

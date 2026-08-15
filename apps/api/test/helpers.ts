@@ -21,7 +21,14 @@ import {
   type MembershipRole,
   type WorkspaceId,
 } from '@nexora/domain-workspaces';
-import { OrganizationMembership, type OrganizationId } from '@nexora/domain-organizations';
+import {
+  Organization,
+  OrganizationMembership,
+  OrganizationSlug,
+  OrganizationStatus,
+  OrganizationType,
+  type OrganizationId,
+} from '@nexora/domain-organizations';
 import type { MembershipRole as OrgMembershipRole } from '@nexora/domain-organizations';
 import { Project, type ProjectId, type ProjectStatusValue } from '@nexora/domain-projects';
 import { Employee, type EmployeeId } from '@nexora/domain-hr';
@@ -377,6 +384,33 @@ export async function seedEmployee(
     status: input.status ?? 'active',
   });
   await repos.employees.save(seeded);
+}
+
+/**
+ * Seeds an Organization aggregate with a fixed id directly into the fake
+ * repository (real domain construction — active status). Used to model
+ * organizations the onboarding API cannot create (other tenant) and to give
+ * the AI write tools their membership authorization query real data.
+ */
+export async function seedOrganization(
+  repos: RepositorySet,
+  input: { id: string; slug: string; name?: string },
+): Promise<void> {
+  const created = Organization.create(
+    {
+      slug: OrganizationSlug.create(input.slug),
+      name: input.name ?? input.slug,
+      type: OrganizationType.startup(),
+      status: OrganizationStatus.active(),
+    },
+    { actor: { kind: 'system', id: 'system' }, correlationId: 'corr_seed' },
+  );
+  created.pullDomainEvents();
+  const seeded = Organization.hydrate({
+    ...Organization.snapshot(created),
+    id: input.id as OrganizationId,
+  });
+  await repos.organizations.save(seeded);
 }
 
 /** Seeds an OrganizationMembership aggregate into the fake repository. */

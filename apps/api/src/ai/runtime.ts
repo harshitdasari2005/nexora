@@ -56,6 +56,7 @@ import type {
   AssignEmployeeToProjectHandler,
   CreateProjectHandler,
   FindProjectByNameHandler,
+  ListProjectsHandler,
 } from '@nexora/application-projects';
 import type { CreateEmployeeHandler, FindEmployeeByNameHandler } from '@nexora/application-hr';
 import type { RetrieveKnowledgeHandler } from '@nexora/application-knowledge';
@@ -90,7 +91,10 @@ import { HireAndAssignWorkflowTool } from './tools/hire-and-assign-tool.js';
 import { CreateWorkspaceTool } from './tools/create-workspace-tool.js';
 import { FindEmployeeTool } from './tools/find-employee-tool.js';
 import { FindProjectTool } from './tools/find-project-tool.js';
+import { ListNotificationsTool } from './tools/list-notifications-tool.js';
+import { ListProjectsTool } from './tools/list-projects-tool.js';
 import { ListWorkspacesTool } from './tools/list-workspaces-tool.js';
+import { SearchDocumentsTool } from './tools/search-documents-tool.js';
 import { SearchKnowledgeTool } from './tools/search-knowledge-tool.js';
 import { WhatNeedsAttentionTool } from './tools/what-needs-attention-tool.js';
 
@@ -576,6 +580,8 @@ export interface AiRuntimeDependencies {
   createProject: CreateProjectHandler;
   /** The tenant-scoped project resolution handler (read tool). */
   findProjectByName: FindProjectByNameHandler;
+  /** The tenant-scoped project listing handler (read tool). */
+  listProjects: ListProjectsHandler;
   /** The tenant-scoped employee resolution handler (HR read tool). */
   findEmployeeByName: FindEmployeeByNameHandler;
   /** The application-layer assignment handler (cross-domain write tool). */
@@ -913,6 +919,17 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
   tools.register(new FindProjectTool(dependencies.findProjectByName));
   tools.register(new FindEmployeeTool(dependencies.findEmployeeByName));
   tools.register(new SearchKnowledgeTool(dependencies.retrieveKnowledge));
+  // S24 Phase 5 MCP-surface read tools: executable through the same
+  // ToolExecutor (the one execution path) but NOT AI-discoverable — their
+  // capabilities are not registered for discovery (the AI already covers
+  // these reads via `projects.find_project`, `knowledge.search`, and
+  // `notifications.what_needs_attention`; registering a greedy
+  // `projects.list` would hijack unrelated utterances containing the word
+  // "projects"). They surface through the Nexora MCP server, where the
+  // affinity bridge (Phase 3) drives capability-aware discovery.
+  tools.register(new ListProjectsTool(dependencies.listProjects));
+  tools.register(new SearchDocumentsTool(dependencies.retrieveKnowledge));
+  tools.register(new ListNotificationsTool(dependencies.listNotifications));
   tools.register(
     new WhatNeedsAttentionTool({
       listNotifications: dependencies.listNotifications,

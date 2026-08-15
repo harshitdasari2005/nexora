@@ -37,11 +37,17 @@ function buildDependencies(
 
 describe('resolveExecutableCapabilities (affinity bridge)', () => {
   it('maps business capabilities to their executable AI surfaces', () => {
-    expect(resolveExecutableCapabilities(['projects.read'])).toEqual(['projects.find_project']);
+    // S24 Phase 5: projects.read also maps to the list-projects surface and
+    // approvals.read to the notifications inbox (MCP tool affinities).
+    expect(resolveExecutableCapabilities(['projects.read'])).toEqual([
+      'projects.find_project',
+      'projects.list',
+    ]);
     expect(resolveExecutableCapabilities(['documents.read'])).toEqual(['knowledge.search']);
     expect(resolveExecutableCapabilities(['employees.manage'])).toEqual(['hr.create_employee']);
     expect(resolveExecutableCapabilities(['approvals.read'])).toEqual([
       'notifications.what_needs_attention',
+      'notifications.list',
     ]);
   });
 

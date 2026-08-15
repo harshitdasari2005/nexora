@@ -52,11 +52,7 @@ import {
 
 import { MinioDocumentStorage } from './storage/minio-document-storage.js';
 
-import {
-  NotificationEventConsumer,
-  NotificationPolicy,
-  NotificationStream,
-} from '@nexora/module-notifications';
+import { NotificationPolicy } from '@nexora/module-notifications';
 import { Email } from '@nexora/domain-identity';
 import {
   DevEmailSink,
@@ -67,14 +63,12 @@ import {
 } from '@nexora/module-integrations';
 
 import type { ApiConfig } from './config.js';
-import { LoggingEventPublisher } from './events/logging-event-publisher.js';
-import { ProjectionChainPublisher } from './events/projection-chain-publisher.js';
+import { buildApplicationEventPublisher } from './events/application-publisher.js';
 import { toHttpError } from './http/errors.js';
 import type { OidcGateway } from './oidc/gateway.js';
 import { registerAuth } from './plugins/auth.js';
 import { buildContainer, type RepositorySet } from './container.js';
-import { PgConversationStore } from './ai/pg-conversation-store.js';
-import { buildAiRuntime } from './ai/runtime.js';
+import { composeAiRuntime } from './ai/compose.js';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
@@ -132,25 +126,17 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   const repositories =
     dependencies.repositories ?? buildPgRepositories(dependencies.database, dependencies.config);
-  const basePublisher = dependencies.publisher ?? new LoggingEventPublisher(app.log);
 
-  // Notification platform: the consumer projects business events into
-  // recipient-scoped notifications and the workspace activity feed. It rides
-  // the EventPublisher seam (the v1 event backbone) — no second event bus.
-  const notificationStream = new NotificationStream();
-  const notificationConsumer = new NotificationEventConsumer({
-    policy: new NotificationPolicy(),
-    notifications: repositories.notifications,
-    preferences: repositories.notificationPreferences,
-    activity: repositories.activity,
-    publisher: basePublisher,
-    stream: notificationStream,
+  // The v1 event backbone: the notification consumer projects business
+  // events into recipient-scoped notifications and the workspace activity
+  // feed; webhooks + email are registered onto the same chain below. Shared
+  // with the MCP server entry — one event pipeline for HTTP and MCP
+  // (S24 Phase 5: MCP never bypasses audit).
+  const { publisher, stream: notificationStream } = buildApplicationEventPublisher({
+    repositories,
+    basePublisher: dependencies.publisher,
     logger: app.log,
   });
-  // The v1 event backbone: every domain event flows through this chain to
-  // the projections (notifications, and — registered below — webhooks +
-  // email) before the base publisher. No second event bus (SAD.md §11).
-  const publisher = new ProjectionChainPublisher(basePublisher, [notificationConsumer]);
   const container = buildContainer({ config: dependencies.config, repositories, publisher });
 
   // The integration application service is composed AFTER the AI runtime
@@ -262,31 +248,16 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   // Enterprise AI Runtime: register the workspaces capability surface and
   // expose the chat endpoint. The runtime is generic — apps plug into it by
-  // registering capabilities, never by modifying it (AIR.md §5).
-  const ai = buildAiRuntime({
+  // registering capabilities, never by modifying it (AIR.md §5). The same
+  // composition powers the Nexora MCP server (S24 Phase 5) — one runtime
+  // wiring for HTTP and MCP.
+  const ai = composeAiRuntime({
     config: dependencies.config,
-    listMyWorkspaces: container.listMyWorkspaces,
-    createWorkspace: container.createWorkspace,
-    createProject: container.createProject,
-    findProjectByName: container.findProjectByName,
-    findEmployeeByName: container.findEmployeeByName,
-    createEmployee: container.createEmployee,
-    createCalendarEvent: container.createCalendarEvent,
-    listCalendarEvents: container.listCalendarEvents,
-    assignEmployeeToProject: container.assignEmployeeToProject,
-    retrieveKnowledge: container.retrieveKnowledge,
-    listOrganizations: container.listOrganizations,
-    listNotifications: container.listNotifications,
-    unreadNotifications: container.unreadNotifications,
-    listActivity: container.listActivity,
-    workflowInstances: repositories.workflowInstances,
-    workflowStepExecutions: repositories.workflowStepExecutions,
+    container,
+    repositories,
     publisher,
-    store:
-      dependencies.aiStore ??
-      (dependencies.database === undefined
-        ? undefined
-        : new PgConversationStore(dependencies.database)),
+    database: dependencies.database,
+    aiStore: dependencies.aiStore,
   });
   // S24 Phase 3: the TRUSTED business context builder feeds every AI request
   // with the caller's domain/role/capability affinity — resolved from the
@@ -474,7 +445,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 }
 
 /** Builds the PostgreSQL repository set from the database client. */
-function buildPgRepositories(
+export function buildPgRepositories(
   database: NexoraDatabase | undefined,
   config: ApiConfig,
 ): RepositorySet {
