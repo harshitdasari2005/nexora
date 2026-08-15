@@ -1,0 +1,28 @@
+{
+  "name": "@nexora/connectors",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora platform module: the generic external-connector engine (S25 Phase 7) — a capability-aware, governed adapter contract for external business systems (GitHub, Slack, and future providers). The engine is generic (no business logic): providers implement the ExternalConnector contract and apps register them; every operation still flows through Nexora authorization, approval, verification, and audit.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "vitest": "^2.1.0"
+  }
+}

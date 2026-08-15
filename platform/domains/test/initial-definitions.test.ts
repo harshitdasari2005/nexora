@@ -2,9 +2,10 @@
  * @nexora/module-domains — initial registration tests (S24 Phase 1).
  *
  * The first-party seed registers the 8 initial domains, 15 initial roles,
- * and 17 initial capabilities (S24 Phase 3 added the executable AI
- * vocabulary: workspaces.list/create, projects.assign, calendar.create);
- * every relationship resolves; catalog integrity passes; and
+ * and 23 initial capabilities (S24 Phase 3 added the executable AI
+ * vocabulary: workspaces.list/create, projects.assign, calendar.create;
+ * S25 Phase 7 added the external connector vocabulary: github.* and
+ * slack.*); every relationship resolves; catalog integrity passes; and
  * re-registration fails fast (startup validation, never silent drift).
  */
 
@@ -46,6 +47,12 @@ const EXPECTED_CAPABILITY_IDS = [
   'workspaces.create',
   'projects.assign',
   'calendar.create',
+  'github.repositories.read',
+  'github.issues.read',
+  'github.issues.create',
+  'slack.channels.read',
+  'slack.messages.read',
+  'slack.messages.send',
 ];
 
 describe('initial domain registrations', () => {
@@ -65,7 +72,7 @@ describe('initial domain registrations', () => {
     }
   });
 
-  it('registers the 17 initial capabilities', () => {
+  it('registers the 23 initial capabilities', () => {
     const catalog = createInitialCatalog();
     expect(catalog.capabilities.list().map((capability) => capability.id)).toEqual(
       EXPECTED_CAPABILITY_IDS,

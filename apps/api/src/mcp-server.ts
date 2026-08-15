@@ -37,6 +37,7 @@ import {
 } from './events/application-publisher.js';
 import { buildContainer } from './container.js';
 import { composeAiRuntime } from './ai/compose.js';
+import { buildConnectorStore } from './ai/connectors/build-connector-store.js';
 import { buildNexoraMCPServer, type NexoraMCPTrustedIdentity } from './ai/mcp/build-server.js';
 import { loadConfig } from './config.js';
 import {
@@ -84,7 +85,20 @@ async function main(): Promise<void> {
   const repositories = buildPgRepositories(database, config);
   const { publisher } = buildApplicationEventPublisher({ repositories, logger });
   const container = buildContainer({ config, repositories, publisher });
-  const ai = composeAiRuntime({ config, container, repositories, publisher, database });
+  const ai = composeAiRuntime({
+    config,
+    container,
+    repositories,
+    publisher,
+    database,
+    // S25 Phase 7: env-configured external connectors (registered when a
+    // credential + binding tenant are configured; empty otherwise).
+    connectors: buildConnectorStore({
+      githubToken: config.connectors.githubToken,
+      slackToken: config.connectors.slackToken,
+      tenantId: config.connectors.tenantId,
+    }),
+  });
 
   // Trusted business context: the SAME resolver + catalog the AI route uses.
   const roleResolver = new MembershipBusinessRoleResolver({

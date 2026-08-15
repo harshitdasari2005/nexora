@@ -69,6 +69,8 @@ import type { OidcGateway } from './oidc/gateway.js';
 import { registerAuth } from './plugins/auth.js';
 import { buildContainer, type RepositorySet } from './container.js';
 import { composeAiRuntime } from './ai/compose.js';
+import { buildConnectorStore } from './ai/connectors/build-connector-store.js';
+import type { ConnectorConnectionStore } from './ai/connectors/connection-store.js';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
@@ -119,6 +121,12 @@ export interface AppDependencies {
   aiStore?: ConversationStore;
   /** Webhook delivery transport (defaults to fetch — tests inject a fake). */
   webhookHttp?: WebhookHttpClient;
+  /**
+   * External connector connection store (S25 Phase 7). Tests inject a
+   * fixture-backed store; defaults to the env-configured store (empty when
+   * no connector credentials are configured).
+   */
+  connectors?: ConnectorConnectionStore;
 }
 
 /** Builds the Nexora API application. */
@@ -253,6 +261,16 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   // registering capabilities, never by modifying it (AIR.md §5). The same
   // composition powers the Nexora MCP server (S24 Phase 5) — one runtime
   // wiring for HTTP and MCP.
+  // S25 Phase 7: external enterprise connectors. Built from the deployment
+  // config (env credentials + binding tenant); empty when not configured.
+  const connectors =
+    dependencies.connectors ??
+    buildConnectorStore({
+      githubToken: dependencies.config.connectors.githubToken,
+      slackToken: dependencies.config.connectors.slackToken,
+      tenantId: dependencies.config.connectors.tenantId,
+    });
+
   const ai = composeAiRuntime({
     config: dependencies.config,
     container,
@@ -260,6 +278,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     publisher,
     database: dependencies.database,
     aiStore: dependencies.aiStore,
+    connectors,
   });
   // S24 Phase 3: the TRUSTED business context builder feeds every AI request
   // with the caller's domain/role/capability affinity — resolved from the

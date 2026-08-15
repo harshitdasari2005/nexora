@@ -48,8 +48,9 @@ describe('GET /api/domains', () => {
       body.domains.find((domain) => domain.id === 'people')?.roles.map((role) => role.id),
     ).toEqual(['people.hr']);
 
-    // The 17 initial capabilities (S24 Phase 3 added the executable
-    // vocabulary: workspaces.list/create, projects.assign, calendar.create).
+    // The 23 initial capabilities (S24 Phase 3 added the executable
+    // vocabulary: workspaces.list/create, projects.assign, calendar.create;
+    // S25 Phase 7 added the external connector vocabulary: github.* / slack.*).
     expect(body.capabilities.map((capability) => capability.id)).toEqual([
       'projects.read',
       'projects.create',
@@ -68,6 +69,12 @@ describe('GET /api/domains', () => {
       'workspaces.create',
       'projects.assign',
       'calendar.create',
+      'github.repositories.read',
+      'github.issues.read',
+      'github.issues.create',
+      'slack.channels.read',
+      'slack.messages.read',
+      'slack.messages.send',
     ]);
   });
 

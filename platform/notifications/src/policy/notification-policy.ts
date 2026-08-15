@@ -385,6 +385,27 @@ export class NotificationPolicy {
           ],
         };
       }
+      case 'connector.external_write': {
+        // S25 Phase 7: governed external writes (GitHub/Slack via the
+        // connector surface) project a workspace activity entry — the
+        // external audit trail. The payload carries only the provider/
+        // tool identity + verified output summary — never credentials or
+        // raw provider internals.
+        const provider = readString(event.payload, 'provider') ?? 'External system';
+        const toolId = readString(event.payload, 'toolId') ?? 'external action';
+        return {
+          notifications: [],
+          activity: [
+            {
+              workspaceId,
+              type: event.type,
+              title: `${provider} action completed`,
+              body: `${provider} ${toolId} completed.`,
+              actorId,
+            },
+          ],
+        };
+      }
       default:
         // Events outside the catalog produce nothing.
         return { notifications: [], activity: [] };

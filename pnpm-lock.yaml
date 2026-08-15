@@ -74,6 +74,9 @@ importers:
       '@nexora/application-workspaces':
         specifier: workspace:*
         version: link:../../domains/workspaces/application
+      '@nexora/connectors':
+        specifier: workspace:*
+        version: link:../../platform/connectors
       '@nexora/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -681,6 +684,19 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)
+
+  platform/connectors:
+    dependencies:
+      '@nexora/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.43)
 
   platform/domains:
     dependencies:

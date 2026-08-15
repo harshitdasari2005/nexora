@@ -87,7 +87,9 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     description: 'Chief Executive Officer',
     domainId: 'executive',
     // Organization-level oversight: every executable AI surface (S24 Phase 3
-    // affinity — business context, never a grant).
+    // affinity — business context, never a grant). S25 Phase 7: broad
+    // enterprise integration oversight — all external connector surfaces
+    // (GitHub + Slack) are within executive focus.
     capabilityIds: [
       'workspaces.list',
       'workspaces.create',
@@ -102,6 +104,12 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'workflows.execute',
       'approvals.read',
       'calendar.create',
+      'github.repositories.read',
+      'github.issues.read',
+      'github.issues.create',
+      'slack.channels.read',
+      'slack.messages.read',
+      'slack.messages.send',
     ],
   },
   {
@@ -140,12 +148,17 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     // Individual execution: read/find focus — projects, documents,
     // knowledge, workflows, approvals (S24 Phase 3 affinity — business
     // context, never a grant; write capabilities stay out of the AI focus).
+    // S25 Phase 7: GitHub repository/issue focus (the Developer's external
+    // work surface); Slack stays outside the Developer focus.
     capabilityIds: [
       'projects.read',
       'documents.read',
       'knowledge.read',
       'workflows.read',
       'approvals.read',
+      'github.repositories.read',
+      'github.issues.read',
+      'github.issues.create',
     ],
   },
   {
@@ -203,7 +216,10 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     description: 'Leads a delivery team',
     domainId: 'delivery',
     // Team and execution focus: projects, people, knowledge, workflows
-    // (S24 Phase 3 affinity — business context, never a grant).
+    // (S24 Phase 3 affinity — business context, never a grant). S25 Phase
+    // 7: project + communication focus — GitHub repository/issue surfaces
+    // and Slack channels/send (no message-history read; communication
+    // focus, never surveillance).
     capabilityIds: [
       'projects.read',
       'projects.create',
@@ -213,6 +229,11 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'workflows.read',
       'workflows.execute',
       'approvals.read',
+      'github.repositories.read',
+      'github.issues.read',
+      'github.issues.create',
+      'slack.channels.read',
+      'slack.messages.send',
     ],
   },
   {
@@ -318,5 +339,41 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     name: 'Create Calendar Events',
     description:
       'Create a calendar event (existing surface: calendar creation + AI create-event tool)',
+  },
+  // S25 Phase 7: external enterprise connectors (GitHub + Slack). Each
+  // capability maps to a real, executable connector tool surface where one
+  // exists — a definition is never presented as executable when the
+  // connector is not configured for the tenant.
+  {
+    id: 'github.repositories.read',
+    name: 'Read GitHub Repositories',
+    description:
+      'Read GitHub repositories (existing surface: GitHub connector repository list/get)',
+  },
+  {
+    id: 'github.issues.read',
+    name: 'Read GitHub Issues',
+    description: 'Read GitHub issues (existing surface: GitHub connector issue list)',
+  },
+  {
+    id: 'github.issues.create',
+    name: 'Create GitHub Issues',
+    description: 'Create a GitHub issue (existing surface: GitHub connector governed issue create)',
+  },
+  {
+    id: 'slack.channels.read',
+    name: 'Read Slack Channels',
+    description: 'Read Slack channels (existing surface: Slack connector channel list)',
+  },
+  {
+    id: 'slack.messages.read',
+    name: 'Read Slack Messages',
+    description:
+      'Read recent Slack messages (existing surface: Slack connector conversation history)',
+  },
+  {
+    id: 'slack.messages.send',
+    name: 'Send Slack Messages',
+    description: 'Send a Slack message (existing surface: Slack connector governed message send)',
   },
 ];

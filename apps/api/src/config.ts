@@ -50,6 +50,22 @@ export interface S3Config {
   bucket: string;
 }
 
+/** External connector credentials (S25 Phase 7 — environment only). */
+export interface ConnectorsConfig {
+  /** GitHub personal-access token (the GitHub connection credential). */
+  githubToken?: string;
+  /** Slack bot/user token (the Slack connection credential). */
+  slackToken?: string;
+  /**
+   * The tenant (organization) that owns the env-configured connections in
+   * local development. REQUIRED to register the connections: without it no
+   * connector is registered (fail closed — a connector never serves a
+   * tenant it is not bound to). Production OAuth/account connections are a
+   * later phase.
+   */
+  tenantId?: string;
+}
+
 /** Session cookie options. */
 export interface CookieConfig {
   /** The cookie name holding the session token. */
@@ -82,6 +98,8 @@ export interface ApiConfig {
   ai: AiConfig;
   /** Integrations (webhook-in signing, email) configuration. */
   integrations: IntegrationsConfig;
+  /** External connector credentials + tenant binding (S25 Phase 7). */
+  connectors: ConnectorsConfig;
   /**
    * S3/MinIO object storage. `undefined` when S3_ENDPOINT is not set — the
    * container then falls back to the in-memory storage port (local dev
@@ -152,6 +170,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       // that omits the var fails fast instead of signing inbound actions
       // with a publicly-known secret.
       inboundSecret: required(env, 'INTEGRATIONS_INBOUND_SECRET'),
+    },
+    connectors: {
+      githubToken: env['GITHUB_TOKEN']?.trim() || undefined,
+      slackToken: env['SLACK_TOKEN']?.trim() || undefined,
+      tenantId: env['CONNECTOR_TENANT_ID']?.trim() || undefined,
     },
     s3: loadS3Config(env),
     logLevel,

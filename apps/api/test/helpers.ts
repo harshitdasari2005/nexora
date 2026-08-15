@@ -147,7 +147,11 @@ export interface ChatClient {
  * (each login dance issues a session for the gateway's next identity).
  */
 export async function buildTestApp(
-  options: { oidc?: OidcGateway; webhookHttp?: Parameters<typeof buildApp>[0]['webhookHttp'] } = {},
+  options: {
+    oidc?: OidcGateway;
+    webhookHttp?: Parameters<typeof buildApp>[0]['webhookHttp'];
+    connectors?: Parameters<typeof buildApp>[0]['connectors'];
+  } = {},
 ): Promise<{ app: FastifyInstance; repos: RepositorySet; store: InMemoryConversationStore }> {
   const config = loadConfig({
     DATABASE_URL: 'postgres://test:test@localhost:5432/test',
@@ -194,6 +198,7 @@ export async function buildTestApp(
     repositories,
     aiStore: store,
     webhookHttp: options.webhookHttp,
+    connectors: options.connectors,
   });
   return { app, repos: repositories, store };
 }

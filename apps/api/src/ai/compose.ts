@@ -16,6 +16,7 @@ import type { NexoraDatabase } from '@nexora/persistence';
 import type { ApiConfig } from '../config.js';
 import type { Container, RepositorySet } from '../container.js';
 import { buildAiRuntime, type AiRuntime } from './runtime.js';
+import type { ConnectorConnectionStore } from './connectors/connection-store.js';
 import { PgApprovalEngine } from './pg-approval-engine.js';
 import { PgConversationStore } from './pg-conversation-store.js';
 
@@ -33,6 +34,8 @@ export interface ComposeAiRuntimeInput {
   database?: NexoraDatabase;
   /** Durable conversation store (defaults to in-memory without a database). */
   aiStore?: ConversationStore;
+  /** External connector connections (S25 Phase 7; registered when present). */
+  connectors?: ConnectorConnectionStore;
 }
 
 /** Builds the AI runtime (the single composition used by HTTP + MCP). */
@@ -65,5 +68,8 @@ export function composeAiRuntime(input: ComposeAiRuntimeInput): AiRuntime {
     // the runtime falls back to the in-memory engine behind the SAME
     // interface — one lifecycle, two stores.
     approvals: input.database === undefined ? undefined : new PgApprovalEngine(input.database),
+    // S25 Phase 7: external connectors (registered into the runtime surface
+    // only when connections are configured).
+    connectors: input.connectors,
   });
 }

@@ -56,6 +56,18 @@ const BUSINESS_CAPABILITY_TO_AI_CAPABILITIES: Readonly<Record<string, readonly s
     'workflow.create_project_and_assign_employee',
     'workflow.hire_and_assign_employee',
   ],
+  // S25 Phase 7: external connector capabilities map to their executable
+  // AI/MCP surfaces (the connector tool ids). A connector is configured per
+  // tenant (env credentials) — the capability is only EXECUTABLE when a
+  // connection exists for the trusted tenant; discovery of the capability
+  // never grants provider access (the connector tool fails closed when no
+  // connection is configured).
+  'github.repositories.read': ['github.repositories.list', 'github.repositories.get'],
+  'github.issues.read': ['github.issues.list'],
+  'github.issues.create': ['github.issues.create'],
+  'slack.channels.read': ['slack.channels.list'],
+  'slack.messages.read': ['slack.messages.recent'],
+  'slack.messages.send': ['slack.messages.send'],
 };
 
 /** Dependencies of the AI business-context builder. */

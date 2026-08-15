@@ -74,6 +74,8 @@ import type {
 import type { ApiConfig } from '../config.js';
 import { KnowledgeFallbackMatcher } from './knowledge-fallback.js';
 import { extractIntentParameters } from './parameters.js';
+import type { ConnectorConnectionStore } from './connectors/connection-store.js';
+import { registerConnectorSurface } from './connectors/register-connectors.js';
 import {
   createWorkflowProposalDetector,
   defaultWorkflowPlannerSpecs,
@@ -617,6 +619,15 @@ export interface AiRuntimeDependencies {
    * different process (S24 Phase 6 — same interface, same lifecycle).
    */
   approvals?: ApprovalEngine;
+  /**
+   * The tenant-scoped external connector connections (S25 Phase 7). When
+   * present, each configured connector is registered into the runtime
+   * surface (agent + capabilities + skills + executable tools) so the AI
+   * and the MCP server can discover and execute external capabilities
+   * through the SAME governed path as native tools. Absent (tests / no
+   * configured credentials): no external surface is advertised.
+   */
+  connectors?: ConnectorConnectionStore;
 }
 
 /** The composed AI runtime surface exposed to routes. */
@@ -1007,6 +1018,23 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
       listOrganizations: dependencies.listOrganizations,
     }),
   );
+
+  // S25 Phase 7: external connector surface. Registered ONLY when the
+  // platform configured connections (env tokens + binding tenant) — an
+  // unconfigured connector is never advertised (fail closed). Each
+  // connector tool becomes an AI-discoverable capability + an executable
+  // ConnectorAgentTool through the SAME registry and executor; writes stay
+  // consequential (gated by the approval engine) and every successful
+  // write emits the connector.external_write audit event.
+  if (dependencies.connectors !== undefined) {
+    registerConnectorSurface({
+      registry,
+      skills,
+      tools,
+      store: dependencies.connectors,
+      publisher: dependencies.publisher,
+    });
+  }
 
   // Conversation persistence (durable or in-memory).
   const store = dependencies.store ?? new InMemoryConversationStore();

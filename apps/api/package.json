@@ -25,6 +25,7 @@
     "@nexora/application-organizations": "workspace:*",
     "@nexora/application-projects": "workspace:*",
     "@nexora/application-workspaces": "workspace:*",
+    "@nexora/connectors": "workspace:*",
     "@nexora/contracts": "workspace:*",
     "@nexora/domain-documents": "workspace:*",
     "@nexora/domain-hr": "workspace:*",
