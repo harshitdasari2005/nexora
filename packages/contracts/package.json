@@ -63,6 +63,10 @@
       "types": "./dist/src/registry/index.d.ts",
       "default": "./dist/src/registry/index.js"
     },
+    "./domain": {
+      "types": "./dist/src/domain/index.d.ts",
+      "default": "./dist/src/domain/index.js"
+    },
     "./versioning": {
       "types": "./dist/src/versioning/index.d.ts",
       "default": "./dist/src/versioning/index.js"

@@ -91,6 +91,7 @@ import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
+import { registerDomainRoutes } from './routes/domains.js';
 import { registerInsightsRoutes } from './routes/insights.js';
 import { registerMarketplaceRoutes } from './routes/marketplace.js';
 import { registerOrganizationRoutes } from './routes/organizations.js';
@@ -297,6 +298,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     getTenantMeasurements: container.getTenantMeasurements,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+  });
+  registerDomainRoutes(app, {
+    listDomainCatalog: container.listDomainCatalog,
   });
 
   // --- Integrations platform (S20) ----------------------------------------

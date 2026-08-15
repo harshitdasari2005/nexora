@@ -23,5 +23,6 @@ export * from './approval/index.js';
 export * from './notification/index.js';
 export * from './identity/index.js';
 export * from './registry/index.js';
+export * from './domain/index.js';
 export * from './versioning/index.js';
 export * from './guards/index.js';

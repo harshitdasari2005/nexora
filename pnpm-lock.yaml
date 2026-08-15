@@ -101,6 +101,9 @@ importers:
       '@nexora/module-calendar':
         specifier: workspace:*
         version: link:../../domains/calendar
+      '@nexora/module-domains':
+        specifier: workspace:*
+        version: link:../../platform/domains
       '@nexora/module-integrations':
         specifier: workspace:*
         version: link:../../platform/integrations
@@ -644,6 +647,22 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)
+
+  platform/domains:
+    dependencies:
+      '@nexora/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@nexora/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.43)
 
   platform/event-bus:
     devDependencies:

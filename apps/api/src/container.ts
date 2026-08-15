@@ -151,6 +151,11 @@ import {
   MeasurementApplicationService,
 } from '@nexora/module-measurements';
 import { ScryptPasswordHasher } from '@nexora/persistence';
+import {
+  createInitialCatalog,
+  DomainApplicationService,
+  GetDomainCatalogHandler,
+} from '@nexora/module-domains';
 
 import type { ApiConfig } from './config.js';
 
@@ -313,6 +318,8 @@ export interface Container {
   updateNotificationPreferences: UpdateNotificationPreferencesHandler;
   /** Activity feed listing handler (workspace-scoped). */
   listActivity: ListActivityHandler;
+  /** Read-only Domain → Role → Capability discovery handler (S24 Phase 1). */
+  listDomainCatalog: GetDomainCatalogHandler;
 }
 
 /** Inputs required to build the container. */
@@ -447,6 +454,12 @@ export function buildContainer(options: BuildContainerOptions): Container {
   });
   const measurementService = new MeasurementApplicationService(repositories.measurements);
 
+  // S24 Phase 1: the Domain → Role → Capability definition catalog. Code/
+  // config registered (no database): validated at startup, resolved from
+  // memory, read-only. Grants nothing — the existing authorization system
+  // remains authoritative (ROLE ≠ PERMISSION).
+  const domainCatalogService = new DomainApplicationService(createInitialCatalog());
+
   return {
     sessionsService,
     authenticateWithOidc: new AuthenticateWithOidcHandler(identityService),
@@ -509,5 +522,6 @@ export function buildContainer(options: BuildContainerOptions): Container {
     updateNotificationPreferences: new UpdateNotificationPreferencesHandler(notificationService),
     listActivity: new ListActivityHandler(notificationService),
     getTenantMeasurements: new GetTenantMeasurementsHandler(measurementService),
+    listDomainCatalog: new GetDomainCatalogHandler(domainCatalogService),
   };
 }
