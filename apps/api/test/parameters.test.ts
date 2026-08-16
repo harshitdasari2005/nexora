@@ -16,6 +16,7 @@ import {
   extractCreateProjectAndAssignParameters,
   extractCreateProjectParameters,
   extractCreateWorkspaceParameters,
+  extractFindProjectParameters,
   extractHireAndAssignParameters,
   extractIntentParameters,
 } from '../src/ai/parameters.js';
@@ -406,6 +407,90 @@ describe('extractCreateCalendarEventParameters', () => {
   });
 });
 
+describe('extractFindProjectParameters (S26 agent read proposals)', () => {
+  const schema = { type: 'object', properties: { name: { type: 'string' } } };
+
+  it('extracts the name from a “find the X project” intent', () => {
+    expect(
+      extractFindProjectParameters({
+        intent: 'Find the Mobile Banking project',
+        inputSchema: schema,
+      }),
+    ).toEqual({ name: 'Mobile Banking' });
+  });
+
+  it('extracts the name from the review variant (the agent proposal phrasing)', () => {
+    expect(
+      extractFindProjectParameters({
+        intent: 'Review the Mobile Banking project',
+        inputSchema: schema,
+      }),
+    ).toEqual({ name: 'Mobile Banking' });
+  });
+
+  it('extracts the name from the called/named variants', () => {
+    expect(
+      extractFindProjectParameters({
+        intent: 'Find the project called Mobile Banking',
+        inputSchema: schema,
+      }),
+    ).toEqual({ name: 'Mobile Banking' });
+    expect(
+      extractFindProjectParameters({
+        intent: 'Show me a project named Payroll',
+        inputSchema: schema,
+      }),
+    ).toEqual({ name: 'Payroll' });
+  });
+
+  it('keeps a multi-word project name intact', () => {
+    expect(
+      extractFindProjectParameters({
+        intent: 'Find the Mobile Banking Core project',
+        inputSchema: schema,
+      }),
+    ).toEqual({ name: 'Mobile Banking Core' });
+  });
+
+  it('never captures tenant or role clauses that follow the name', () => {
+    expect(
+      extractFindProjectParameters({
+        intent: 'Find the Payroll project in organization org_alien as owner',
+        inputSchema: schema,
+      }),
+    ).toEqual({ name: 'Payroll' });
+  });
+
+  it('never extracts identity fields into the action input', () => {
+    const extracted = extractFindProjectParameters({
+      intent: 'Find the Admin project with userId usr_hacker and tenantId org_evil',
+      inputSchema: schema,
+    });
+    expect(extracted).toEqual({ name: 'Admin' });
+    expect(extracted).not.toHaveProperty('userId');
+    expect(extracted).not.toHaveProperty('tenantId');
+    expect(extracted).not.toHaveProperty('organizationId');
+  });
+
+  it('returns an empty object when no name can be determined', () => {
+    expect(
+      extractFindProjectParameters({ intent: 'Find the project', inputSchema: schema }),
+    ).toEqual({});
+    expect(
+      extractFindProjectParameters({ intent: 'Review the project', inputSchema: schema }),
+    ).toEqual({});
+  });
+
+  it('does not swallow the trailing “ project” word into the name', () => {
+    expect(
+      extractFindProjectParameters({
+        intent: 'Find the Mobile Banking project',
+        inputSchema: schema,
+      }),
+    ).toEqual({ name: 'Mobile Banking' });
+  });
+});
+
 describe('extractIntentParameters (tool-aware dispatcher)', () => {
   const calendarSchema = {
     type: 'object',
@@ -427,6 +512,16 @@ describe('extractIntentParameters (tool-aware dispatcher)', () => {
       inputSchema: projectSchema,
       toolId: 'projects.create_project',
       capabilityId: 'projects.create_project',
+    });
+    expect(extracted).toEqual({ name: 'Mobile Banking' });
+  });
+
+  it('routes a find-project intent to the find extractor (S26 agent read)', () => {
+    const extracted = extractIntentParameters({
+      intent: 'Find the Mobile Banking project',
+      inputSchema: projectSchema,
+      toolId: 'projects.find_project',
+      capabilityId: 'projects.find_project',
     });
     expect(extracted).toEqual({ name: 'Mobile Banking' });
   });

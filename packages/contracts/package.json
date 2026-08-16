@@ -71,6 +71,10 @@
       "types": "./dist/src/command-center/index.d.ts",
       "default": "./dist/src/command-center/index.js"
     },
+    "./agent": {
+      "types": "./dist/src/agent/index.d.ts",
+      "default": "./dist/src/agent/index.js"
+    },
     "./versioning": {
       "types": "./dist/src/versioning/index.d.ts",
       "default": "./dist/src/versioning/index.js"

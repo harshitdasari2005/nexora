@@ -832,3 +832,35 @@ export const calendarEvents = pgTable(
     index('calendar_events_workspace_idx').on(table.workspaceId, table.startsAt),
   ],
 );
+
+/**
+ * agent_executions — the durable journal of governed business-agent runs
+ * (S26 Phase 8 measurements). One row per execution recorded by the agent
+ * engine through the API-layer recorder; the tenant id is the isolation
+ * scope and every read is scoped by it. Only trusted relational columns are
+ * stored (identity/scope live in columns, never in payload), and the row
+ * records the OUTCOME fact (status + run id + proposal link) — the minimal
+ * measurement surface, never a second analytics subsystem.
+ */
+export const agentExecutions = pgTable(
+  'agent_executions',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    userId: varchar('user_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }),
+    agentId: varchar('agent_id', { length: 64 }).notNull(),
+    roleId: varchar('role_id', { length: 128 }).notNull(),
+    domainId: varchar('domain_id', { length: 64 }).notNull(),
+    proposalId: varchar('proposal_id', { length: 128 }),
+    proposalAction: text('proposal_action'),
+    status: varchar('status', { length: 32 }).notNull(),
+    runId: varchar('run_id', { length: 64 }),
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('agent_executions_tenant_idx').on(table.tenantId),
+    index('agent_executions_tenant_user_idx').on(table.tenantId, table.userId, table.createdAt),
+  ],
+);

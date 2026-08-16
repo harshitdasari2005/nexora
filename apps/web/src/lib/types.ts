@@ -500,6 +500,108 @@ export type CommandCenterWidgetDataDto =
       items: readonly CommandCenterEntryDto[];
     };
 
+/** The system an agent action targets (S26 Phase 8). */
+export type AgentTargetSystem = 'nexora' | 'github' | 'slack' | 'calendar' | 'email';
+
+/** An agent goal (S26 Phase 8). */
+export interface AgentGoal {
+  id: string;
+  name: string;
+  description: string;
+  capabilityIds: readonly string[];
+}
+
+/** An agent operating policy (S26 Phase 8). */
+export interface AgentOperatingPolicy {
+  id: string;
+  statement: string;
+}
+
+/** A governed action proposal (S26 Phase 8). */
+export interface AgentProposal {
+  id: string;
+  action: string;
+  reason: string;
+  affectedEntity?: { type: string; id: string; title: string };
+  targetSystem: AgentTargetSystem;
+  requiredCapability: string;
+  requiresApproval: boolean;
+  expectedResult: string;
+  goalId?: string;
+}
+
+/** A display-safe executed step of a governed agent run. */
+export interface AgentExecutionStep {
+  stepId: string;
+  capabilityId: string;
+  toolId: string;
+  status: 'succeeded' | 'failed' | 'blocked' | 'skipped';
+  output?: unknown;
+  error?: string;
+  verified: boolean;
+}
+
+/** An approval gate outcome of a governed agent run. */
+export interface AgentApprovalOutcome {
+  id?: string;
+  stepId: string;
+  toolId: string;
+  capabilityId?: string;
+  status: 'granted' | 'pending' | 'rejected';
+  sideEffectClass: string;
+  input?: Record<string, unknown>;
+}
+
+/** The outcome of one governed agent execution. */
+export interface AgentExecutionOutcome {
+  status: 'completed' | 'blocked' | 'failed' | 'clarification' | 'rejected';
+  runId?: string;
+  response: string;
+  steps: readonly AgentExecutionStep[];
+  approvals: readonly AgentApprovalOutcome[];
+  decision?: { id: string; outcome: string; madeAt: string };
+}
+
+/** A journaled agent execution (measurements). */
+export interface AgentExecutionRecord {
+  id: string;
+  agentId: string;
+  roleId: string;
+  domainId: string;
+  tenantId: string;
+  workspaceId?: string;
+  userId: string;
+  proposalId?: string;
+  proposalAction?: string;
+  status: string;
+  runId?: string;
+  reason?: string;
+  createdAt: string;
+}
+
+/** The governed business agent returned by `GET /api/agent`. */
+export interface BusinessAgentDto {
+  id: string;
+  name: string;
+  domainId: string;
+  domainName: string;
+  roleId: string;
+  roleName: string;
+  description: string;
+  autonomyLevel: 'read_only' | 'assisted' | 'governed_execution';
+  goals: readonly AgentGoal[];
+  policies: readonly AgentOperatingPolicy[];
+  capabilities: readonly { id: string; name: string }[];
+  proposals: readonly AgentProposal[];
+  recentRuns: readonly AgentExecutionRecord[];
+}
+
+/** The governed agent execution response. */
+export interface AgentExecutionResponse {
+  agent: BusinessAgentDto;
+  outcome: AgentExecutionOutcome;
+}
+
 /** The full command-center view returned by `GET /api/command-center`. */
 export interface CommandCenterDto {
   /** The command center id. */

@@ -71,6 +71,10 @@ import { buildContainer, type RepositorySet } from './container.js';
 import { composeAiRuntime } from './ai/compose.js';
 import { buildConnectorStore } from './ai/connectors/build-connector-store.js';
 import type { ConnectorConnectionStore } from './ai/connectors/connection-store.js';
+import { buildAgent } from './agent/build.js';
+import { registerAgentRoutes } from './routes/agent.js';
+import type { AgentExecutionRecorder } from '@nexora/module-agents';
+import { PgAgentExecutionRecorder } from './agent/pg-agent-execution-recorder.js';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
@@ -127,6 +131,13 @@ export interface AppDependencies {
    * no connector credentials are configured).
    */
   connectors?: ConnectorConnectionStore;
+  /**
+   * The durable agent-execution journal (S26 Phase 8 measurements). Tests
+   * inject an in-memory recorder; defaults to the PostgreSQL recorder when
+   * a database is available (absent otherwise — executions still run but
+   * are not journaled).
+   */
+  agentExecutionRecorder?: AgentExecutionRecorder;
 }
 
 /** Builds the Nexora API application. */
@@ -358,6 +369,40 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       listActivity: container.listActivity,
       listNotifications: container.listNotifications,
     }),
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+  });
+
+  // S26 Phase 8: the governed business-agent surface. Composed here (not in
+  // the container) for the same reason as the Command Center: the engine
+  // reuses the SAME trusted membership role-resolution seam, the EXISTING
+  // application services (measurements, projects, activity, notifications)
+  // derive governed proposals from real persisted data, and execution runs
+  // through the EXISTING AI Runtime (one engine, one approval system) with
+  // discovery restricted to the agent's registered capability set. Outcomes
+  // are journaled into `agent_executions` when a database is available.
+  const agentSurface = buildAgent({
+    memberships: repositories.memberships,
+    workspaceMemberships: repositories.workspaceMemberships,
+    getTenantMeasurements: container.getTenantMeasurements,
+    listProjects: container.listProjects,
+    listActivity: container.listActivity,
+    listNotifications: container.listNotifications,
+    orchestrator: ai.orchestrator,
+    buildBusinessContext: (context) =>
+      buildAIBusinessContext(
+        { roleResolver: businessRoleResolver, catalog: domainCatalog },
+        context,
+      ),
+    executionRecorder:
+      dependencies.agentExecutionRecorder ??
+      (dependencies.database === undefined
+        ? undefined
+        : new PgAgentExecutionRecorder(dependencies.database)),
+  });
+  registerAgentRoutes(app, {
+    getAgent: agentSurface.getAgent,
+    executeAgent: agentSurface.executeAgent,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
   });

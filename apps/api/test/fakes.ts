@@ -76,6 +76,8 @@ import type {
   NotificationPreferencesRepository,
   NotificationRepository,
 } from '@nexora/module-notifications';
+import type { AgentExecutionRecorder, BusinessAgentContext } from '@nexora/module-agents';
+import type { AgentExecutionRecord } from '@nexora/contracts/agent';
 import type {
   EmailOutboxRepository,
   InboundMessageRepository,
@@ -1097,6 +1099,30 @@ export class FakeOidcGateway implements OidcGateway {
 }
 
 /** An in-memory {@link MeasurementRepository} (returns a zeroed snapshot). */
+/**
+ * An in-memory {@link AgentExecutionRecorder} (S26 Phase 8): journals
+ * governed agent executions and lists the caller's recent ones. Used by the
+ * API agent tests to verify journaling + the DTO `recentRuns` without a
+ * database.
+ */
+export class FakeAgentExecutionRecorder implements AgentExecutionRecorder {
+  readonly records: AgentExecutionRecord[] = [];
+
+  async record(record: AgentExecutionRecord): Promise<void> {
+    this.records.push(record);
+  }
+
+  async listRecent(
+    context: BusinessAgentContext,
+    limit: number,
+  ): Promise<readonly AgentExecutionRecord[]> {
+    return this.records
+      .filter((record) => record.tenantId === context.tenantId && record.userId === context.userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  }
+}
+
 export class FakeMeasurementRepository implements MeasurementRepository {
   readonly snapshots = new Map<string, TenantMeasurementsSnapshot>();
 

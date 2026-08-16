@@ -1,0 +1,30 @@
+{
+  "name": "@nexora/module-agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora backend module: the governed business-agent engine (S26 Phase 8) — role-resolved agent definitions with goals, autonomy bounds, and governed action proposals, resolved from the Phase 1 Domain → Role model.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@nexora/module-domains": "workspace:*",
+    "@types/node": "^20.0.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -392,6 +392,44 @@ export function extractIntentParameters(input: {
   if (input.toolId === 'calendar.create_event' || input.capabilityId === 'calendar.create_event') {
     return extractCreateCalendarEventParameters(input);
   }
+  if (input.toolId === 'projects.find_project' || input.capabilityId === 'projects.find_project') {
+    return extractFindProjectParameters(input);
+  }
+  return {};
+}
+
+/**
+ * Extracts `{ name }` from a find-project intent ("Find the Mobile Banking
+ * project" / "…project called Mobile Banking" / "Review the Mobile Banking
+ * project"). Clause-bounded exactly like the other extractors — trailing
+ * clauses ("in organization X") are never part of the name. Returns `{}`
+ * when no name can be determined — the tool then fails validation rather
+ * than inventing input.
+ */
+export function extractFindProjectParameters(input: {
+  /** The user intent. */
+  intent: string;
+  /** The tool's JSON-schema input contract (name is the only property). */
+  inputSchema: Record<string, unknown>;
+}): Record<string, unknown> {
+  const patterns: readonly RegExp[] = [
+    // "…project called Mobile Banking" / "…project named Mobile Banking"
+    /(?:called|named)\s+["'`]?([A-Za-z0-9][A-Za-z0-9 _-]{0,78})["'`]?(?=[\s.,!?]|$)/i,
+    // "find|show|open|get|review the Mobile Banking project" (optional
+    // "the project" article; the name is the phrase before " project").
+    /(?:find|show|open|get|review)\s+(?:the\s+)?(?:project\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9 _-]{0,78}?)["'`]?(?=\s+project\b|$)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = input.intent.match(pattern);
+    if (match === null) {
+      continue;
+    }
+    const name = boundName(match[1] ?? '').trim();
+    if (name.length === 0 || name.length > NAME_MAX_LENGTH || /^project$/i.test(name)) {
+      continue;
+    }
+    return { name };
+  }
   return {};
 }
 

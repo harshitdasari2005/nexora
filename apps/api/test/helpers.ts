@@ -57,6 +57,7 @@ import {
   FakeCalendarEntryRepository,
   FakeDocumentRepository,
   FakeDocumentTemplateRepository,
+  FakeAgentExecutionRecorder,
   FakeDocumentVersionRepository,
   FakeEmailOutboxRepository,
   FakeInboundMessageRepository,
@@ -151,6 +152,7 @@ export async function buildTestApp(
     oidc?: OidcGateway;
     webhookHttp?: Parameters<typeof buildApp>[0]['webhookHttp'];
     connectors?: Parameters<typeof buildApp>[0]['connectors'];
+    agentExecutionRecorder?: Parameters<typeof buildApp>[0]['agentExecutionRecorder'];
   } = {},
 ): Promise<{ app: FastifyInstance; repos: RepositorySet; store: InMemoryConversationStore }> {
   const config = loadConfig({
@@ -199,6 +201,9 @@ export async function buildTestApp(
     aiStore: store,
     webhookHttp: options.webhookHttp,
     connectors: options.connectors,
+    // Journal governed agent executions in-memory so the agent tests can
+    // verify the S26 Phase 8 measurements (recentRuns) without a database.
+    agentExecutionRecorder: options.agentExecutionRecorder ?? new FakeAgentExecutionRecorder(),
   });
   return { app, repos: repositories, store };
 }

@@ -25,5 +25,6 @@ export * from './identity/index.js';
 export * from './registry/index.js';
 export * from './domain/index.js';
 export * from './command-center/index.js';
+export * from './agent/index.js';
 export * from './versioning/index.js';
 export * from './guards/index.js';
