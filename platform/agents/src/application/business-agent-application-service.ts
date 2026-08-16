@@ -43,6 +43,7 @@ import type {
   BusinessAgentDefinition,
   BusinessAgentDto,
 } from '@nexora/contracts/agent';
+import type { BusinessProblemDto } from '@nexora/contracts/detection';
 import type { BusinessAgentRegistry } from '../registry/business-agent-registry.js';
 import type { AgentExecutionPort, AgentExecutionRecorder } from './agent-execution-port.js';
 
@@ -80,6 +81,27 @@ export interface AgentProposalProvider {
   ): Promise<readonly ActionProposal[]>;
 }
 
+/**
+ * Provides the detected business problems of the caller's scope (S27).
+ * Implemented by the API layer over the detection engine; the agent DTO
+ * surfaces them alongside its proposals, and problem-derived action
+ * proposals merge into the agent's proposal list so they flow through the
+ * SAME governed execution path. When absent, the agent surface runs
+ * without the proactive layer (problems resolve to an empty list).
+ */
+export interface AgentProblemProvider {
+  /**
+   * Returns the scope's detected problems (investigation included). The
+   * agent is passed so the provider can bound problem-derived action
+   * proposals to the agent's registered capability set (fail closed — a
+   * problem can never recommend an action beyond the agent's set).
+   */
+  list(
+    context: BusinessAgentContext,
+    agent: BusinessAgentDefinition,
+  ): Promise<readonly BusinessProblemDto[]>;
+}
+
 /** The Phase 1 catalog surface the service needs for display names. */
 export interface BusinessAgentDomainCatalogPort {
   domains: { get(id: string): { name: string } | undefined };
@@ -107,11 +129,25 @@ export interface BusinessAgentApplicationServiceDependencies {
    * still run but are not recorded (tests/dev defaults).
    */
   recorder?: AgentExecutionRecorder;
+  /**
+   * The proactive problem provider (S27). When absent, the agent surface
+   * runs without problems (an empty list — never fabricated).
+   */
+  problems?: AgentProblemProvider;
 }
 
 /** The outcome of resolving a business agent. */
 export type ResolveBusinessAgentResult =
   { ok: true; agent: BusinessAgentDto } | { ok: false; reason: 'no-role' | 'no-agent' };
+
+/**
+ * The outcome of resolving ONLY the agent's registered capability set (no
+ * proposals, no problems, no journal — a pure read used by surfaces that
+ * need the capability bound without the DTO side effects, e.g. the S27
+ * problems console listing without re-evaluating signals).
+ */
+export type ResolveAgentCapabilitiesResult =
+  { ok: true; capabilityIds: readonly string[] } | { ok: false; reason: 'no-role' | 'no-agent' };
 
 /** The outcome of executing a governed agent intent. */
 export type ExecuteBusinessAgentResult =
@@ -140,6 +176,7 @@ export class BusinessAgentApplicationService {
   readonly #proposalProvider: AgentProposalProvider;
   readonly #execution?: AgentExecutionPort;
   readonly #recorder?: AgentExecutionRecorder;
+  readonly #problems?: AgentProblemProvider;
 
   constructor(dependencies: BusinessAgentApplicationServiceDependencies) {
     this.#registry = dependencies.registry;
@@ -148,6 +185,7 @@ export class BusinessAgentApplicationService {
     this.#proposalProvider = dependencies.proposalProvider;
     this.#execution = dependencies.execution;
     this.#recorder = dependencies.recorder;
+    this.#problems = dependencies.problems;
   }
 
   /**
@@ -165,16 +203,45 @@ export class BusinessAgentApplicationService {
     if (definition === undefined) {
       return { ok: false, reason: 'no-agent' };
     }
-    const [proposals, recentRuns] = await Promise.all([
+    const [proposals, recentRuns, problems] = await Promise.all([
       this.#proposalProvider.propose(context, definition),
       this.#recorder === undefined
         ? Promise.resolve([] as readonly AgentExecutionRecord[])
         : this.#recorder.listRecent(context, RECENT_RUNS_LIMIT),
+      this.#loadProblems(context, definition),
     ]);
     return {
       ok: true,
-      agent: toBusinessAgentDto(definition, proposals, recentRuns, roleId, this.#catalog),
+      agent: toBusinessAgentDto(
+        definition,
+        this.#mergeProblemProposals(proposals, problems),
+        recentRuns,
+        problems,
+        roleId,
+        this.#catalog,
+      ),
     };
+  }
+
+  /**
+   * Resolves ONLY the agent's registered capability set for the trusted
+   * context — the same membership → role → agent seam, but with none of the
+   * DTO side effects (no proposal derivation, no problem provider scan, no
+   * journal reads). Consumed by surfaces that must bound capabilities
+   * without re-evaluating detection signals (S27 problems console).
+   */
+  async resolveCapabilities(
+    context: BusinessAgentContext,
+  ): Promise<ResolveAgentCapabilitiesResult> {
+    const roleId = await this.#roleResolver.resolve(context);
+    if (roleId === undefined) {
+      return { ok: false, reason: 'no-role' };
+    }
+    const definition = this.#registry.resolveByRole(roleId);
+    if (definition === undefined) {
+      return { ok: false, reason: 'no-agent' };
+    }
+    return { ok: true, capabilityIds: [...definition.capabilityIds] };
   }
 
   /**
@@ -232,17 +299,68 @@ export class BusinessAgentApplicationService {
       });
     }
 
-    const [proposals, recentRuns] = await Promise.all([
+    const [proposals, recentRuns, problems] = await Promise.all([
       this.#proposalProvider.propose(context, definition),
       this.#recorder === undefined
         ? Promise.resolve([] as readonly AgentExecutionRecord[])
         : this.#recorder.listRecent(context, RECENT_RUNS_LIMIT),
+      this.#loadProblems(context, definition),
     ]);
     return {
       ok: true,
-      agent: toBusinessAgentDto(definition, proposals, recentRuns, roleId, this.#catalog),
+      agent: toBusinessAgentDto(
+        definition,
+        this.#mergeProblemProposals(proposals, problems),
+        recentRuns,
+        problems,
+        roleId,
+        this.#catalog,
+      ),
       outcome,
     };
+  }
+
+  /** Loads the scope's problems (fail safe — a broken provider is empty). */
+  async #loadProblems(
+    context: BusinessAgentContext,
+    agent: BusinessAgentDefinition,
+  ): Promise<readonly BusinessProblemDto[]> {
+    if (this.#problems === undefined) {
+      return [];
+    }
+    try {
+      return await this.#problems.list(context, agent);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Merges the problem-derived action proposals into the agent's proposal
+   * list (S27 §13): a detected problem whose recommendation has an action
+   * proposal surfaces it as an executable governed proposal. The engine's
+   * provider already bounded it to the agent's capability set — this merge
+   * only makes it reachable through the SAME proposal-execution path.
+   */
+  #mergeProblemProposals(
+    proposals: readonly ActionProposal[],
+    problems: readonly BusinessProblemDto[],
+  ): readonly ActionProposal[] {
+    const problemProposals = problems.flatMap((problem) => {
+      const proposal = problem.recommendation?.actionProposal;
+      return proposal === undefined ? [] : [proposal];
+    });
+    // Stable order: existing proposals first, then problem-derived ones
+    // (each with its problem id so duplicates from re-scans collapse).
+    const merged = [...proposals];
+    const seen = new Set(merged.map((p) => p.id));
+    for (const proposal of problemProposals) {
+      if (!seen.has(proposal.id)) {
+        merged.push(proposal);
+        seen.add(proposal.id);
+      }
+    }
+    return merged;
   }
 
   /**
@@ -260,7 +378,13 @@ export class BusinessAgentApplicationService {
   > {
     if (request.proposalId !== undefined) {
       const proposals = await this.#proposalProvider.propose(context, agent);
-      const proposal = proposals.find((p) => p.id === request.proposalId);
+      // Problem-derived proposals merge into the executable set (S27 §13) so
+      // a detected problem's remediation flows through the SAME governed
+      // execution path — with the same capability-bound validation.
+      const problems = await this.#loadProblems(context, agent);
+      const proposal = this.#mergeProblemProposals(proposals, problems).find(
+        (p) => p.id === request.proposalId,
+      );
       if (proposal === undefined) {
         return { kind: 'rejected', reason: 'no-proposal' };
       }
@@ -297,6 +421,19 @@ export class BusinessAgentApplicationService {
   }
 }
 
+/** Handles resolving ONLY the agent's registered capability set. */
+export class GetBusinessAgentCapabilitiesHandler {
+  readonly #service: BusinessAgentApplicationService;
+
+  constructor(service: BusinessAgentApplicationService) {
+    this.#service = service;
+  }
+
+  handle(context: BusinessAgentContext): Promise<ResolveAgentCapabilitiesResult> {
+    return this.#service.resolveCapabilities(context);
+  }
+}
+
 /** Handles the business-agent query. */
 export class GetBusinessAgentHandler {
   readonly #service: BusinessAgentApplicationService;
@@ -326,11 +463,12 @@ export class ExecuteBusinessAgentHandler {
   }
 }
 
-/** Composes the typed agent DTO (definition + proposals + runs + context names). */
+/** Composes the typed agent DTO (definition + proposals + runs + problems + context names). */
 function toBusinessAgentDto(
   def: BusinessAgentDefinition,
   proposals: readonly ActionProposal[],
   recentRuns: readonly AgentExecutionRecord[],
+  problems: readonly BusinessProblemDto[],
   roleId: string,
   catalog: BusinessAgentDomainCatalogPort,
 ): BusinessAgentDto {
@@ -353,5 +491,6 @@ function toBusinessAgentDto(
     })),
     proposals,
     recentRuns,
+    problems,
   };
 }

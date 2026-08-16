@@ -28,9 +28,11 @@ import {
   BusinessAgentApplicationService,
   BusinessAgentRegistry,
   ExecuteBusinessAgentHandler,
+  GetBusinessAgentCapabilitiesHandler,
   GetBusinessAgentHandler,
   INITIAL_AGENTS,
   type AgentExecutionRecorder,
+  type AgentProblemProvider,
 } from '@nexora/module-agents';
 
 import { MembershipBusinessRoleResolver } from '../business-context/business-role-resolver.js';
@@ -61,14 +63,27 @@ export interface BuildAgentOptions {
   }) => Promise<AIBusinessContext | undefined>;
   /** The durable execution journal (measurements); absent in hermetic tests. */
   executionRecorder?: AgentExecutionRecorder;
+  /**
+   * The proactive problem provider (S27): detected problems surface in the
+   * agent DTO and their action proposals flow through the same governed
+   * execution path. Absent when the detection surface is not wired.
+   */
+  problems?: AgentProblemProvider;
 }
 
-/** The composed business-agent surface (query + execution). */
+/** The composed business-agent surface (query + execution + capabilities). */
 export interface AgentSurface {
   /** The business-agent query handler (GET /api/agent). */
   getAgent: GetBusinessAgentHandler;
   /** The governed execution handler (POST /api/agent/…/execute). */
   executeAgent: ExecuteBusinessAgentHandler;
+  /**
+   * Resolves ONLY the caller's registered capability set — no DTO side
+   * effects (no proposal derivation, no problem-provider scan). Consumed by
+   * surfaces that must bound capabilities without re-evaluating detection
+   * signals (S27 problems console).
+   */
+  getCapabilities: GetBusinessAgentCapabilitiesHandler;
 }
 
 /** Builds the business-agent surface (generic engine + API implementations). */
@@ -100,9 +115,11 @@ export function buildAgent(options: BuildAgentOptions): AgentSurface {
       buildBusinessContext: options.buildBusinessContext,
     }),
     recorder: options.executionRecorder,
+    problems: options.problems,
   });
   return {
     getAgent: new GetBusinessAgentHandler(service),
     executeAgent: new ExecuteBusinessAgentHandler(service),
+    getCapabilities: new GetBusinessAgentCapabilitiesHandler(service),
   };
 }

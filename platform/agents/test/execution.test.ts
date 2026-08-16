@@ -17,6 +17,7 @@ import type {
   AgentExecutionIntent,
   AgentExecutionOutcome,
 } from '@nexora/contracts/agent';
+import type { BusinessProblemDto } from '@nexora/contracts/detection';
 import { createInitialCatalog } from '@nexora/module-domains';
 
 import {
@@ -25,6 +26,7 @@ import {
   INITIAL_AGENTS,
   type AgentExecutionPort,
   type AgentExecutionRecorder,
+  type AgentProblemProvider,
   type AgentProposalProvider,
   type BusinessAgentContext,
   type BusinessAgentRoleResolver,
@@ -104,6 +106,7 @@ function buildService(deps: {
   proposals?: readonly ActionProposal[];
   port?: AgentExecutionPort;
   recorder?: AgentExecutionRecorder;
+  problems?: AgentProblemProvider;
 }): BusinessAgentApplicationService {
   const registry = new BusinessAgentRegistry(catalog);
   for (const agent of INITIAL_AGENTS) {
@@ -116,6 +119,7 @@ function buildService(deps: {
     proposalProvider: providerWith(deps.proposals ?? []),
     ...(deps.port === undefined ? {} : { execution: deps.port }),
     ...(deps.recorder === undefined ? {} : { recorder: deps.recorder }),
+    ...(deps.problems === undefined ? {} : { problems: deps.problems }),
   });
 }
 
@@ -249,6 +253,112 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     });
     const result = await service.execute(context, { proposalId: 'propose_review_attention' });
     expect(result).toEqual({ ok: false, reason: 'no-role' });
+  });
+
+  it('surfaces detected problems in the agent DTO (S27)', async () => {
+    const problem: BusinessProblemDto = {
+      id: 'prb_1',
+      correlationId: 'workflow_failure:org_acme:wsp_eng:wf_auth',
+      signalId: 'workflow_failure',
+      signalName: 'Workflow failure',
+      tenantId: 'org_acme',
+      workspaceId: 'wsp_eng',
+      title: 'wf_auth requires attention',
+      description: 'wf_auth failed 6 times.',
+      severity: 'high',
+      status: 'DETECTED',
+      detectedAt: '2026-08-16T12:00:00.000Z',
+      updatedAt: '2026-08-16T12:00:00.000Z',
+      affectedEntities: [{ type: 'workflow', id: 'wf_auth', title: 'wf_auth' }],
+      evidence: [{ id: 'evd_1', source: 'measurements', fact: 'wf_auth failed 6 times.' }],
+      rootCauses: [],
+      solutions: [],
+      recommendation: {
+        summary: 'Known solution found.',
+        actionProposal: {
+          id: 'propose_prb_1',
+          action: 'Apply the known solution for workflow failure',
+          reason: 'Known solution applies.',
+          affectedEntity: { type: 'workflow', id: 'wf_auth', title: 'wf_auth' },
+          targetSystem: 'nexora',
+          requiredCapability: 'workflow.retry_run',
+          requiresApproval: true,
+          expectedResult: 'Remediation applied.',
+        },
+      },
+    };
+    const problems: AgentProblemProvider = { list: async () => [problem] };
+
+    const service = buildService({ problems });
+
+    const result = await service.resolve(context);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.agent.problems).toHaveLength(1);
+    expect(result.agent.problems[0]?.id).toBe('prb_1');
+    expect(result.agent.problems[0]?.recommendation?.actionProposal?.requiredCapability).toBe(
+      'workflow.retry_run',
+    );
+  });
+
+  it('fails safe with an empty problem list when the provider errors (S27)', async () => {
+    const problems: AgentProblemProvider = {
+      list: async () => {
+        throw new Error('detection down');
+      },
+    };
+    const service = buildService({ problems });
+    const result = await service.resolve(context);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.agent.problems).toEqual([]);
+  });
+
+  it('resolves ONLY the registered capability set with no DTO side effects (S27 console)', async () => {
+    // A problem provider that would be invoked by a full resolve — it must
+    // NEVER run when only capabilities are resolved.
+    let providerCalls = 0;
+    const problems: AgentProblemProvider = {
+      list: async () => {
+        providerCalls += 1;
+        return [];
+      },
+    };
+    const executive = INITIAL_AGENTS.find((a) => a.id === 'executive');
+    expect(executive).toBeDefined();
+    const service = buildService({ problems });
+
+    const result = await service.resolveCapabilities(context);
+    expect(result).toEqual({ ok: true, capabilityIds: [...(executive?.capabilityIds ?? [])] });
+    // The pure capability read must not touch the problem provider (a plain
+    // problems-console list would otherwise re-evaluate detection signals).
+    expect(providerCalls).toBe(0);
+  });
+
+  it('resolveCapabilities fails safely when the caller has no role or no agent', async () => {
+    const registry = new BusinessAgentRegistry(catalog);
+    for (const agent of INITIAL_AGENTS) {
+      registry.register(agent);
+    }
+    const noRole = new BusinessAgentApplicationService({
+      registry,
+      catalog,
+      roleResolver: { resolve: async () => undefined },
+      proposalProvider: providerWith([]),
+    });
+    expect(await noRole.resolveCapabilities(context)).toEqual({ ok: false, reason: 'no-role' });
+
+    const noAgent = new BusinessAgentApplicationService({
+      registry,
+      catalog,
+      roleResolver: { resolve: async () => 'finance.cfo' },
+      proposalProvider: providerWith([]),
+    });
+    expect(await noAgent.resolveCapabilities(context)).toEqual({ ok: false, reason: 'no-agent' });
   });
 
   it('fails safely when the role has no agent registered', async () => {

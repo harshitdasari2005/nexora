@@ -69,7 +69,79 @@ function agent(overrides: Partial<BusinessAgentDto> = {}): BusinessAgentDto {
         createdAt: '2026-08-15T08:00:00.000Z',
       },
     ],
+    problems: [],
     ...overrides,
+  };
+}
+
+/** A detected workflow problem with a full investigation (S27). */
+function problem(): BusinessAgentDto['problems'][number] {
+  return {
+    id: 'prb_1',
+    correlationId: 'workflow_failure:org_1:wsp_1:employee-onboarding',
+    signalId: 'workflow_failure',
+    signalName: 'Workflow failure',
+    tenantId: 'org_1',
+    workspaceId: 'wsp_1',
+    title: 'employee-onboarding requires attention',
+    description: 'employee-onboarding failed 6 times in the last 24 hours.',
+    severity: 'high',
+    status: 'DETECTED',
+    detectedAt: '2026-08-16T12:00:00.000Z',
+    updatedAt: '2026-08-16T12:00:00.000Z',
+    affectedEntities: [
+      { type: 'workflow', id: 'employee-onboarding', title: 'employee-onboarding' },
+    ],
+    evidence: [
+      {
+        id: 'evd_1',
+        source: 'measurements',
+        entityType: 'workflow',
+        entityId: 'employee-onboarding',
+        fact: 'employee-onboarding failed 6 times (75% success rate).',
+      },
+    ],
+    rootCauses: [
+      {
+        explanation: 'The workflow never reaches a recoverable state.',
+        supportingEvidenceIds: ['evd_1'],
+        confidence: 'MEDIUM',
+        kind: 'INFERENCE',
+        nextStep: 'Inspect the failed instances.',
+      },
+    ],
+    solutions: [
+      {
+        id: 'sol_1',
+        source: 'knowledge',
+        title: 'AUTH-017 Authentication correction',
+        description: 'Correct the authentication configuration.',
+        reference: { id: 'art_1', title: 'AUTH-017 Authentication correction' },
+        applicability: 'APPLICABLE',
+        confidence: 'HIGH',
+        requiredCapabilities: ['workflow.retry_run'],
+      },
+    ],
+    recommendation: {
+      summary:
+        'Known solution found: knowledge article art_1 ("AUTH-017 Authentication correction").',
+      groundedIn: 'art_1',
+      actionProposal: {
+        id: 'propose_prb_1',
+        action: 'Apply the known solution for workflow failure',
+        reason:
+          'Known solution article AUTH-017 applies to employee-onboarding requires attention.',
+        affectedEntity: {
+          type: 'workflow',
+          id: 'employee-onboarding',
+          title: 'employee-onboarding',
+        },
+        targetSystem: 'nexora',
+        requiredCapability: 'workflow.retry_run',
+        requiresApproval: true,
+        expectedResult: 'The documented remediation is applied and the condition is re-evaluated.',
+      },
+    },
   };
 }
 
@@ -123,6 +195,49 @@ describe('AgentView (S26 Phase 8)', () => {
     expect(html).toContain('Recent runs');
     expect(html).toContain('Review what needs attention');
     expect(html).toContain('completed');
+  });
+
+  it('renders an honest empty state when no problems are detected (S27)', () => {
+    const html = renderView(agent({ problems: [] }));
+    expect(html).toContain('Detected problems');
+    expect(html).toContain('No problems detected');
+  });
+
+  it('renders a detected problem with its grounded investigation (S27)', () => {
+    const html = renderView(agent({ problems: [problem()] }));
+    expect(html).toContain('Detected problems');
+    expect(html).toContain('employee-onboarding requires attention');
+    expect(html).toContain('high');
+    expect(html).toContain('DETECTED');
+    // Evidence, root-cause candidates (FACT vs INFERENCE), solutions.
+    expect(html).toContain('Evidence');
+    expect(html).toContain('failed 6 times (75% success rate)');
+    expect(html).toContain('Root-cause candidates');
+    expect(html).toContain('INFERENCE');
+    expect(html).toContain('Known solutions');
+    expect(html).toContain('APPLICABLE');
+    expect(html).toContain('AUTH-017 Authentication correction');
+    // The deterministic recommendation is rendered.
+    expect(html).toContain('Known solution found');
+  });
+
+  it('surfaces the problem-derived governed proposal as executable (S27 §13)', () => {
+    const html = renderView(agent({ problems: [problem()] }));
+    // The problem's recommendation carries an action proposal → the row
+    // shows the governed execute action (flows through the SAME path as the
+    // agent's own proposals).
+    expect(html).toContain('Apply known solution');
+  });
+
+  it('does not show an execute action for a problem without an action proposal', () => {
+    const withoutProposal = problem();
+    const noProposal = {
+      ...withoutProposal,
+      recommendation: { summary: 'No known solution found.', groundedIn: undefined },
+    };
+    const html = renderView(agent({ problems: [noProposal] }));
+    expect(html).toContain('No known solution found');
+    expect(html).not.toContain('Apply known solution');
   });
 
   it('renders the free-form ask-your-agent composer', () => {

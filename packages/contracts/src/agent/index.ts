@@ -32,6 +32,10 @@
  * resolves the agent from trusted membership — never from client input.
  */
 
+import type { BusinessProblemDto } from '../detection/index.js';
+
+export type { BusinessProblemDto };
+
 /** A stable, machine-readable agent id, e.g. `executive`. */
 export type BusinessAgentId = string;
 
@@ -339,4 +343,13 @@ export interface BusinessAgentDto {
    * first). Empty when nothing has been executed — never fabricated.
    */
   recentRuns: readonly AgentExecutionRecord[];
+  /**
+   * The detected business problems of the caller's scope (S27), each with
+   * its investigation (evidence + root-cause candidates), discovered
+   * solutions, and deterministic recommendation. Problem-derived action
+   * proposals are merged into `proposals` and flow through the SAME
+   * governed execution path. Empty when nothing is detected — never
+   * fabricated.
+   */
+  problems: readonly BusinessProblemDto[];
 }

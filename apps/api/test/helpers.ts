@@ -52,6 +52,7 @@ import { loadConfig } from '../src/config.js';
 import { buildApp } from '../src/app.js';
 import type { RepositorySet } from '../src/container.js';
 import type { OidcGateway } from '../src/oidc/gateway.js';
+import { InMemoryProblemStore } from '../src/detection/in-memory-problem-store.js';
 import {
   FakeActivityRepository,
   FakeCalendarEntryRepository,
@@ -153,6 +154,7 @@ export async function buildTestApp(
     webhookHttp?: Parameters<typeof buildApp>[0]['webhookHttp'];
     connectors?: Parameters<typeof buildApp>[0]['connectors'];
     agentExecutionRecorder?: Parameters<typeof buildApp>[0]['agentExecutionRecorder'];
+    problemStore?: Parameters<typeof buildApp>[0]['problemStore'];
   } = {},
 ): Promise<{ app: FastifyInstance; repos: RepositorySet; store: InMemoryConversationStore }> {
   const config = loadConfig({
@@ -204,6 +206,9 @@ export async function buildTestApp(
     // Journal governed agent executions in-memory so the agent tests can
     // verify the S26 Phase 8 measurements (recentRuns) without a database.
     agentExecutionRecorder: options.agentExecutionRecorder ?? new FakeAgentExecutionRecorder(),
+    // Persist detected problems in-memory so the S27 detection tests can
+    // verify the problem lifecycle without a database.
+    problemStore: options.problemStore ?? new InMemoryProblemStore(),
   });
   return { app, repos: repositories, store };
 }

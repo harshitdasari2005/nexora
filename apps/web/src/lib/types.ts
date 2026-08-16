@@ -579,6 +579,84 @@ export interface AgentExecutionRecord {
   createdAt: string;
 }
 
+// --- S27: proactive problem detection (agent DTO + problems console) ----
+
+/** The explicit severity of a detected business problem (controlled). */
+export type ProblemSeverity = 'low' | 'medium' | 'high';
+
+/** The explicit problem lifecycle (deterministic transitions only). */
+export type ProblemStatus =
+  | 'DETECTED'
+  | 'INVESTIGATING'
+  | 'UNDERSTOOD'
+  | 'SOLUTION_FOUND'
+  | 'NO_SOLUTION_FOUND'
+  | 'ACTION_PROPOSED'
+  | 'WAITING_FOR_APPROVAL'
+  | 'RESOLVED';
+
+/** A grounded evidence item (FACT or bounded INFERENCE from a persisted source). */
+export interface ProblemEvidence {
+  id: string;
+  source: string;
+  entityType?: string;
+  entityId?: string;
+  entityTitle?: string;
+  fact: string;
+  occurredAt?: string;
+}
+
+/** A root-cause candidate with an explicit FACT vs INFERENCE distinction. */
+export interface RootCauseCandidate {
+  explanation: string;
+  supportingEvidenceIds: readonly string[];
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  kind: 'FACT' | 'INFERENCE';
+  affectedEntity?: { type: string; id: string; title: string };
+  nextStep: string;
+}
+
+/** A discovered solution candidate (existing knowledge first — never invented). */
+export interface SolutionCandidate {
+  id: string;
+  source: string;
+  title: string;
+  description: string;
+  reference?: { id: string; title: string };
+  applicability: 'FOUND' | 'APPLICABLE' | 'REJECTED';
+  rejectionReason?: string;
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  requiredCapabilities: readonly string[];
+}
+
+/** The deterministic recommendation (+ governed action proposal) of a problem. */
+export interface ProblemRecommendation {
+  summary: string;
+  actionProposal?: AgentProposal;
+  groundedIn?: string;
+}
+
+/** A detected business problem with its full investigation (S27). */
+export interface BusinessProblemDto {
+  id: string;
+  correlationId: string;
+  signalId: string;
+  signalName: string;
+  tenantId: string;
+  workspaceId?: string;
+  title: string;
+  description: string;
+  severity: ProblemSeverity;
+  status: ProblemStatus;
+  detectedAt: string;
+  updatedAt: string;
+  affectedEntities: readonly { type: string; id: string; title: string }[];
+  evidence: readonly ProblemEvidence[];
+  rootCauses: readonly RootCauseCandidate[];
+  solutions: readonly SolutionCandidate[];
+  recommendation?: ProblemRecommendation;
+}
+
 /** The governed business agent returned by `GET /api/agent`. */
 export interface BusinessAgentDto {
   id: string;
@@ -594,6 +672,8 @@ export interface BusinessAgentDto {
   capabilities: readonly { id: string; name: string }[];
   proposals: readonly AgentProposal[];
   recentRuns: readonly AgentExecutionRecord[];
+  /** The detected problems of the caller's scope (S27) — empty when none. */
+  problems: readonly BusinessProblemDto[];
 }
 
 /** The governed agent execution response. */

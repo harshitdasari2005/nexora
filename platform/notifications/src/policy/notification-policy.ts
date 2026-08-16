@@ -385,6 +385,43 @@ export class NotificationPolicy {
           ],
         };
       }
+      case 'problem.detected': {
+        // S27 §15: proactive problem notifications through the EXISTING
+        // notification system — never a second one. The recipient is the
+        // actor (the trusted user whose scope detected the problem); the
+        // notification consumer's idempotency key (source event = the
+        // problem's correlation identity) guarantees a repeatedly-detected
+        // problem never creates infinite notifications. Payload carries
+        // only the trusted problem facts (title + severity), never raw
+        // evidence or payload blobs.
+        const title = readString(event.payload, 'title') ?? 'A problem needs attention';
+        const severity = readString(event.payload, 'severity') ?? 'medium';
+        return {
+          notifications: actorId
+            ? [
+                {
+                  recipientId: actorId,
+                  workspaceId,
+                  type: event.type,
+                  category: 'workflow',
+                  title: `${severity === 'high' ? '⚠️ ' : ''}${title}`,
+                  body: 'Nexora detected this condition automatically. The investigation, evidence, and any known solution are available in the Agent console.',
+                  priority: severity === 'high' ? 'high' : 'normal',
+                  action: action('navigate', 'workflows', 'Open agent console'),
+                },
+              ]
+            : [],
+          activity: [
+            {
+              workspaceId,
+              type: event.type,
+              title,
+              body: `Detected ${severity} severity. Investigated automatically — see the Agent console.`,
+              actorId,
+            },
+          ],
+        };
+      }
       case 'connector.external_write': {
         // S25 Phase 7: governed external writes (GitHub/Slack via the
         // connector surface) project a workspace activity entry — the

@@ -75,6 +75,10 @@
       "types": "./dist/src/agent/index.d.ts",
       "default": "./dist/src/agent/index.js"
     },
+    "./detection": {
+      "types": "./dist/src/detection/index.d.ts",
+      "default": "./dist/src/detection/index.js"
+    },
     "./versioning": {
       "types": "./dist/src/versioning/index.d.ts",
       "default": "./dist/src/versioning/index.js"

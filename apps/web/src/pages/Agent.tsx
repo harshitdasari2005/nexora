@@ -15,7 +15,7 @@
  * and success states mirror the other application views.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, Stack, typography } from '@nexora/design-system';
 
@@ -31,6 +31,7 @@ import type {
   AgentExecutionResponse,
   AgentProposal,
   BusinessAgentDto,
+  BusinessProblemDto,
   DashboardResponse,
 } from '../lib/types.js';
 import { useSession } from '../session.js';
@@ -323,6 +324,11 @@ export function AgentView({
       ) : (
         <Stack gap={6}>
           <AgentIdentity agent={agent} />
+          <ProblemList
+            problems={agent.problems}
+            executingId={executingId}
+            onExecute={(proposal) => void runProposal(proposal.id)}
+          />
           <ProposalList
             agent={agent}
             executingId={executingId}
@@ -406,6 +412,208 @@ function AgentIdentity({ agent }: { agent: BusinessAgentDto }): JSX.Element {
         </Stack>
       </Card>
     </Stack>
+  );
+}
+
+/**
+ * The detected problems of the caller's scope (S27): one card per problem
+ * with its grounded investigation (evidence, root-cause candidates,
+ * discovered solutions, deterministic recommendation). A problem whose
+ * recommendation carries a governed action proposal surfaces an Execute
+ * button — the proposal is ALSO in the agent's executable proposal list
+ * (S27 §13), so executing it flows through the SAME governed path.
+ */
+function ProblemList({
+  problems,
+  executingId,
+  onExecute,
+}: {
+  problems: readonly BusinessProblemDto[];
+  executingId: string | null;
+  onExecute: (proposal: AgentProposal) => void;
+}): JSX.Element {
+  return (
+    <Card padding={5}>
+      <Stack gap={1} style={{ marginBottom: 12 }}>
+        <Stack direction="row" gap={2} align="center" style={{ flexWrap: 'wrap' }}>
+          <h2 style={{ fontSize: typography.sizes.md, fontWeight: typography.weights.semibold }}>
+            Detected problems
+          </h2>
+          {problems.length > 0 ? (
+            <Badge tone={problems.some((p) => p.severity === 'high') ? 'danger' : 'warning'} dot>
+              {problems.length}
+            </Badge>
+          ) : null}
+        </Stack>
+        <p style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+          Detected automatically from real persisted data — evidence is grounded, root-cause
+          candidates separate FACT from INFERENCE, and solutions come from existing knowledge (never
+          invented).
+        </p>
+      </Stack>
+      {problems.length === 0 ? (
+        <EmptyState
+          icon="✓"
+          title="No problems detected"
+          description="The proactive detection layer re-evaluates your scope on every visit."
+        />
+      ) : (
+        <Stack gap={4}>
+          {problems.map((problem) => (
+            <ProblemRow
+              key={problem.id}
+              problem={problem}
+              busy={executingId === problem.recommendation?.actionProposal?.id}
+              disabled={executingId !== null}
+              onExecute={
+                problem.recommendation?.actionProposal === undefined
+                  ? undefined
+                  : () => {
+                      if (problem.recommendation?.actionProposal !== undefined) {
+                        onExecute(problem.recommendation.actionProposal);
+                      }
+                    }
+              }
+            />
+          ))}
+        </Stack>
+      )}
+    </Card>
+  );
+}
+
+/** One problem row: title/severity, evidence, root causes, solutions, recommendation. */
+function ProblemRow({
+  problem,
+  busy,
+  disabled,
+  onExecute,
+}: {
+  problem: BusinessProblemDto;
+  busy: boolean;
+  disabled: boolean;
+  onExecute: (() => void) | undefined;
+}): JSX.Element {
+  const proposal = problem.recommendation?.actionProposal;
+  return (
+    <div
+      style={{
+        border: '1px solid var(--nexora-border)',
+        borderRadius: 12,
+        padding: '14px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <Stack
+        direction="row"
+        gap={3}
+        align="center"
+        justify="space-between"
+        style={{ flexWrap: 'wrap' }}
+      >
+        <Stack gap={0.5} style={{ minWidth: 0 }}>
+          <Stack direction="row" gap={2} align="center" style={{ flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: typography.weights.medium }}>{problem.title}</span>
+            <Badge tone={severityTone(problem.severity)}>{problem.severity}</Badge>
+            <Badge>{problem.status}</Badge>
+          </Stack>
+          <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textSecondary)' }}>
+            {problem.signalName} ·{' '}
+            {problem.affectedEntities.map((entity) => entity.title).join(', ') ||
+              problem.description}
+          </div>
+        </Stack>
+        {proposal !== undefined && onExecute !== undefined ? (
+          <Button size="sm" onClick={onExecute} disabled={disabled}>
+            {busy ? 'Executing…' : 'Apply known solution'}
+          </Button>
+        ) : null}
+      </Stack>
+
+      <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+        {problem.description}
+      </div>
+
+      {problem.recommendation !== undefined ? (
+        <div
+          style={{
+            background: 'var(--nexora-surfaceMuted)',
+            borderRadius: 10,
+            padding: '10px 12px',
+            fontSize: typography.sizes.sm,
+          }}
+        >
+          {problem.recommendation.summary}
+        </div>
+      ) : null}
+
+      <Stack gap={2}>
+        {problem.evidence.length > 0 ? (
+          <Stack gap={1}>
+            <SectionLabel>Evidence</SectionLabel>
+            {problem.evidence.map((evidence) => (
+              <div key={evidence.id} style={{ fontSize: typography.sizes.xs }}>
+                <span style={{ color: 'var(--nexora-textMuted)' }}>[{evidence.source}]</span>{' '}
+                {evidence.fact}
+              </div>
+            ))}
+          </Stack>
+        ) : null}
+        {problem.rootCauses.length > 0 ? (
+          <Stack gap={1}>
+            <SectionLabel>Root-cause candidates</SectionLabel>
+            {problem.rootCauses.map((cause, index) => (
+              <div key={`${cause.explanation}-${index}`} style={{ fontSize: typography.sizes.xs }}>
+                <Badge tone={cause.kind === 'FACT' ? 'primary' : undefined}>
+                  {cause.kind === 'FACT' ? 'FACT' : 'INFERENCE'}
+                </Badge>{' '}
+                {cause.explanation}{' '}
+                <span style={{ color: 'var(--nexora-textMuted)' }}>({cause.confidence})</span>
+              </div>
+            ))}
+          </Stack>
+        ) : null}
+        {problem.solutions.length > 0 ? (
+          <Stack gap={1}>
+            <SectionLabel>Known solutions</SectionLabel>
+            {problem.solutions.map((solution) => (
+              <div key={solution.id} style={{ fontSize: typography.sizes.xs }}>
+                <Badge tone={applicabilityTone(solution.applicability)}>
+                  {solution.applicability}
+                </Badge>{' '}
+                {solution.title}
+                {solution.reference !== undefined ? (
+                  <span style={{ color: 'var(--nexora-textMuted)' }}>
+                    {' '}
+                    ({solution.reference.id})
+                  </span>
+                ) : null}
+              </div>
+            ))}
+          </Stack>
+        ) : null}
+      </Stack>
+    </div>
+  );
+}
+
+/** A small uppercase section label. */
+function SectionLabel({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <div
+      style={{
+        fontSize: typography.sizes.xs,
+        fontWeight: typography.weights.semibold,
+        color: 'var(--nexora-textMuted)',
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+        marginTop: 4,
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -715,6 +923,30 @@ function autonomyLabel(level: BusinessAgentDto['autonomyLevel']): string {
     case 'governed_execution':
       return 'Governed execution';
   }
+}
+
+/** Maps a problem severity to a badge tone. */
+function severityTone(severity: BusinessProblemDto['severity']): 'danger' | 'warning' | 'success' {
+  if (severity === 'high') {
+    return 'danger';
+  }
+  if (severity === 'medium') {
+    return 'warning';
+  }
+  return 'success';
+}
+
+/** Maps a solution applicability to a badge tone. */
+function applicabilityTone(
+  applicability: BusinessProblemDto['solutions'][number]['applicability'],
+): 'success' | 'primary' | 'warning' {
+  if (applicability === 'APPLICABLE') {
+    return 'success';
+  }
+  if (applicability === 'REJECTED') {
+    return 'warning';
+  }
+  return 'primary';
 }
 
 /** Maps a run/outcome status to a badge tone. */

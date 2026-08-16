@@ -864,3 +864,48 @@ export const agentExecutions = pgTable(
     index('agent_executions_tenant_user_idx').on(table.tenantId, table.userId, table.createdAt),
   ],
 );
+
+/**
+ * business_problems — the durable lifecycle record of detected business
+ * problems (S27). One row per problem aggregate; the `correlation_id` is
+ * the deterministic dedupe identity (signal + scope + entity) — repeated
+ * detection scans update ONE row, never duplicates (S27 §15). The tenant
+ * id is the isolation scope and the workspace id the workspace scope;
+ * every read is scoped by both — a forged problem id from another
+ * tenant/workspace resolves to nothing (fail closed).
+ *
+ * Evidence and solution candidates are NOT stored here: they are derived
+ * projections recomputed deterministically at read time from the trusted
+ * snapshot (existing application handlers) — storing them would duplicate
+ * state the engine already owns (S27 §17 minimum persistence). Only the
+ * lifecycle facts the engine must survive restarts with (status,
+ * severity, identity, affected-entity references) are relational columns.
+ */
+export const businessProblems = pgTable(
+  'business_problems',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    correlationId: varchar('correlation_id', { length: 256 }).notNull(),
+    signalId: varchar('signal_id', { length: 64 }).notNull(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }),
+    title: varchar('title', { length: 200 }).notNull(),
+    description: text('description').notNull(),
+    severity: varchar('severity', { length: 16 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    affectedEntities: jsonb('affected_entities').notNull().default([]),
+    detectedAt: timestamp('detected_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('business_problems_tenant_idx').on(table.tenantId),
+    index('business_problems_tenant_workspace_idx').on(
+      table.tenantId,
+      table.workspaceId,
+      table.detectedAt,
+    ),
+    // The deterministic dedupe identity — a repeated scan of the same
+    // signal + scope + entity must resolve to the SAME row.
+    uniqueIndex('business_problems_correlation_unique').on(table.tenantId, table.correlationId),
+  ],
+);

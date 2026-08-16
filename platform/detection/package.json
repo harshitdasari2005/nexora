@@ -1,0 +1,30 @@
+{
+  "name": "@nexora/module-detection",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora backend module: the proactive problem-detection and business-investigation engine (S27) — deterministic signal detection, typed problems, grounded evidence, generic investigation, existing-knowledge solution discovery, and governed recommendations that flow into the S26 business-agent surface.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@nexora/module-domains": "workspace:*",
+    "@types/node": "^20.0.0",
+    "vitest": "^2.1.0"
+  }
+}

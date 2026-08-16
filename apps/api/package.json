@@ -35,6 +35,7 @@
     "@nexora/domain-projects": "workspace:*",
     "@nexora/domain-workspaces": "workspace:*",
     "@nexora/module-agents": "workspace:*",
+    "@nexora/module-detection": "workspace:*",
     "@nexora/module-calendar": "workspace:*",
     "@nexora/module-command-center": "workspace:*",
     "@nexora/module-domains": "workspace:*",

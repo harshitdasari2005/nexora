@@ -75,6 +75,10 @@ import { buildAgent } from './agent/build.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import type { AgentExecutionRecorder } from '@nexora/module-agents';
 import { PgAgentExecutionRecorder } from './agent/pg-agent-execution-recorder.js';
+import { buildDetection } from './detection/build.js';
+import { PgBusinessProblemStore } from './agent/pg-business-problem-store.js';
+import { InMemoryProblemStore } from './detection/in-memory-problem-store.js';
+import type { ProblemStore } from '@nexora/module-detection';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
@@ -105,6 +109,7 @@ import { registerMarketplaceRoutes } from './routes/marketplace.js';
 import { registerMcpRoutes } from './routes/mcp.js';
 import { registerOrganizationRoutes } from './routes/organizations.js';
 import { registerProjectRoutes } from './routes/projects.js';
+import { registerProblemsRoutes } from './routes/problems.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
 import { registerWorkflowRoutes } from './routes/workflows.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
@@ -138,6 +143,12 @@ export interface AppDependencies {
    * are not journaled).
    */
   agentExecutionRecorder?: AgentExecutionRecorder;
+  /**
+   * The durable business-problem store (S27). Tests inject an in-memory
+   * store; defaults to the PostgreSQL store when a database is available
+   * (absent otherwise — detection still runs but problems are ephemeral).
+   */
+  problemStore?: ProblemStore;
 }
 
 /** Builds the Nexora API application. */
@@ -381,6 +392,33 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   // through the EXISTING AI Runtime (one engine, one approval system) with
   // discovery restricted to the agent's registered capability set. Outcomes
   // are journaled into `agent_executions` when a database is available.
+  // S27: the proactive detection surface. Composed here next to the agent
+  // surface it feeds: the TRUSTED snapshot is built from the SAME existing
+  // application handlers the S26 proposals read, solution discovery reuses
+  // the EXISTING permission-filtered knowledge seam + execution journal
+  // (never a second search infrastructure), and the problem store is the
+  // minimum durable lifecycle state (`business_problems`). The generic
+  // engine never decides tenant/workspace/role/capability/authorization —
+  // those stay with the trusted context and the S26 agent surface.
+  const executionRecorder =
+    dependencies.agentExecutionRecorder ??
+    (dependencies.database === undefined
+      ? undefined
+      : new PgAgentExecutionRecorder(dependencies.database));
+  const detectionSurface = buildDetection({
+    getTenantMeasurements: container.getTenantMeasurements,
+    listProjects: container.listProjects,
+    listActivity: container.listActivity,
+    listNotifications: container.listNotifications,
+    retrieveKnowledge: container.retrieveKnowledge,
+    executionRecorder,
+    publisher,
+    problemStore:
+      dependencies.problemStore ??
+      (dependencies.database === undefined
+        ? new InMemoryProblemStore()
+        : new PgBusinessProblemStore(dependencies.database)),
+  });
   const agentSurface = buildAgent({
     memberships: repositories.memberships,
     workspaceMemberships: repositories.workspaceMemberships,
@@ -394,15 +432,28 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         { roleResolver: businessRoleResolver, catalog: domainCatalog },
         context,
       ),
-    executionRecorder:
-      dependencies.agentExecutionRecorder ??
-      (dependencies.database === undefined
-        ? undefined
-        : new PgAgentExecutionRecorder(dependencies.database)),
+    executionRecorder,
+    // S27 agent integration: detected problems surface in the agent DTO and
+    // their action proposals flow through the SAME governed execution path.
+    problems: detectionSurface.problems,
   });
   registerAgentRoutes(app, {
     getAgent: agentSurface.getAgent,
     executeAgent: agentSurface.executeAgent,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+  });
+  // S27 problems console: the dedicated HTTP surface over the SAME
+  // detection engine that feeds the agent DTO. The routes resolve the
+  // trusted tenant/workspace scope and bound problem-derived action
+  // proposals to the caller's EFFECTIVE agent capability set (the same
+  // membership → role → agent seam the agent DTO uses — a caller without an
+  // agent gets the investigation, never an action proposal).
+  registerProblemsRoutes(app, {
+    scan: detectionSurface.scan,
+    list: detectionSurface.list,
+    getById: detectionSurface.getById,
+    getAgentCapabilities: agentSurface.getCapabilities,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
   });

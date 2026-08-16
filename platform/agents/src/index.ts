@@ -26,13 +26,16 @@ export {
 export {
   BusinessAgentApplicationService,
   ExecuteBusinessAgentHandler,
+  GetBusinessAgentCapabilitiesHandler,
   GetBusinessAgentHandler,
+  type AgentProblemProvider,
   type AgentProposalProvider,
   type BusinessAgentContext,
   type BusinessAgentDomainCatalogPort,
   type BusinessAgentRoleResolver,
   type ExecuteBusinessAgentRequest,
   type ExecuteBusinessAgentResult,
+  type ResolveAgentCapabilitiesResult,
   type ResolveBusinessAgentResult,
 } from './application/business-agent-application-service.js';
 export type {
