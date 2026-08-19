@@ -2,8 +2,9 @@
  * S24 Phase 2 — initial command-center integrity tests: every seeded
  * definition validates against the Phase 1 catalog (role binds to the
  * right domain), uses supported widget types and data sources, and resolves
- * through the registry. CEO / Manager / Developer are three DIFFERENT
- * compositions of the SAME engine — never three engines.
+ * through the registry. Every command center (CEO / Manager / Developer and
+ * the S27 Phase 6 additions) is a DIFFERENT composition of the SAME engine —
+ * never a second engine.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -26,14 +27,31 @@ function makeRegistry(): CommandCenterRegistry {
 }
 
 describe('Initial command centers (S24 Phase 2)', () => {
-  it('registers all three initial command centers without error', () => {
+  it('registers all initial command centers without error', () => {
     const registry = makeRegistry();
     expect(
       registry
         .list()
         .map((def) => def.id)
         .sort(),
-    ).toEqual(['ceo', 'developer', 'manager']);
+    ).toEqual([
+      'ceo',
+      'cfo',
+      'cs_manager',
+      'cto',
+      'developer',
+      'engineering_manager',
+      'general_counsel',
+      'hr',
+      'manager',
+      'marketing_manager',
+      'operations_head',
+      'operations_manager',
+      'procurement_manager',
+      'product_lead',
+      'product_manager',
+      'sales_manager',
+    ]);
   });
 
   it('binds each center to a role that resolves in the Phase 1 catalog', () => {
@@ -41,6 +59,21 @@ describe('Initial command centers (S24 Phase 2)', () => {
     expect(registry.resolveByRole('executive.ceo')?.id).toBe('ceo');
     expect(registry.resolveByRole('delivery.manager')?.id).toBe('manager');
     expect(registry.resolveByRole('technology.developer')?.id).toBe('developer');
+    expect(registry.resolveByRole('finance.cfo')?.id).toBe('cfo');
+    expect(registry.resolveByRole('people.hr')?.id).toBe('hr');
+    expect(registry.resolveByRole('growth.sales_manager')?.id).toBe('sales_manager');
+    expect(registry.resolveByRole('growth.marketing_manager')?.id).toBe('marketing_manager');
+    expect(registry.resolveByRole('technology.cto')?.id).toBe('cto');
+    expect(registry.resolveByRole('technology.engineering_manager')?.id).toBe(
+      'engineering_manager',
+    );
+    expect(registry.resolveByRole('product.product_manager')?.id).toBe('product_manager');
+    expect(registry.resolveByRole('legal.general_counsel')?.id).toBe('general_counsel');
+    expect(registry.resolveByRole('operations.manager')?.id).toBe('operations_manager');
+    expect(registry.resolveByRole('operations.head')?.id).toBe('operations_head');
+    expect(registry.resolveByRole('customersuccess.manager')?.id).toBe('cs_manager');
+    expect(registry.resolveByRole('procurement.manager')?.id).toBe('procurement_manager');
+    expect(registry.resolveByRole('product.product_lead')?.id).toBe('product_lead');
   });
 
   it('uses only supported widget types and data sources', () => {

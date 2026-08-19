@@ -55,8 +55,8 @@ describe('CommandCenterDefinition validation (S24 Phase 2)', () => {
     expect(() =>
       makeRegistry().register({
         ...BASE_CENTER,
-        domainId: 'legal',
-        roleId: 'legal.general_counsel',
+        domainId: 'nonexistent',
+        roleId: 'nonexistent.role',
       }),
     ).toThrow(UnknownRoleReferenceError);
   });

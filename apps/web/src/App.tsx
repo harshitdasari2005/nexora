@@ -19,6 +19,8 @@ import { Employees } from './pages/Employees.js';
 import { Integrations } from './pages/Integrations.js';
 import { Insights } from './pages/Insights.js';
 import { Agent } from './pages/Agent.js';
+import { Assistant } from './pages/Assistant.js';
+import { Settings } from './pages/Settings.js';
 import { Problems } from './pages/Problems.js';
 import { CommandCenter } from './pages/CommandCenter.js';
 import { Projects } from './pages/Projects.js';
@@ -142,6 +144,22 @@ export function App(): JSX.Element {
             element={
               <RequireAuth>
                 <Insights />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app/assistant"
+            element={
+              <RequireAuth>
+                <Assistant />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app/settings"
+            element={
+              <RequireAuth>
+                <Settings />
               </RequireAuth>
             }
           />

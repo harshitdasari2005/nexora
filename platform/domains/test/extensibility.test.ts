@@ -1,14 +1,15 @@
 /**
  * @nexora/module-domains — extensibility test (S24 Phase 1, MANDATORY).
  *
- * Adds a test-only `legal` domain with roles and capabilities and verifies
- * it works WITHOUT modifying the core registry implementation: the same
- * registries that serve the initial catalog accept the new domain, resolve
- * it, and pass catalog integrity.
+ * Adds a test-only `facilities` domain with roles and capabilities and
+ * verifies it works WITHOUT modifying the core registry implementation: the
+ * same registries that serve the initial catalog accept the new domain,
+ * resolve it, and pass catalog integrity. (Legal is now itself part of the
+ * initial catalog — this fixture uses a domain that genuinely is NOT.)
  *
- *   Legal
- *   ├── General Counsel  → contracts.read, contracts.manage, compliance.read
- *   └── Legal Manager    → contracts.read, compliance.read
+ *   Facilities
+ *   ├── Facilities Lead     → contracts.read, contracts.manage, compliance.read
+ *   └── Facilities Manager  → contracts.read, compliance.read
  */
 
 import { describe, expect, it } from 'vitest';
@@ -16,59 +17,59 @@ import type { CapabilityDefinition, DomainRoleDefinition } from '@nexora/contrac
 
 import { assertCatalogIntegrity, createEmptyCatalog, createInitialCatalog } from '../src/index.js';
 
-const LEGAL_DOMAIN = {
-  id: 'legal',
-  name: 'Legal',
-  description: 'Legal operations and compliance',
-  roleIds: ['legal.general_counsel', 'legal.legal_manager'],
+const FACILITIES_DOMAIN = {
+  id: 'facilities',
+  name: 'Facilities',
+  description: 'Facilities and workplace operations',
+  roleIds: ['facilities.lead', 'facilities.manager'],
 } as const;
 
-const LEGAL_CAPABILITIES: readonly CapabilityDefinition[] = [
+const FACILITIES_CAPABILITIES: readonly CapabilityDefinition[] = [
   { id: 'contracts.read', name: 'Read Contracts', description: 'Read contract records' },
   { id: 'contracts.manage', name: 'Manage Contracts', description: 'Manage contract records' },
   { id: 'compliance.read', name: 'Read Compliance', description: 'Read compliance records' },
 ];
 
-const LEGAL_ROLES: readonly DomainRoleDefinition[] = [
+const FACILITIES_ROLES: readonly DomainRoleDefinition[] = [
   {
-    id: 'legal.general_counsel',
-    name: 'General Counsel',
-    description: 'Leads the legal function',
-    domainId: 'legal',
+    id: 'facilities.lead',
+    name: 'Facilities Lead',
+    description: 'Leads the facilities function',
+    domainId: 'facilities',
     capabilityIds: ['contracts.read', 'contracts.manage', 'compliance.read'],
   },
   {
-    id: 'legal.legal_manager',
-    name: 'Legal Manager',
-    description: 'Manages legal operations',
-    domainId: 'legal',
+    id: 'facilities.manager',
+    name: 'Facilities Manager',
+    description: 'Manages facilities operations',
+    domainId: 'facilities',
     capabilityIds: ['contracts.read', 'compliance.read'],
   },
 ];
 
-describe('Legal domain extensibility (no core changes)', () => {
-  it('registers and resolves a Legal domain on an empty catalog', () => {
+describe('Facilities domain extensibility (no core changes)', () => {
+  it('registers and resolves a Facilities domain on an empty catalog', () => {
     const catalog = createEmptyCatalog();
 
-    for (const capability of LEGAL_CAPABILITIES) {
+    for (const capability of FACILITIES_CAPABILITIES) {
       catalog.capabilities.register(capability);
     }
-    catalog.domains.register(LEGAL_DOMAIN);
-    for (const role of LEGAL_ROLES) {
+    catalog.domains.register(FACILITIES_DOMAIN);
+    for (const role of FACILITIES_ROLES) {
       catalog.roles.register(role);
     }
     expect(() => assertCatalogIntegrity(catalog)).not.toThrow();
 
     // Resolution: domain → roles → capabilities.
-    const domain = catalog.domains.get('legal');
-    expect(domain?.name).toBe('Legal');
-    expect(domain?.roleIds).toEqual(['legal.general_counsel', 'legal.legal_manager']);
+    const domain = catalog.domains.get('facilities');
+    expect(domain?.name).toBe('Facilities');
+    expect(domain?.roleIds).toEqual(['facilities.lead', 'facilities.manager']);
 
-    const roles = catalog.roles.resolveByDomain('legal');
-    expect(roles.map((role) => role.id)).toEqual(['legal.general_counsel', 'legal.legal_manager']);
+    const roles = catalog.roles.resolveByDomain('facilities');
+    expect(roles.map((role) => role.id)).toEqual(['facilities.lead', 'facilities.manager']);
 
-    const generalCounsel = catalog.roles.get('legal.general_counsel');
-    expect(generalCounsel?.capabilityIds).toEqual([
+    const facilitiesLead = catalog.roles.get('facilities.lead');
+    expect(facilitiesLead?.capabilityIds).toEqual([
       'contracts.read',
       'contracts.manage',
       'compliance.read',
@@ -79,15 +80,15 @@ describe('Legal domain extensibility (no core changes)', () => {
     expect(catalog.capabilities.has('projects.read')).toBe(false);
   });
 
-  it('registers a Legal domain alongside the initial catalog without touching the core', () => {
+  it('registers a Facilities domain alongside the initial catalog without touching the core', () => {
     const catalog = createInitialCatalog();
     const coreRegistry = catalog.roles; // the SAME registry instance
 
-    for (const capability of LEGAL_CAPABILITIES) {
+    for (const capability of FACILITIES_CAPABILITIES) {
       catalog.capabilities.register(capability);
     }
-    catalog.domains.register(LEGAL_DOMAIN);
-    for (const role of LEGAL_ROLES) {
+    catalog.domains.register(FACILITIES_DOMAIN);
+    for (const role of FACILITIES_ROLES) {
       catalog.roles.register(role);
     }
     expect(() => assertCatalogIntegrity(catalog)).not.toThrow();
@@ -95,7 +96,7 @@ describe('Legal domain extensibility (no core changes)', () => {
     // The initial domains are untouched and still resolve.
     expect(catalog.domains.has('technology')).toBe(true);
     expect(catalog.roles.get('technology.cto')).toBeDefined();
-    expect(catalog.roles.resolveByDomain('legal')).toHaveLength(2);
+    expect(catalog.roles.resolveByDomain('facilities')).toHaveLength(2);
     expect(catalog.roles).toBe(coreRegistry);
   });
 });

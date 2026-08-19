@@ -26,7 +26,9 @@ describe('GET /api/domains', () => {
     expect(response.statusCode).toBe(200);
     const body = response.json() as DomainCatalogView;
 
-    // The 8 initial domains with their roles.
+    // The 12 initial domains with their roles (S27 Phase 6 added
+    // legal/operations/customersuccess/procurement as an honest,
+    // capability-free catalog extension for role switching).
     const domainIds = body.domains.map((domain) => domain.id);
     expect(domainIds).toEqual([
       'executive',
@@ -37,6 +39,10 @@ describe('GET /api/domains', () => {
       'growth',
       'product',
       'delivery',
+      'legal',
+      'operations',
+      'customersuccess',
+      'procurement',
     ]);
     const technology = body.domains.find((domain) => domain.id === 'technology');
     expect(technology?.roles.map((role) => role.id)).toEqual([

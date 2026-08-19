@@ -1,22 +1,24 @@
 /**
- * @nexora/module-command-center — initial command centers (S24 Phase 2).
+ * @nexora/module-command-center — initial command centers (S24 Phase 2; S27
+ * Phase 6 added a command center for every role the workspace-type role
+ * switcher can resolve).
  *
- * The first three command-center configurations: CEO (executive.ceo),
- * Manager (delivery.manager), and Developer (technology.developer). These
- * are CONFIGURATION ONLY — all three render through the SAME generic
- * engine; there is no role-specific page or rendering logic anywhere. The
- * role determines which widgets are composed, never which renderer is used.
+ * CONFIGURATION ONLY — every command center below renders through the SAME
+ * generic engine; there is no role-specific page or rendering logic
+ * anywhere. The role determines which widgets are composed, never which
+ * renderer is used.
  *
  * Every widget data source is real persisted Nexora data resolved through
  * the EXISTING application services (measurements, activity, notifications,
- * projects, employees, documents, knowledge). No fabricated business
- * metrics: where a tenant has no data, the widget renders an honest empty
- * state. Actions are read/navigation only in Phase 2 (governed execution
- * belongs to later phases).
+ * projects, employees, documents, knowledge) — the same fixed vocabulary
+ * every command center below draws from (no new data source was added).
+ * No fabricated business metrics: where a tenant has no data, the widget
+ * renders an honest empty state. Actions are read/navigation only in Phase 2
+ * (governed execution belongs to later phases).
  *
- * These are INITIAL REGISTRATIONS ONLY — other roles (finance.cfo, etc.)
- * have no command center yet and fail safely. A future domain (e.g. Legal)
- * registers its own command center without touching this engine.
+ * Roles with no command center registered fail safely (S24 Phase 2). A
+ * future domain registers its own command center without touching this
+ * engine.
  */
 
 import type { CommandCenterDefinition } from '@nexora/contracts/command-center';
@@ -191,6 +193,623 @@ export const INITIAL_COMMAND_CENTERS: readonly CommandCenterDefinition[] = [
       { id: 'view_documents', label: 'View documents', kind: 'navigate', href: '/app/documents' },
       { id: 'view_knowledge', label: 'View knowledge', kind: 'navigate', href: '/app/knowledge' },
       { id: 'view_projects', label: 'View projects', kind: 'navigate', href: '/app/projects' },
+    ],
+  },
+
+  // --- S27 Phase 6: one command center per workspace-type-switchable role ---
+
+  {
+    id: 'cfo',
+    name: 'Command Center',
+    domainId: 'finance',
+    roleId: 'finance.cfo',
+    description: 'Financial visibility: organization scale and delivery health.',
+    widgets: [
+      {
+        id: 'users_kpi',
+        type: 'kpi',
+        title: 'Headcount',
+        description: 'Registered users across the organization',
+        dataSource: 'measurements.overview.users',
+        span: 1,
+      },
+      {
+        id: 'projects_kpi',
+        type: 'kpi',
+        title: 'Active projects',
+        description: 'Projects currently in active status',
+        dataSource: 'projects.active',
+        span: 1,
+      },
+      {
+        id: 'workflow_health',
+        type: 'list',
+        title: 'Workflow health',
+        description: 'Success and failure across workflow definitions',
+        dataSource: 'workflows.health',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_insights', label: 'View insights', kind: 'navigate', href: '/app/insights' },
+      { id: 'view_workflows', label: 'View workflows', kind: 'navigate', href: '/app/workflows' },
+    ],
+  },
+  {
+    id: 'hr',
+    name: 'Command Center',
+    domainId: 'people',
+    roleId: 'people.hr',
+    description: 'People visibility: headcount and the team roster.',
+    widgets: [
+      {
+        id: 'team_kpi',
+        type: 'kpi',
+        title: 'Team members',
+        description: 'Active employees in the organization',
+        dataSource: 'employees.active',
+        span: 1,
+      },
+      {
+        id: 'team',
+        type: 'list',
+        title: 'Team',
+        description: 'Employees in the organization',
+        dataSource: 'employees.list',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_team', label: 'View employees', kind: 'navigate', href: '/app/employees' },
+    ],
+  },
+  {
+    id: 'sales_manager',
+    name: 'Command Center',
+    domainId: 'growth',
+    roleId: 'growth.sales_manager',
+    description: 'Pipeline focus: active projects and what needs attention.',
+    widgets: [
+      {
+        id: 'projects_kpi',
+        type: 'kpi',
+        title: 'Active projects',
+        description: 'Projects currently in active status',
+        dataSource: 'projects.active',
+        span: 1,
+      },
+      {
+        id: 'projects',
+        type: 'list',
+        title: 'Projects',
+        description: 'All projects in the organization',
+        dataSource: 'projects.list',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_projects', label: 'View projects', kind: 'navigate', href: '/app/projects' },
+    ],
+  },
+  {
+    id: 'marketing_manager',
+    name: 'Command Center',
+    domainId: 'growth',
+    roleId: 'growth.marketing_manager',
+    description: 'Content focus: knowledge and documents ready to ship.',
+    widgets: [
+      {
+        id: 'knowledge',
+        type: 'list',
+        title: 'Knowledge',
+        description: 'Knowledge articles in this workspace',
+        dataSource: 'knowledge.articles',
+        span: 2,
+      },
+      {
+        id: 'documents',
+        type: 'list',
+        title: 'Documents',
+        description: 'Documents in this workspace',
+        dataSource: 'documents.list',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_knowledge', label: 'View knowledge', kind: 'navigate', href: '/app/knowledge' },
+      { id: 'view_documents', label: 'View documents', kind: 'navigate', href: '/app/documents' },
+    ],
+  },
+  {
+    id: 'cto',
+    name: 'Command Center',
+    domainId: 'technology',
+    roleId: 'technology.cto',
+    description: 'Organization-level technology visibility: delivery and system health.',
+    widgets: [
+      {
+        id: 'projects_kpi',
+        type: 'kpi',
+        title: 'Active projects',
+        description: 'Projects currently in active status',
+        dataSource: 'projects.active',
+        span: 1,
+      },
+      {
+        id: 'users_kpi',
+        type: 'kpi',
+        title: 'Users',
+        description: 'Registered users across the organization',
+        dataSource: 'measurements.overview.users',
+        span: 1,
+      },
+      {
+        id: 'workflow_health',
+        type: 'list',
+        title: 'Workflow health',
+        description: 'Success and failure across workflow definitions',
+        dataSource: 'workflows.health',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_projects', label: 'View projects', kind: 'navigate', href: '/app/projects' },
+      { id: 'view_workflows', label: 'View workflows', kind: 'navigate', href: '/app/workflows' },
+    ],
+  },
+  {
+    id: 'engineering_manager',
+    name: 'Command Center',
+    domainId: 'technology',
+    roleId: 'technology.engineering_manager',
+    description: 'Team and execution focus: what your team needs attention on.',
+    widgets: [
+      {
+        id: 'team_kpi',
+        type: 'kpi',
+        title: 'Team members',
+        description: 'Active employees in the organization',
+        dataSource: 'employees.active',
+        span: 1,
+      },
+      {
+        id: 'projects_kpi',
+        type: 'kpi',
+        title: 'Active projects',
+        description: 'Projects currently in active status',
+        dataSource: 'projects.active',
+        span: 1,
+      },
+      {
+        id: 'workflow_health',
+        type: 'list',
+        title: 'Workflow health',
+        description: 'Success and failure across workflow definitions',
+        dataSource: 'workflows.health',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_projects', label: 'View projects', kind: 'navigate', href: '/app/projects' },
+      { id: 'view_team', label: 'View employees', kind: 'navigate', href: '/app/employees' },
+      { id: 'view_workflows', label: 'View workflows', kind: 'navigate', href: '/app/workflows' },
+    ],
+  },
+  {
+    id: 'product_manager',
+    name: 'Command Center',
+    domainId: 'product',
+    roleId: 'product.product_manager',
+    description: 'Product focus: active projects and supporting knowledge.',
+    widgets: [
+      {
+        id: 'projects_kpi',
+        type: 'kpi',
+        title: 'Active projects',
+        description: 'Projects currently in active status',
+        dataSource: 'projects.active',
+        span: 1,
+      },
+      {
+        id: 'projects',
+        type: 'list',
+        title: 'Projects',
+        description: 'All projects in the organization',
+        dataSource: 'projects.list',
+        span: 2,
+      },
+      {
+        id: 'knowledge',
+        type: 'list',
+        title: 'Knowledge',
+        description: 'Knowledge articles in this workspace',
+        dataSource: 'knowledge.articles',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_projects', label: 'View projects', kind: 'navigate', href: '/app/projects' },
+      { id: 'view_knowledge', label: 'View knowledge', kind: 'navigate', href: '/app/knowledge' },
+    ],
+  },
+  {
+    id: 'product_lead',
+    name: 'Command Center',
+    domainId: 'product',
+    roleId: 'product.product_lead',
+    description: 'Product strategy focus: portfolio-level visibility and supporting knowledge.',
+    widgets: [
+      {
+        id: 'projects_kpi',
+        type: 'kpi',
+        title: 'Active projects',
+        description: 'Projects currently in active status',
+        dataSource: 'projects.active',
+        span: 1,
+      },
+      {
+        id: 'projects',
+        type: 'list',
+        title: 'Projects',
+        description: 'All projects in the organization',
+        dataSource: 'projects.list',
+        span: 2,
+      },
+      {
+        id: 'knowledge',
+        type: 'list',
+        title: 'Knowledge',
+        description: 'Knowledge articles in this workspace',
+        dataSource: 'knowledge.articles',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_projects', label: 'View projects', kind: 'navigate', href: '/app/projects' },
+      { id: 'view_knowledge', label: 'View knowledge', kind: 'navigate', href: '/app/knowledge' },
+    ],
+  },
+  {
+    id: 'general_counsel',
+    name: 'Command Center',
+    domainId: 'legal',
+    roleId: 'legal.general_counsel',
+    description: 'Legal and compliance focus: documents and policy knowledge.',
+    widgets: [
+      {
+        id: 'documents',
+        type: 'list',
+        title: 'Documents',
+        description: 'Documents in this workspace',
+        dataSource: 'documents.list',
+        span: 2,
+      },
+      {
+        id: 'knowledge',
+        type: 'list',
+        title: 'Knowledge',
+        description: 'Knowledge articles in this workspace',
+        dataSource: 'knowledge.articles',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_documents', label: 'View documents', kind: 'navigate', href: '/app/documents' },
+      { id: 'view_knowledge', label: 'View knowledge', kind: 'navigate', href: '/app/knowledge' },
+    ],
+  },
+  {
+    id: 'operations_manager',
+    name: 'Command Center',
+    domainId: 'operations',
+    roleId: 'operations.manager',
+    description: 'Operations focus: workflow health and active projects.',
+    widgets: [
+      {
+        id: 'projects_kpi',
+        type: 'kpi',
+        title: 'Active projects',
+        description: 'Projects currently in active status',
+        dataSource: 'projects.active',
+        span: 1,
+      },
+      {
+        id: 'workflow_health',
+        type: 'list',
+        title: 'Workflow health',
+        description: 'Success and failure across workflow definitions',
+        dataSource: 'workflows.health',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_projects', label: 'View projects', kind: 'navigate', href: '/app/projects' },
+      { id: 'view_workflows', label: 'View workflows', kind: 'navigate', href: '/app/workflows' },
+    ],
+  },
+  {
+    id: 'operations_head',
+    name: 'Command Center',
+    domainId: 'operations',
+    roleId: 'operations.head',
+    description: 'End-to-end operations visibility: delivery health across the organization.',
+    widgets: [
+      {
+        id: 'projects_kpi',
+        type: 'kpi',
+        title: 'Active projects',
+        description: 'Projects currently in active status',
+        dataSource: 'projects.active',
+        span: 1,
+      },
+      {
+        id: 'users_kpi',
+        type: 'kpi',
+        title: 'Users',
+        description: 'Registered users across the organization',
+        dataSource: 'measurements.overview.users',
+        span: 1,
+      },
+      {
+        id: 'workflow_health',
+        type: 'list',
+        title: 'Workflow health',
+        description: 'Success and failure across workflow definitions',
+        dataSource: 'workflows.health',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_projects', label: 'View projects', kind: 'navigate', href: '/app/projects' },
+      { id: 'view_workflows', label: 'View workflows', kind: 'navigate', href: '/app/workflows' },
+    ],
+  },
+  {
+    id: 'cs_manager',
+    name: 'Command Center',
+    domainId: 'customersuccess',
+    roleId: 'customersuccess.manager',
+    description: 'Customer success focus: support knowledge and what needs attention.',
+    widgets: [
+      {
+        id: 'knowledge',
+        type: 'list',
+        title: 'Knowledge',
+        description: 'Knowledge articles in this workspace',
+        dataSource: 'knowledge.articles',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_knowledge', label: 'View knowledge', kind: 'navigate', href: '/app/knowledge' },
+    ],
+  },
+  {
+    id: 'procurement_manager',
+    name: 'Command Center',
+    domainId: 'procurement',
+    roleId: 'procurement.manager',
+    description: 'Procurement focus: vendor documents and what needs attention.',
+    widgets: [
+      {
+        id: 'documents',
+        type: 'list',
+        title: 'Documents',
+        description: 'Documents in this workspace',
+        dataSource: 'documents.list',
+        span: 2,
+      },
+      {
+        id: 'attention',
+        type: 'attention',
+        title: 'Needs your attention',
+        description: 'Unread notifications for you',
+        dataSource: 'notifications.unread',
+        span: 2,
+      },
+      {
+        id: 'activity',
+        type: 'activity',
+        title: 'Recent activity',
+        description: 'Latest business activity in the organization',
+        dataSource: 'activity.recent',
+        span: 2,
+      },
+    ],
+    actions: [
+      { id: 'view_documents', label: 'View documents', kind: 'navigate', href: '/app/documents' },
     ],
   },
 ];

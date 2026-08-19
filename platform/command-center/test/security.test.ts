@@ -74,7 +74,7 @@ describe('CommandCenter security (S24 Phase 2, module)', () => {
 
   it('a role with no command center fails safely without data', async () => {
     const { service, resolveData } = makeEnvironment({
-      resolve: async () => 'finance.cfo',
+      resolve: async () => 'security.ciso',
     });
     const result = await service.resolve(CONTEXT);
     expect(result).toEqual({ ok: false, reason: 'no-command-center' });

@@ -70,7 +70,7 @@ describe('BusinessAgentRegistry (S26 Phase 8)', () => {
 
   it('rejects an unknown role reference', () => {
     const registry = new BusinessAgentRegistry(catalog);
-    expect(() => registry.register(agentFixture({ roleId: 'legal.general_counsel' }))).toThrow(
+    expect(() => registry.register(agentFixture({ roleId: 'executive.nonexistent' }))).toThrow(
       UnknownRoleReferenceError,
     );
   });

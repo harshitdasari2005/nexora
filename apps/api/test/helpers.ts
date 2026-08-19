@@ -329,7 +329,7 @@ export async function onboardOrgAndWorkspace(
  */
 export async function seedWorkspace(
   repos: RepositorySet,
-  input: { id: string; organizationId: string; slug: string; name?: string },
+  input: { id: string; organizationId: string; slug: string; name?: string; type?: string },
 ): Promise<void> {
   const organizationId = input.organizationId as TenantId;
   const created = Workspace.create(
@@ -337,7 +337,7 @@ export async function seedWorkspace(
       organizationId,
       slug: WorkspaceSlug.create(input.slug),
       name: input.name ?? input.slug,
-      type: WorkspaceType.engineering(),
+      type: input.type === undefined ? WorkspaceType.engineering() : WorkspaceType.from(input.type),
       status: WorkspaceStatus.active(),
     },
     { actor: { kind: 'system', id: 'system' }, correlationId: 'corr_seed', organizationId },

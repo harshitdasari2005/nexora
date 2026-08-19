@@ -757,6 +757,38 @@ export interface RemediationPlanDto {
   completedAt?: string;
 }
 
+/** A grounded knowledge retrieval citation (S18 Knowledge retrieval). */
+export interface KnowledgeReferenceDto {
+  sourceId: string;
+  documentId: string;
+  kind: string;
+  version: number;
+  title: string;
+  workspaceId: string;
+  snippet: string;
+}
+
+// --- S27 Phase 6: role/context switcher --------------------------------
+
+/** One switchable (organization, workspace) → resolved business role. */
+export interface RoleContextOption {
+  organizationId: string;
+  organizationName: string;
+  workspaceId: string;
+  workspaceName: string;
+  workspaceType: string;
+  domainId: string;
+  domainName: string;
+  roleId: string;
+  roleName: string;
+}
+
+/** The `/role-context` response — the current role plus every switchable option. */
+export interface RoleContextResponse {
+  current: RoleContextOption | null;
+  options: readonly RoleContextOption[];
+}
+
 /** The full command-center view returned by `GET /api/command-center`. */
 export interface CommandCenterDto {
   /** The command center id. */

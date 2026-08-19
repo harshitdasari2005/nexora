@@ -7,12 +7,14 @@
  * Center (Notification + Activity Feed vertical slice).
  */
 
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Avatar, Badge, spacing, typography } from '@nexora/design-system';
 
 import type { UserDto } from '../lib/types.js';
+import { CommandPalette } from './CommandPalette.js';
 import { NotificationCenter } from './NotificationCenter.js';
+import { RoleSwitcher } from './RoleSwitcher.js';
 
 /** Props of {@link AppShell}. */
 export interface AppShellProps {
@@ -39,6 +41,8 @@ interface NavItem {
   to?: string;
   /** Whether the destination is planned but not yet shipped. */
   soon?: boolean;
+  /** A non-navigation action (e.g. opening the search palette). */
+  action?: 'search';
 }
 
 const NAV_ITEMS: readonly NavItem[] = [
@@ -54,9 +58,9 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Apps', icon: '▦', to: '/app/apps' },
   { label: 'Integrations', icon: '🔌', to: '/app/integrations' },
   { label: 'Insights', icon: '📊', to: '/app/insights' },
-  { label: 'AI Assistant', icon: '✦', soon: true },
-  { label: 'Search', icon: '⌕', soon: true },
-  { label: 'Settings', icon: '⚙', soon: true },
+  { label: 'AI Assistant', icon: '✦', to: '/app/assistant' },
+  { label: 'Search', icon: '⌕', action: 'search' },
+  { label: 'Settings', icon: '⚙', to: '/app/settings' },
 ];
 
 /** Renders the persistent application shell. */
@@ -70,6 +74,32 @@ export function AppShell({
   right,
 }: AppShellProps): JSX.Element {
   const { pathname } = useLocation();
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Global ⌘K / Ctrl+K opens the search palette from anywhere in the shell.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // Carries the current trusted (organization, workspace) scope across
+  // in-app navigation — otherwise every nav link would reset to the
+  // server's default scope and undo a role switch the moment the user
+  // moves to another page (S27 Phase 6).
+  const scopeSuffix = (() => {
+    const params = new URLSearchParams();
+    if (organizationId !== undefined) params.set('organizationId', organizationId);
+    if (workspaceId !== undefined) params.set('workspaceId', workspaceId);
+    const suffix = params.toString();
+    return suffix.length > 0 ? `?${suffix}` : '';
+  })();
+
   return (
     <div style={{ height: '100vh', display: 'flex', overflow: 'hidden' }} className="nexora-shell">
       {/* Sidebar */}
@@ -106,7 +136,7 @@ export function AppShell({
           </span>
         </div>
 
-        {/* Workspace context */}
+        {/* Workspace context / role switcher */}
         <div
           style={{
             margin: `0 ${spacing[3]} ${spacing[4]}`,
@@ -115,12 +145,12 @@ export function AppShell({
             borderRadius: 12,
           }}
         >
-          <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
-            {organizationName}
-          </div>
-          <div style={{ fontWeight: typography.weights.semibold, marginTop: 2 }}>
-            {workspaceName}
-          </div>
+          <RoleSwitcher
+            organizationId={organizationId}
+            workspaceId={workspaceId}
+            organizationName={organizationName}
+            workspaceName={workspaceName}
+          />
         </div>
 
         {/* Navigation */}
@@ -138,7 +168,17 @@ export function AppShell({
                   {item.icon}
                 </span>
                 <span>{item.label}</span>
-                {item.soon === true ? (
+                {item.action === 'search' ? (
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      fontSize: typography.sizes.xs,
+                      color: 'var(--nexora-textMuted)',
+                    }}
+                  >
+                    ⌘K
+                  </span>
+                ) : item.soon === true ? (
                   <span
                     style={{
                       marginLeft: 'auto',
@@ -164,11 +204,27 @@ export function AppShell({
               cursor: item.soon ? 'default' : 'pointer',
               opacity: item.soon ? 0.7 : 1,
               textDecoration: 'none',
+              border: 'none',
+              width: '100%',
+              textAlign: 'left',
+              fontFamily: 'inherit',
             } as const;
+            if (item.action === 'search') {
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => setSearchOpen(true)}
+                  style={{ ...style, background: 'transparent' }}
+                >
+                  {content}
+                </button>
+              );
+            }
             return item.to !== undefined ? (
               <Link
                 key={item.label}
-                to={item.to}
+                to={`${item.to}${scopeSuffix}`}
                 aria-current={active ? 'page' : undefined}
                 style={style}
               >
@@ -271,6 +327,13 @@ export function AppShell({
       {right !== undefined ? (
         <aside style={{ width: 380, flexShrink: 0, minWidth: 0 }}>{right}</aside>
       ) : null}
+
+      <CommandPalette
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        organizationId={organizationId}
+        workspaceId={workspaceId}
+      />
 
       <style>{`
         @media (max-width: 900px) {

@@ -12,7 +12,7 @@
  */
 
 import type { MembershipRepository } from '@nexora/domain-organizations';
-import type { WorkspaceMembershipRepository } from '@nexora/domain-workspaces';
+import type { WorkspaceMembershipRepository, WorkspaceRepository } from '@nexora/domain-workspaces';
 import type { GetTenantMeasurementsHandler } from '@nexora/module-measurements';
 import type { ListProjectsHandler } from '@nexora/application-projects';
 import type { ListEmployeesHandler } from '@nexora/application-hr';
@@ -36,6 +36,8 @@ export interface BuildCommandCenterOptions {
   memberships: MembershipRepository;
   /** Workspace memberships (role resolution preferred scope). */
   workspaceMemberships: WorkspaceMembershipRepository;
+  /** Workspaces (role resolution workspace-type override, S27 Phase 6). */
+  workspaces: WorkspaceRepository;
   /** Tenant measurement snapshot handler (kpi + workflow health sources). */
   getTenantMeasurements: GetTenantMeasurementsHandler;
   /** Tenant-scoped project listing handler. */
@@ -67,6 +69,7 @@ export function buildCommandCenter(options: BuildCommandCenterOptions): GetComma
     roleResolver: new MembershipBusinessRoleResolver({
       memberships: options.memberships,
       workspaceMemberships: options.workspaceMemberships,
+      workspaces: options.workspaces,
     }),
     dataProvider: new ApiCommandCenterWidgetDataProvider({
       getTenantMeasurements: options.getTenantMeasurements,

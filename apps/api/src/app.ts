@@ -104,6 +104,7 @@ import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { registerDomainRoutes } from './routes/domains.js';
+import { registerRoleContextRoutes } from './routes/role-context.js';
 import { registerCommandCenterRoutes } from './routes/command-center.js';
 import { buildCommandCenter } from './command-center/build.js';
 import { buildNexoraMCPServer } from './ai/mcp/build-server.js';
@@ -323,6 +324,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   const businessRoleResolver = new MembershipBusinessRoleResolver({
     memberships: repositories.memberships,
     workspaceMemberships: repositories.workspaceMemberships,
+    workspaces: repositories.workspaces,
   });
   const domainCatalog = createInitialCatalog();
   registerAiRoutes(app, {
@@ -351,6 +353,17 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   });
   registerDomainRoutes(app, {
     listDomainCatalog: container.listDomainCatalog,
+  });
+
+  // S27 Phase 6: the role/context switcher read model. Reuses the SAME
+  // trusted resolver + catalog as the Command Center/AI Runtime above —
+  // batches the resolution across the caller's own memberships instead of
+  // one workspace at a time.
+  registerRoleContextRoutes(app, {
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    roleResolver: businessRoleResolver,
+    catalog: domainCatalog,
   });
 
   // S24 Phase 6: the AUTHENTICATED remote MCP surface. The route reuses the
@@ -386,6 +399,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     getCommandCenter: buildCommandCenter({
       memberships: repositories.memberships,
       workspaceMemberships: repositories.workspaceMemberships,
+      workspaces: repositories.workspaces,
       getTenantMeasurements: container.getTenantMeasurements,
       listProjects: container.listProjects,
       listEmployees: container.listEmployees,
@@ -436,6 +450,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   const agentSurface = buildAgent({
     memberships: repositories.memberships,
     workspaceMemberships: repositories.workspaceMemberships,
+    workspaces: repositories.workspaces,
     getTenantMeasurements: container.getTenantMeasurements,
     listProjects: container.listProjects,
     listActivity: container.listActivity,

@@ -104,6 +104,7 @@ async function main(): Promise<void> {
   const roleResolver = new MembershipBusinessRoleResolver({
     memberships: repositories.memberships,
     workspaceMemberships: repositories.workspaceMemberships,
+    workspaces: repositories.workspaces,
   });
   const catalog = createInitialCatalog();
 

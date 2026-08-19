@@ -156,6 +156,47 @@ async function main(): Promise<void> {
   }
   const workspaceIdBranded = workspaceId as WorkspaceId;
 
+  // --- 2b. role-switching workspaces (S27 Phase 6): one per business domain
+  // the workspace-type role override supports, so switching context in the
+  // UI resolves a genuinely different, trusted business role — never a
+  // fabricated one. Idempotent, same as the primary demo workspace above.
+  const ROLE_SWITCHING_WORKSPACES: ReadonlyArray<{
+    slug: string;
+    name: string;
+    type: string;
+  }> = [
+    { slug: 'finance', name: 'Finance', type: 'finance' },
+    { slug: 'people', name: 'People', type: 'hr' },
+    { slug: 'sales', name: 'Sales', type: 'sales' },
+    { slug: 'marketing', name: 'Marketing', type: 'marketing' },
+    { slug: 'product', name: 'Product', type: 'product' },
+    { slug: 'legal', name: 'Legal', type: 'legal' },
+    { slug: 'operations', name: 'Operations', type: 'operations' },
+    { slug: 'customer-success', name: 'Customer Success', type: 'customer_success' },
+    { slug: 'procurement', name: 'Procurement', type: 'procurement' },
+  ];
+  for (const definition of ROLE_SWITCHING_WORKSPACES) {
+    const existing = existingWorkspaces.value.find((ws) => ws.slug === definition.slug);
+    if (existing !== undefined) {
+      log(`Reusing workspace ${definition.name} (${existing.id})`);
+      continue;
+    }
+    const created = await container.createWorkspace.handle({
+      organizationId: tenantId,
+      slug: definition.slug,
+      name: definition.name,
+      type: definition.type,
+      actorId: userId,
+      correlationId: `demo-seed:create-workspace:${definition.slug}`,
+    });
+    if (!created.ok) {
+      throw new Error(
+        `Could not create the ${definition.name} workspace: ${created.error.message}`,
+      );
+    }
+    log(`Created workspace ${definition.name} (${created.value.workspace.id})`);
+  }
+
   // --- 3. an ACTIVE project (v1 projects auto-activate on creation) ---------
   const existingProjects = await repositories.projects.findByName(tenantId, DEMO_PROJECT_NAME);
   if (existingProjects.length === 0) {

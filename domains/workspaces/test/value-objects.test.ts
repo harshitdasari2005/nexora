@@ -150,13 +150,17 @@ describe('WorkspaceType', () => {
     expect(WorkspaceType.operations().value).toBe('operations');
     expect(WorkspaceType.engineering().value).toBe('engineering');
     expect(WorkspaceType.general().value).toBe('general');
+    expect(WorkspaceType.product().value).toBe('product');
+    expect(WorkspaceType.legal().value).toBe('legal');
+    expect(WorkspaceType.customerSuccess().value).toBe('customer_success');
+    expect(WorkspaceType.procurement().value).toBe('procurement');
   });
 
   it('parses valid types and rejects unknown ones', () => {
     for (const type of WORKSPACE_TYPES) {
       expect(WorkspaceType.from(type).value).toBe(type);
     }
-    expect(() => WorkspaceType.from('legal')).toThrow(InvalidWorkspaceValueError);
+    expect(() => WorkspaceType.from('nonexistent')).toThrow(InvalidWorkspaceValueError);
   });
 });
 

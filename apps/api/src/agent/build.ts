@@ -19,7 +19,7 @@
 
 import type { AIBusinessContext, EnterpriseAIOrchestrator } from '@nexora/ai-runtime';
 import type { MembershipRepository } from '@nexora/domain-organizations';
-import type { WorkspaceMembershipRepository } from '@nexora/domain-workspaces';
+import type { WorkspaceMembershipRepository, WorkspaceRepository } from '@nexora/domain-workspaces';
 import type { GetTenantMeasurementsHandler } from '@nexora/module-measurements';
 import type { ListProjectsHandler } from '@nexora/application-projects';
 import type { ListActivityHandler, ListNotificationsHandler } from '@nexora/module-notifications';
@@ -46,6 +46,8 @@ export interface BuildAgentOptions {
   memberships: MembershipRepository;
   /** Workspace memberships (role resolution preferred scope). */
   workspaceMemberships: WorkspaceMembershipRepository;
+  /** Workspaces (role resolution workspace-type override, S27 Phase 6). */
+  workspaces: WorkspaceRepository;
   /** Tenant measurement snapshot handler (workflow health + overview signals). */
   getTenantMeasurements: GetTenantMeasurementsHandler;
   /** Tenant-scoped project listing handler. */
@@ -108,6 +110,7 @@ export function buildAgent(options: BuildAgentOptions): AgentSurface {
     roleResolver: new MembershipBusinessRoleResolver({
       memberships: options.memberships,
       workspaceMemberships: options.workspaceMemberships,
+      workspaces: options.workspaces,
     }),
     proposalProvider: new ApiAgentProposalProvider({
       getTenantMeasurements: options.getTenantMeasurements,

@@ -77,6 +77,30 @@ export const INITIAL_DOMAINS: readonly DomainDefinition[] = [
     description: 'Delivery and project execution',
     roleIds: ['delivery.manager', 'delivery.project_manager'],
   },
+  {
+    id: 'legal',
+    name: 'Legal',
+    description: 'Legal and compliance',
+    roleIds: ['legal.general_counsel', 'legal.compliance_manager'],
+  },
+  {
+    id: 'operations',
+    name: 'Operations',
+    description: 'Business operations and process',
+    roleIds: ['operations.head', 'operations.manager'],
+  },
+  {
+    id: 'customersuccess',
+    name: 'Customer Success',
+    description: 'Customer success and support',
+    roleIds: ['customersuccess.manager', 'customersuccess.support_manager'],
+  },
+  {
+    id: 'procurement',
+    name: 'Procurement',
+    description: 'Procurement and vendor management',
+    roleIds: ['procurement.manager', 'procurement.vendor_manager'],
+  },
 ];
 
 /** The initial business roles (S24 Phase 1 registrations). */
@@ -241,6 +265,62 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'Project Manager',
     description: 'Drives project execution',
     domainId: 'delivery',
+    capabilityIds: [],
+  },
+  {
+    id: 'legal.general_counsel',
+    name: 'General Counsel',
+    description: 'Chief legal officer',
+    domainId: 'legal',
+    capabilityIds: [],
+  },
+  {
+    id: 'legal.compliance_manager',
+    name: 'Compliance Manager',
+    description: 'Leads regulatory compliance',
+    domainId: 'legal',
+    capabilityIds: [],
+  },
+  {
+    id: 'operations.head',
+    name: 'Head of Operations',
+    description: 'Owns end-to-end business operations',
+    domainId: 'operations',
+    capabilityIds: [],
+  },
+  {
+    id: 'operations.manager',
+    name: 'Operations Manager',
+    description: 'Runs day-to-day operations',
+    domainId: 'operations',
+    capabilityIds: [],
+  },
+  {
+    id: 'customersuccess.manager',
+    name: 'Customer Success Manager',
+    description: 'Owns customer outcomes and retention',
+    domainId: 'customersuccess',
+    capabilityIds: [],
+  },
+  {
+    id: 'customersuccess.support_manager',
+    name: 'Support Manager',
+    description: 'Leads customer support',
+    domainId: 'customersuccess',
+    capabilityIds: [],
+  },
+  {
+    id: 'procurement.manager',
+    name: 'Procurement Manager',
+    description: 'Leads sourcing and purchasing',
+    domainId: 'procurement',
+    capabilityIds: [],
+  },
+  {
+    id: 'procurement.vendor_manager',
+    name: 'Vendor Manager',
+    description: 'Manages vendor relationships and contracts',
+    domainId: 'procurement',
     capabilityIds: [],
   },
 ];

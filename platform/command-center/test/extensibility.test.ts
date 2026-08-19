@@ -1,8 +1,11 @@
 /**
- * S24 Phase 2 — Legal extensibility proof (mandatory). A NEW domain (Legal)
- * with its own roles registers a command center for `legal.general_counsel`
- * and resolves through the SAME generic engine — no engine change, no
- * role-specific logic, no modification of the initial registrations.
+ * S24 Phase 2 — Facilities extensibility proof (mandatory). A NEW domain
+ * (Facilities) with its own roles registers a command center for
+ * `facilities.lead` and resolves through the SAME generic engine — no
+ * engine change, no role-specific logic, no modification of the initial
+ * registrations. (Legal is now itself part of the initial catalog and has
+ * its own command center — this fixture uses a domain that genuinely is
+ * NOT registered.)
  */
 
 import { describe, expect, it, vi } from 'vitest';
@@ -16,18 +19,18 @@ import {
 import { CommandCenterRegistry } from '../src/registry/command-center-registry.js';
 import { INITIAL_COMMAND_CENTERS } from '../src/seed/initial-command-centers.js';
 
-const LEGAL_COMMAND_CENTER: CommandCenterDefinition = {
-  id: 'legal_command_center',
+const FACILITIES_COMMAND_CENTER: CommandCenterDefinition = {
+  id: 'facilities_command_center',
   name: 'Command Center',
-  domainId: 'legal',
-  roleId: 'legal.general_counsel',
-  description: 'Legal operations and contract oversight',
+  domainId: 'facilities',
+  roleId: 'facilities.lead',
+  description: 'Facilities operations and contract oversight',
   widgets: [
     {
       id: 'contracts',
       type: 'list',
       title: 'Contracts',
-      description: 'Documents relevant to legal',
+      description: 'Documents relevant to facilities',
       dataSource: 'documents.list',
       span: 2,
     },
@@ -45,10 +48,10 @@ const LEGAL_COMMAND_CENTER: CommandCenterDefinition = {
   ],
 };
 
-describe('Legal extensibility (S24 Phase 2)', () => {
-  it('registers and resolves a Legal command center through the same engine', async () => {
-    // The SAME initial catalog the platform seeds: Legal is added at the
-    // same extension seam a Marketplace-installed domain would use.
+describe('Facilities extensibility (S24 Phase 2)', () => {
+  it('registers and resolves a Facilities command center through the same engine', async () => {
+    // The SAME initial catalog the platform seeds: Facilities is added at
+    // the same extension seam a Marketplace-installed domain would use.
     const catalog = createInitialCatalog();
     catalog.capabilities.register({
       id: 'contracts.read',
@@ -56,40 +59,41 @@ describe('Legal extensibility (S24 Phase 2)', () => {
       description: 'Read contract documents (test fixture)',
     });
     catalog.domains.register({
-      id: 'legal',
-      name: 'Legal',
-      description: 'Legal operations and compliance',
-      roleIds: ['legal.general_counsel', 'legal.legal_manager'],
+      id: 'facilities',
+      name: 'Facilities',
+      description: 'Facilities operations',
+      roleIds: ['facilities.lead', 'facilities.manager'],
     });
     catalog.roles.register({
-      id: 'legal.general_counsel',
-      name: 'General Counsel',
-      description: 'Leads the legal function',
-      domainId: 'legal',
+      id: 'facilities.lead',
+      name: 'Facilities Lead',
+      description: 'Leads the facilities function',
+      domainId: 'facilities',
       capabilityIds: ['contracts.read'],
     });
     catalog.roles.register({
-      id: 'legal.legal_manager',
-      name: 'Legal Manager',
-      description: 'Manages legal operations',
-      domainId: 'legal',
+      id: 'facilities.manager',
+      name: 'Facilities Manager',
+      description: 'Manages facilities operations',
+      domainId: 'facilities',
       capabilityIds: ['contracts.read'],
     });
 
-    // Register the initial command centers PLUS the Legal one — the engine
-    // is unchanged; the new command center is just another registration.
+    // Register the initial command centers PLUS the Facilities one — the
+    // engine is unchanged; the new command center is just another
+    // registration.
     const registry = new CommandCenterRegistry(catalog);
     for (const def of INITIAL_COMMAND_CENTERS) {
       registry.register(def);
     }
-    registry.register(LEGAL_COMMAND_CENTER);
+    registry.register(FACILITIES_COMMAND_CENTER);
 
     const resolveData = vi.fn(async () => ({
       contracts: { kind: 'list', items: [] },
       attention: { kind: 'attention', items: [] },
     }));
     const roleResolver: CommandCenterRoleResolver = {
-      resolve: async () => 'legal.general_counsel',
+      resolve: async () => 'facilities.lead',
     };
     const service = new CommandCenterApplicationService({
       registry,
@@ -101,7 +105,7 @@ describe('Legal extensibility (S24 Phase 2)', () => {
     const result = await service.resolve({
       userId: 'usr_alice',
       tenantId: 'org_acme',
-      workspaceId: 'wsp_legal',
+      workspaceId: 'wsp_facilities',
     });
     expect(result.ok).toBe(true);
     if (!result.ok) {
@@ -110,18 +114,18 @@ describe('Legal extensibility (S24 Phase 2)', () => {
     // Domain resolves, role resolves, command center resolves, widgets
     // resolve, and the generic renderer can render the configuration (the
     // DTO carries only renderable widget/action data).
-    expect(result.center.id).toBe('legal_command_center');
-    expect(result.center.domainId).toBe('legal');
-    expect(result.center.domainName).toBe('Legal');
-    expect(result.center.roleId).toBe('legal.general_counsel');
-    expect(result.center.roleName).toBe('General Counsel');
+    expect(result.center.id).toBe('facilities_command_center');
+    expect(result.center.domainId).toBe('facilities');
+    expect(result.center.domainName).toBe('Facilities');
+    expect(result.center.roleId).toBe('facilities.lead');
+    expect(result.center.roleName).toBe('Facilities Lead');
     expect(result.center.widgets.map((w) => w.id)).toEqual(['contracts', 'attention']);
     expect(result.center.widgets.every((w) => w.type !== undefined)).toBe(true);
     expect(result.center.actions.map((a) => a.label)).toEqual(['View documents']);
     expect(result.center.data.contracts).toEqual({ kind: 'list', items: [] });
   });
 
-  it('still resolves the initial centers after Legal is added (no interference)', async () => {
+  it('still resolves the initial centers after Facilities is added (no interference)', async () => {
     const catalog = createInitialCatalog();
     const registry = new CommandCenterRegistry(catalog);
     for (const def of INITIAL_COMMAND_CENTERS) {

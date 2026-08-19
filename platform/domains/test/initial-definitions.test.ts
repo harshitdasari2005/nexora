@@ -1,12 +1,14 @@
 /**
  * @nexora/module-domains — initial registration tests (S24 Phase 1).
  *
- * The first-party seed registers the 8 initial domains, 15 initial roles,
+ * The first-party seed registers the 12 initial domains, 23 initial roles,
  * and 23 initial capabilities (S24 Phase 3 added the executable AI
  * vocabulary: workspaces.list/create, projects.assign, calendar.create;
  * S25 Phase 7 added the external connector vocabulary: github.* and
- * slack.*); every relationship resolves; catalog integrity passes; and
- * re-registration fails fast (startup validation, never silent drift).
+ * slack.*; S27 Phase 6 added the legal/operations/customersuccess/procurement
+ * domains and roles as an honest, capability-free catalog extension);
+ * every relationship resolves; catalog integrity passes; and re-registration
+ * fails fast (startup validation, never silent drift).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -27,6 +29,10 @@ const EXPECTED_DOMAIN_IDS = [
   'growth',
   'product',
   'delivery',
+  'legal',
+  'operations',
+  'customersuccess',
+  'procurement',
 ];
 
 const EXPECTED_CAPABILITY_IDS = [
@@ -56,15 +62,15 @@ const EXPECTED_CAPABILITY_IDS = [
 ];
 
 describe('initial domain registrations', () => {
-  it('registers the 8 initial domains', () => {
+  it('registers the 12 initial domains', () => {
     const catalog = createInitialCatalog();
     expect(catalog.domains.list().map((domain) => domain.id)).toEqual(EXPECTED_DOMAIN_IDS);
   });
 
-  it('registers the 15 initial roles with their domains', () => {
+  it('registers the 23 initial roles with their domains', () => {
     const catalog = createInitialCatalog();
     const roles = catalog.roles.list();
-    expect(roles).toHaveLength(15);
+    expect(roles).toHaveLength(23);
 
     // Every role resolves its domain and is listed by it (integrity).
     for (const role of roles) {
@@ -109,6 +115,22 @@ describe('initial domain registrations', () => {
     expect(catalog.roles.resolveByDomain('delivery').map((role) => role.id)).toEqual([
       'delivery.manager',
       'delivery.project_manager',
+    ]);
+    expect(catalog.roles.resolveByDomain('legal').map((role) => role.id)).toEqual([
+      'legal.general_counsel',
+      'legal.compliance_manager',
+    ]);
+    expect(catalog.roles.resolveByDomain('operations').map((role) => role.id)).toEqual([
+      'operations.head',
+      'operations.manager',
+    ]);
+    expect(catalog.roles.resolveByDomain('customersuccess').map((role) => role.id)).toEqual([
+      'customersuccess.manager',
+      'customersuccess.support_manager',
+    ]);
+    expect(catalog.roles.resolveByDomain('procurement').map((role) => role.id)).toEqual([
+      'procurement.manager',
+      'procurement.vendor_manager',
     ]);
   });
 

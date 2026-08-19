@@ -20,6 +20,10 @@ export const WORKSPACE_TYPES = [
   'marketing',
   'executive',
   'general',
+  'product',
+  'legal',
+  'customer_success',
+  'procurement',
 ] as const;
 
 /** Single workspace type literal. */
@@ -71,6 +75,26 @@ export class WorkspaceType {
   /** General-purpose template. */
   static general(): WorkspaceType {
     return new WorkspaceType('general');
+  }
+
+  /** Product template. */
+  static product(): WorkspaceType {
+    return new WorkspaceType('product');
+  }
+
+  /** Legal template. */
+  static legal(): WorkspaceType {
+    return new WorkspaceType('legal');
+  }
+
+  /** Customer success template. */
+  static customerSuccess(): WorkspaceType {
+    return new WorkspaceType('customer_success');
+  }
+
+  /** Procurement template. */
+  static procurement(): WorkspaceType {
+    return new WorkspaceType('procurement');
   }
 
   /**
