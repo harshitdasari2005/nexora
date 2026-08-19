@@ -61,6 +61,11 @@ export class ApiAgentExecutionPort implements AgentExecutionPort {
       // can never widen it (an agent can never self-grant).
       allowedCapabilityIds: intent.allowedCapabilityIds,
       businessContext,
+      // Phase 10 remediation resume: the engine's recorded approval id for
+      // a step. The orchestrator validates ownership (user + tenant + tool)
+      // and claims it exactly once — a duplicate delivery replays the
+      // stored result instead of re-running the action.
+      approvalId: intent.approvalId,
     });
     return toAgentExecutionOutcome(response);
   }

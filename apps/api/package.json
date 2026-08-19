@@ -9,9 +9,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch --exclude 'node_modules/**' --exclude '../../node_modules/**' src/server.ts",
     "start": "node dist/src/server.js",
-    "mcp": "tsx src/mcp-server.ts"
+    "mcp": "tsx src/mcp-server.ts",
+    "demo:reset": "tsx scripts/seed-demo.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",
@@ -36,6 +37,7 @@
     "@nexora/domain-workspaces": "workspace:*",
     "@nexora/module-agents": "workspace:*",
     "@nexora/module-detection": "workspace:*",
+    "@nexora/module-remediation": "workspace:*",
     "@nexora/module-calendar": "workspace:*",
     "@nexora/module-command-center": "workspace:*",
     "@nexora/module-domains": "workspace:*",

@@ -27,6 +27,7 @@ export {
   BusinessAgentApplicationService,
   ExecuteBusinessAgentHandler,
   GetBusinessAgentCapabilitiesHandler,
+  GetBusinessAgentDefinitionHandler,
   GetBusinessAgentHandler,
   type AgentProblemProvider,
   type AgentProposalProvider,
@@ -36,6 +37,7 @@ export {
   type ExecuteBusinessAgentRequest,
   type ExecuteBusinessAgentResult,
   type ResolveAgentCapabilitiesResult,
+  type ResolveBusinessAgentDefinitionResult,
   type ResolveBusinessAgentResult,
 } from './application/business-agent-application-service.js';
 export type {

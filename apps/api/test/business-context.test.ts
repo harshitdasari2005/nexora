@@ -48,6 +48,7 @@ describe('resolveExecutableCapabilities (affinity bridge)', () => {
     expect(resolveExecutableCapabilities(['approvals.read'])).toEqual([
       'notifications.what_needs_attention',
       'notifications.list',
+      'notifications.mark_all_read',
     ]);
   });
 

@@ -231,6 +231,15 @@ export interface AgentExecutionRecord {
   reason?: string;
   /** ISO-8601 UTC time the execution was recorded. */
   createdAt: string;
+  /**
+   * The remediation plan id this execution belongs to (Phase 10) — links
+   * the execution journal entry to the plan that produced it.
+   */
+  planId?: string;
+  /** The remediation step id this execution performed (Phase 10). */
+  stepId?: string;
+  /** The remediated problem id (Phase 10). */
+  problemId?: string;
 }
 
 /**
@@ -258,6 +267,23 @@ export interface AgentExecutionIntent {
    * orchestrator AND every tool invocation enforce this bound.
    */
   allowedCapabilityIds: readonly string[];
+  /**
+   * The recorded approval request id to RESUME (Phase 10 remediation): a
+   * step whose approval was granted executes by passing the server-resolved
+   * approval id so the orchestrator claims it exactly once and replays the
+   * stored result on duplicate delivery. Never caller-supplied — the engine
+   * records the approval it opened for its own step.
+   */
+  approvalId?: string;
+  /**
+   * The conversation id the approval was opened under (Phase 10
+   * remediation): the orchestrator only resolves a resumed `approvalId`
+   * when it was opened under the SAME conversation, so a step whose
+   * approval requires resuming must carry the identical id the engine used
+   * to open it (`remediation:{planId}`) — otherwise the orchestrator can
+   * never find the granted decision and the step reports blocked.
+   */
+  conversationId?: string;
 }
 
 /**

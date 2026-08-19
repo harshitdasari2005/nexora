@@ -25,6 +25,15 @@ export class InMemoryProblemStore implements ProblemStore {
     return record === undefined || record.tenantId !== tenantId ? undefined : record;
   }
 
+  async findByIds(tenantId: string, problemIds: readonly string[]) {
+    return problemIds
+      .map((problemId) => this.problems.get(problemId))
+      .filter(
+        (record): record is BusinessProblemSnapshot =>
+          record !== undefined && record.tenantId === tenantId,
+      );
+  }
+
   async findByCorrelationId(input: { tenantId: string; correlationId: string }) {
     for (const record of this.problems.values()) {
       if (record.tenantId === input.tenantId && record.correlationId === input.correlationId) {

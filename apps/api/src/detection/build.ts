@@ -34,7 +34,9 @@ import {
   GetProblemHandler,
   INITIAL_SIGNALS,
   InvestigationEngine,
+  ListProblemsByIdsHandler,
   ListProblemsHandler,
+  ReevaluateProblemHandler,
   ScanProblemsHandler,
   SolutionDiscovery,
   type DetectionSnapshot,
@@ -44,6 +46,7 @@ import type { EventPublisher } from '@nexora/shared/events';
 import { createEventEnvelope } from '@nexora/shared/events';
 import type { AgentProblemProvider } from '@nexora/module-agents';
 import type { ProblemStore } from '@nexora/module-detection';
+import type { ProblemStatus } from '@nexora/contracts/detection';
 import { nowIso } from '@nexora/shared/time';
 
 /** The bounds of the snapshot sections (S22 — never full scans). */
@@ -81,6 +84,20 @@ export interface DetectionSurface {
   list: ListProblemsHandler;
   /** Resolves one problem by id (tenant-scoped; forged ids resolve to nothing). */
   getById: GetProblemHandler;
+  /** Resolves MANY problems by id in ONE snapshot (Phase 10 plan-list reads). */
+  listByIds: ListProblemsByIdsHandler;
+  /** Re-evaluates ONE problem deterministically (Phase 10 re-evaluation seam). */
+  reevaluate: ReevaluateProblemHandler;
+  /**
+   * Transitions a problem's lifecycle deterministically (Phase 10 lifecycle
+   * port). Returns false for forged/foreign ids or illegal transitions.
+   */
+  transition: (
+    scope: { userId: string; tenantId: string; workspaceId?: string },
+    problemId: string,
+    status: ProblemStatus,
+    now: string,
+  ) => Promise<boolean>;
   /** The agent DTO problem provider (S27 agent integration). */
   problems: AgentProblemProvider;
 }
@@ -171,6 +188,10 @@ export function buildDetection(options: BuildDetectionOptions): DetectionSurface
     scan: new ScanProblemsHandler(service),
     list: new ListProblemsHandler(service),
     getById: new GetProblemHandler(service),
+    listByIds: new ListProblemsByIdsHandler(service),
+    reevaluate: new ReevaluateProblemHandler(service),
+    transition: (scope, problemId, status, now) =>
+      service.transition(scope, problemId, status, now),
     // The agent DTO problem provider: scans on every agent resolve so the
     // problems console is always current (dedupe keeps it idempotent). The
     // agent's registered capability set bounds the problem-derived action

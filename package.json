@@ -25,7 +25,8 @@
     "gen:module": "node scripts/gen-module.mjs",
     "clean": "turbo run clean && rm -rf node_modules",
     "dev:api": "pnpm --filter @nexora/app-api dev",
-    "dev:web": "pnpm --filter @nexora/app-web dev"
+    "dev:web": "pnpm --filter @nexora/app-web dev",
+    "demo:reset": "pnpm --filter @nexora/app-api demo:reset"
   },
   "devDependencies": {
     "eslint": "^9.0.0",

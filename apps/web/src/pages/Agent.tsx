@@ -15,14 +15,19 @@
  * and success states mirror the other application views.
  */
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, Stack, typography } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { ApprovalCard } from '../components/AiPanel.js';
+import {
+  ProblemInvestigation,
+  severityAccent,
+  severityTone,
+} from '../components/ProblemInvestigation.js';
 import { api, ApiError } from '../lib/api.js';
 import { decideApproval, type ChatDone } from '../lib/chat.js';
 import { executeAgentIntent, executeProposal, fetchAgent } from '../lib/agent.js';
@@ -499,11 +504,12 @@ function ProblemRow({
     <div
       style={{
         border: '1px solid var(--nexora-border)',
+        borderLeft: `3px solid ${severityAccent(problem.severity)}`,
         borderRadius: 12,
         padding: '14px 16px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
+        gap: 12,
       }}
     >
       <Stack
@@ -517,7 +523,7 @@ function ProblemRow({
           <Stack direction="row" gap={2} align="center" style={{ flexWrap: 'wrap' }}>
             <span style={{ fontWeight: typography.weights.medium }}>{problem.title}</span>
             <Badge tone={severityTone(problem.severity)}>{problem.severity}</Badge>
-            <Badge>{problem.status}</Badge>
+            <Badge>{problem.status.replace(/_/g, ' ')}</Badge>
           </Stack>
           <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textSecondary)' }}>
             {problem.signalName} ·{' '}
@@ -525,94 +531,37 @@ function ProblemRow({
               problem.description}
           </div>
         </Stack>
-        {proposal !== undefined && onExecute !== undefined ? (
-          <Button size="sm" onClick={onExecute} disabled={disabled}>
-            {busy ? 'Executing…' : 'Apply known solution'}
-          </Button>
-        ) : null}
+        <Stack direction="row" gap={2} align="center" style={{ flexWrap: 'wrap' }}>
+          {proposal !== undefined && onExecute !== undefined ? (
+            <Button size="sm" onClick={onExecute} disabled={disabled}>
+              {busy ? 'Executing…' : 'Apply known solution'}
+            </Button>
+          ) : null}
+          {/* The agent's proposal is ONE governed step (the caller's first
+              executable capability for this signal) — the full multi-step,
+              approval-gated plan (every capability, in order) lives on the
+              Problems console. Always point there so "what will Nexora
+              actually do end to end" has one unambiguous answer. */}
+          <Link
+            to={`/app/problems?organizationId=${encodeURIComponent(problem.tenantId)}${
+              problem.workspaceId === undefined
+                ? ''
+                : `&workspaceId=${encodeURIComponent(problem.workspaceId)}`
+            }`}
+            style={{ textDecoration: 'none' }}
+          >
+            <Button size="sm" variant="secondary">
+              Full remediation plan →
+            </Button>
+          </Link>
+        </Stack>
       </Stack>
 
       <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
         {problem.description}
       </div>
 
-      {problem.recommendation !== undefined ? (
-        <div
-          style={{
-            background: 'var(--nexora-surfaceMuted)',
-            borderRadius: 10,
-            padding: '10px 12px',
-            fontSize: typography.sizes.sm,
-          }}
-        >
-          {problem.recommendation.summary}
-        </div>
-      ) : null}
-
-      <Stack gap={2}>
-        {problem.evidence.length > 0 ? (
-          <Stack gap={1}>
-            <SectionLabel>Evidence</SectionLabel>
-            {problem.evidence.map((evidence) => (
-              <div key={evidence.id} style={{ fontSize: typography.sizes.xs }}>
-                <span style={{ color: 'var(--nexora-textMuted)' }}>[{evidence.source}]</span>{' '}
-                {evidence.fact}
-              </div>
-            ))}
-          </Stack>
-        ) : null}
-        {problem.rootCauses.length > 0 ? (
-          <Stack gap={1}>
-            <SectionLabel>Root-cause candidates</SectionLabel>
-            {problem.rootCauses.map((cause, index) => (
-              <div key={`${cause.explanation}-${index}`} style={{ fontSize: typography.sizes.xs }}>
-                <Badge tone={cause.kind === 'FACT' ? 'primary' : undefined}>
-                  {cause.kind === 'FACT' ? 'FACT' : 'INFERENCE'}
-                </Badge>{' '}
-                {cause.explanation}{' '}
-                <span style={{ color: 'var(--nexora-textMuted)' }}>({cause.confidence})</span>
-              </div>
-            ))}
-          </Stack>
-        ) : null}
-        {problem.solutions.length > 0 ? (
-          <Stack gap={1}>
-            <SectionLabel>Known solutions</SectionLabel>
-            {problem.solutions.map((solution) => (
-              <div key={solution.id} style={{ fontSize: typography.sizes.xs }}>
-                <Badge tone={applicabilityTone(solution.applicability)}>
-                  {solution.applicability}
-                </Badge>{' '}
-                {solution.title}
-                {solution.reference !== undefined ? (
-                  <span style={{ color: 'var(--nexora-textMuted)' }}>
-                    {' '}
-                    ({solution.reference.id})
-                  </span>
-                ) : null}
-              </div>
-            ))}
-          </Stack>
-        ) : null}
-      </Stack>
-    </div>
-  );
-}
-
-/** A small uppercase section label. */
-function SectionLabel({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <div
-      style={{
-        fontSize: typography.sizes.xs,
-        fontWeight: typography.weights.semibold,
-        color: 'var(--nexora-textMuted)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.04em',
-        marginTop: 4,
-      }}
-    >
-      {children}
+      <ProblemInvestigation problem={problem} />
     </div>
   );
 }
@@ -923,30 +872,6 @@ function autonomyLabel(level: BusinessAgentDto['autonomyLevel']): string {
     case 'governed_execution':
       return 'Governed execution';
   }
-}
-
-/** Maps a problem severity to a badge tone. */
-function severityTone(severity: BusinessProblemDto['severity']): 'danger' | 'warning' | 'success' {
-  if (severity === 'high') {
-    return 'danger';
-  }
-  if (severity === 'medium') {
-    return 'warning';
-  }
-  return 'success';
-}
-
-/** Maps a solution applicability to a badge tone. */
-function applicabilityTone(
-  applicability: BusinessProblemDto['solutions'][number]['applicability'],
-): 'success' | 'primary' | 'warning' {
-  if (applicability === 'APPLICABLE') {
-    return 'success';
-  }
-  if (applicability === 'REJECTED') {
-    return 'warning';
-  }
-  return 'primary';
 }
 
 /** Maps a run/outcome status to a badge tone. */

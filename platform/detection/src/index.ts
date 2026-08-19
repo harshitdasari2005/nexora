@@ -34,7 +34,9 @@ export {
 export {
   DetectionApplicationService,
   GetProblemHandler,
+  ListProblemsByIdsHandler,
   ListProblemsHandler,
+  ReevaluateProblemHandler,
   ScanProblemsHandler,
   type DetectionApplicationServiceDependencies,
   type DetectionScope,

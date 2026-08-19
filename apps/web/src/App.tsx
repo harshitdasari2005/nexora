@@ -19,6 +19,7 @@ import { Employees } from './pages/Employees.js';
 import { Integrations } from './pages/Integrations.js';
 import { Insights } from './pages/Insights.js';
 import { Agent } from './pages/Agent.js';
+import { Problems } from './pages/Problems.js';
 import { CommandCenter } from './pages/CommandCenter.js';
 import { Projects } from './pages/Projects.js';
 import { Workflows } from './pages/Workflows.js';
@@ -69,6 +70,14 @@ export function App(): JSX.Element {
             element={
               <RequireAuth>
                 <Agent />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app/problems"
+            element={
+              <RequireAuth>
+                <Problems />
               </RequireAuth>
             }
           />

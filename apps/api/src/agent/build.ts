@@ -29,6 +29,7 @@ import {
   BusinessAgentRegistry,
   ExecuteBusinessAgentHandler,
   GetBusinessAgentCapabilitiesHandler,
+  GetBusinessAgentDefinitionHandler,
   GetBusinessAgentHandler,
   INITIAL_AGENTS,
   type AgentExecutionRecorder,
@@ -84,6 +85,12 @@ export interface AgentSurface {
    * signals (S27 problems console).
    */
   getCapabilities: GetBusinessAgentCapabilitiesHandler;
+  /**
+   * Resolves ONLY the caller's agent definition (id/role/domain/capability
+   * set) — no DTO side effects. Consumed by the Phase 10 remediation engine
+   * to derive the plan's executing agent and bound its steps.
+   */
+  getDefinition: GetBusinessAgentDefinitionHandler;
 }
 
 /** Builds the business-agent surface (generic engine + API implementations). */
@@ -121,5 +128,6 @@ export function buildAgent(options: BuildAgentOptions): AgentSurface {
     getAgent: new GetBusinessAgentHandler(service),
     executeAgent: new ExecuteBusinessAgentHandler(service),
     getCapabilities: new GetBusinessAgentCapabilitiesHandler(service),
+    getDefinition: new GetBusinessAgentDefinitionHandler(service),
   };
 }

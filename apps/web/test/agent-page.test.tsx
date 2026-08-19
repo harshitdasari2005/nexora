@@ -209,10 +209,11 @@ describe('AgentView (S26 Phase 8)', () => {
     expect(html).toContain('employee-onboarding requires attention');
     expect(html).toContain('high');
     expect(html).toContain('DETECTED');
-    // Evidence, root-cause candidates (FACT vs INFERENCE), solutions.
-    expect(html).toContain('Evidence');
+    // Evidence (What happened), root-cause candidates (FACT vs INFERENCE,
+    // Why it matters), solutions.
+    expect(html).toContain('What happened');
     expect(html).toContain('failed 6 times (75% success rate)');
-    expect(html).toContain('Root-cause candidates');
+    expect(html).toContain('Why it matters');
     expect(html).toContain('INFERENCE');
     expect(html).toContain('Known solutions');
     expect(html).toContain('APPLICABLE');

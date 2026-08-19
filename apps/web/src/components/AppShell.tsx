@@ -45,6 +45,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Overview', icon: '◎', to: '/app' },
   { label: 'Command Center', icon: '✦', to: '/app/command-center' },
   { label: 'Agent', icon: '✦', to: '/app/agent' },
+  { label: 'Problems', icon: '⚠', to: '/app/problems' },
   { label: 'Projects', icon: '▤', to: '/app/projects' },
   { label: 'Employees', icon: '⚕', to: '/app/employees' },
   { label: 'Documents', icon: '▤', to: '/app/documents' },
@@ -258,7 +259,6 @@ export function AppShell({
             <Badge tone="ai" dot>
               AI platform
             </Badge>
-            <Badge>v0.1 · onboarding</Badge>
             <NotificationCenter organizationId={organizationId} workspaceId={workspaceId} />
           </div>
         </header>
@@ -274,10 +274,12 @@ export function AppShell({
 
       <style>{`
         @media (max-width: 900px) {
-          .nexora-sidebar { display: none; }
+          /* Inline styles set the sidebar's display; only !important can
+             override them from an embedded stylesheet rule. */
+          .nexora-sidebar { display: none !important; }
         }
         @media (max-width: 1100px) {
-          .nexora-shell aside:last-of-type { display: none; }
+          .nexora-shell aside:last-of-type { display: none !important; }
         }
       `}</style>
     </div>

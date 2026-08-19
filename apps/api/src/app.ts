@@ -79,6 +79,14 @@ import { buildDetection } from './detection/build.js';
 import { PgBusinessProblemStore } from './agent/pg-business-problem-store.js';
 import { InMemoryProblemStore } from './detection/in-memory-problem-store.js';
 import type { ProblemStore } from '@nexora/module-detection';
+import {
+  buildRemediation,
+  ApiRemediationExecutionPort,
+  ApiRemediationExecutionRecorder,
+} from './remediation/build.js';
+import { PgPlanStore } from './remediation/pg-plan-store.js';
+import { InMemoryPlanStore, type PlanStore } from '@nexora/module-remediation';
+import { registerRemediationRoutes } from './routes/remediation.js';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
@@ -149,6 +157,12 @@ export interface AppDependencies {
    * (absent otherwise — detection still runs but problems are ephemeral).
    */
   problemStore?: ProblemStore;
+  /**
+   * The durable remediation plan store (Phase 10). Tests inject an
+   * in-memory store; defaults to the PostgreSQL store when a database is
+   * available (absent otherwise — plans are ephemeral).
+   */
+  planStore?: PlanStore;
 }
 
 /** Builds the Nexora API application. */
@@ -454,6 +468,77 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     list: detectionSurface.list,
     getById: detectionSurface.getById,
     getAgentCapabilities: agentSurface.getCapabilities,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+  });
+  // Phase 10: the governed remediation surface. Composed here next to the
+  // detection + agent surfaces it builds on: the agent resolver is the SAME
+  // membership → role → agent seam (side-effect-free definition resolver),
+  // the problem provider/reevaluator/lifecycle are the SAME S27 detection
+  // engine, capabilities resolve from the EXISTING AI Runtime registry,
+  // approvals go through the EXISTING ApprovalEngine, steps execute through
+  // the SAME governed execution path (AI Runtime → ToolExecutor → approval
+  // → verification → decision), and outcomes journal into the SAME
+  // agent-execution journal (plan-linked rows). There is no second engine,
+  // no second approval system, no second journal.
+  const remediationSurface = buildRemediation({
+    store:
+      dependencies.planStore ??
+      (dependencies.database === undefined
+        ? new InMemoryPlanStore()
+        : new PgPlanStore(dependencies.database)),
+    getAgentDefinition: agentSurface.getDefinition,
+    getProblem: (context, problemId) =>
+      detectionSurface.getById.handle(
+        {
+          userId: context.userId,
+          tenantId: context.tenantId as never,
+          workspaceId: context.workspaceId,
+          agentCapabilityIds: [],
+        },
+        problemId,
+      ),
+    listProblemsByIds: (context, problemIds) =>
+      detectionSurface.listByIds.handle(
+        {
+          userId: context.userId,
+          tenantId: context.tenantId as never,
+          workspaceId: context.workspaceId,
+          agentCapabilityIds: [],
+        },
+        problemIds,
+      ),
+    reevaluate: (context, problemId) =>
+      detectionSurface.reevaluate.handle(
+        {
+          userId: context.userId,
+          tenantId: context.tenantId as never,
+          workspaceId: context.workspaceId,
+          agentCapabilityIds: [],
+        },
+        problemId,
+      ),
+    transitionProblem: (context, problemId, status, now) =>
+      detectionSurface.transition(context, problemId, status, now),
+    registry: ai.registry,
+    tools: ai.tools,
+    approvals: ai.approvals,
+    execution: new ApiRemediationExecutionPort({
+      orchestrator: ai.orchestrator,
+      conversations: ai.store,
+      buildBusinessContext: (context) =>
+        buildAIBusinessContext(
+          { roleResolver: businessRoleResolver, catalog: domainCatalog },
+          context,
+        ),
+    }),
+    recorder:
+      executionRecorder === undefined
+        ? undefined
+        : new ApiRemediationExecutionRecorder(executionRecorder),
+  });
+  registerRemediationRoutes(app, {
+    remediation: remediationSurface,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
   });

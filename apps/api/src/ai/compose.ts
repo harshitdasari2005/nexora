@@ -57,6 +57,7 @@ export function composeAiRuntime(input: ComposeAiRuntimeInput): AiRuntime {
     listOrganizations: container.listOrganizations,
     listNotifications: container.listNotifications,
     unreadNotifications: container.unreadNotifications,
+    markAllNotificationsRead: container.markAllNotificationsRead,
     listActivity: container.listActivity,
     workflowInstances: repositories.workflowInstances,
     workflowStepExecutions: repositories.workflowStepExecutions,

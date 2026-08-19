@@ -52,9 +52,18 @@ export type ProblemSeverity = 'low' | 'medium' | 'high';
 
 /**
  * The explicit problem lifecycle. Transitions are driven by the detection
- * service (deterministic) — never by an LLM. `RESOLVED` is claimed ONLY
- * when a re-evaluation of the deterministic signal proves the condition is
- * gone — never as a promise about the future.
+ * service and the remediation engine (both deterministic) — never by an
+ * LLM. `RESOLVED` is claimed ONLY when a re-evaluation of the
+ * deterministic signal proves the condition is gone — never as a promise
+ * about the future.
+ *
+ * Phase 10 adds the remediation states: a problem with a validated
+ * remediation plan is `REMEDIATION_PLANNED`, one being remediated is
+ * `REMEDIATING`, and a plan that the server blocked or that failed is
+ * `REMEDIATION_BLOCKED` / `REMEDIATION_FAILED`. These states are OWNED by
+ * the plan engine: a detection scan never auto-resolves a problem in a
+ * remediation state — the plan engine re-evaluates and resolves it
+ * deterministically after each step and at final verification.
  */
 export type ProblemStatus =
   | 'DETECTED'
@@ -64,6 +73,10 @@ export type ProblemStatus =
   | 'NO_SOLUTION_FOUND'
   | 'ACTION_PROPOSED'
   | 'WAITING_FOR_APPROVAL'
+  | 'REMEDIATION_PLANNED'
+  | 'REMEDIATING'
+  | 'REMEDIATION_BLOCKED'
+  | 'REMEDIATION_FAILED'
   | 'RESOLVED';
 
 /** A controlled, deliberately coarse confidence (never fake precision). */
@@ -194,6 +207,13 @@ export interface BusinessProblemDto {
   updatedAt: string;
   /** The affected entities (references, never copies). */
   affectedEntities: readonly { type: string; id: string; title: string }[];
+  /**
+   * The signal's remediation capability ids (what CAN remediate this
+   * problem — the deterministic vocabulary the Phase 10 plan builder uses
+   * to derive steps from an applicable known solution). Never a grant:
+   * every step is re-validated against the caller's agent capability set.
+   */
+  remediationCapabilities: readonly string[];
   /** The grounded evidence. */
   evidence: readonly ProblemEvidenceDto[];
   /** The root-cause candidates (FACT vs INFERENCE separated). */

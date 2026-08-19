@@ -26,6 +26,7 @@ import type {
   ActionProposal,
   BusinessProblemDto,
   ProblemRecommendationDto,
+  ProblemStatus,
 } from '@nexora/contracts/detection';
 import type { BusinessSignalRegistry } from '../registry/business-signal-registry.js';
 import { BusinessProblem, buildCorrelationId } from '../domain/problem.js';
@@ -48,6 +49,19 @@ export interface DetectionScope {
 
 /** The maximum number of problems returned per scan (bounded). */
 const PROBLEMS_LIMIT = 20;
+
+/**
+ * Phase 10: problem statuses OWNED by the remediation plan engine. A
+ * detection scan never auto-resolves a problem in one of these states —
+ * the plan engine re-evaluates and transitions them deterministically
+ * (after every step and at final verification).
+ */
+const REMEDIATION_OWNED_STATUSES: ReadonlySet<string> = new Set([
+  'REMEDIATION_PLANNED',
+  'REMEDIATING',
+  'REMEDIATION_BLOCKED',
+  'REMEDIATION_FAILED',
+]);
 
 /** Dependencies of the detection application service. */
 export interface DetectionApplicationServiceDependencies {
@@ -134,14 +148,21 @@ export class DetectionApplicationService {
     }
 
     // Resolve open problems whose signal no longer fires (deterministic
-    // re-evaluation — the only honest RESOLVED claim).
+    // re-evaluation — the only honest RESOLVED claim). Phase 10: problems in
+    // a remediation state are OWNED by the plan engine (which re-evaluates
+    // after every step and at final verification) — a scan never races the
+    // plan by resolving them out from under it.
     const existing = await this.#store.listByScope({
       tenantId: scope.tenantId,
       workspaceId: scope.workspaceId,
       limit: PROBLEMS_LIMIT,
     });
     for (const record of existing) {
-      if (record.status === 'RESOLVED' || seenCorrelationIds.has(record.correlationId)) {
+      if (
+        record.status === 'RESOLVED' ||
+        REMEDIATION_OWNED_STATUSES.has(record.status) ||
+        seenCorrelationIds.has(record.correlationId)
+      ) {
         continue;
       }
       const problem = BusinessProblem.hydrate(record);
@@ -157,6 +178,104 @@ export class DetectionApplicationService {
     return this.#list(scope);
   }
 
+  /**
+   * Re-evaluates ONE problem deterministically (Phase 10): re-runs the
+   * problem's signal against a FRESH trusted snapshot and answers whether
+   * the condition still fires, returning the refreshed investigation DTO.
+   * This is the re-evaluation seam the remediation engine uses after every
+   * execution step and at final verification — the ONLY honest basis for
+   * "problem resolved" / "plan still valid". Returns `undefined` for a
+   * forged/foreign problem id (fail closed).
+   */
+  async reevaluate(
+    scope: DetectionScope,
+    problemId: string,
+  ): Promise<{ stillPresent: boolean; problem: BusinessProblemDto } | undefined> {
+    const record = await this.#store.findById(scope.tenantId, problemId);
+    if (record === undefined) {
+      return undefined;
+    }
+    const signal = this.#registry.get(record.signalId);
+    if (signal === undefined) {
+      return undefined;
+    }
+    const problem = BusinessProblem.hydrate(record);
+    // A resolved problem is a fact of the record — it stays resolved until
+    // the signal fires again (the scan re-opens it), never "still present".
+    if (problem.status === 'RESOLVED') {
+      const snapshot = await this.#snapshotLoader.load(scope);
+      return {
+        stillPresent: false,
+        problem: await this.#toDto(scope, problem, signal.id, signal.name, snapshot),
+      };
+    }
+    const snapshot = await this.#snapshotLoader.load(scope);
+    // Exact deterministic match: the correlation identity (signal + scope +
+    // entity) must be produced by the current evaluation — a weakened or
+    // vanished condition yields no detection for THIS problem.
+    let stillPresent = false;
+    for (const detection of signal.evaluate(snapshot)) {
+      const candidate = buildCorrelationId({
+        signalId: signal.id,
+        tenantId: scope.tenantId,
+        workspaceId: scope.workspaceId,
+        suffix: detection.correlationSuffix,
+      });
+      if (candidate === record.correlationId) {
+        stillPresent = true;
+        break;
+      }
+    }
+    return {
+      stillPresent,
+      problem: await this.#toDto(scope, problem, signal.id, signal.name, snapshot),
+    };
+  }
+
+  /**
+   * Resolves MANY problems by id (Phase 10 plan-list reads): ONE trusted
+   * snapshot load for all of them (S22 — never N+1), tenant-scoped;
+   * non-existent or foreign ids are omitted (fail closed).
+   */
+  async listByIds(
+    scope: DetectionScope,
+    problemIds: readonly string[],
+  ): Promise<BusinessProblemDto[]> {
+    const deduped = [...new Set(problemIds)];
+    if (deduped.length === 0) {
+      return [];
+    }
+    const records = await this.#store.findByIds(scope.tenantId, deduped);
+    if (records.length === 0) {
+      return [];
+    }
+    const snapshot = await this.#snapshotLoader.load(scope);
+    const byId = new Map<string, BusinessProblemDto>();
+    for (const record of records) {
+      const signal = this.#registry.get(record.signalId);
+      if (signal === undefined) {
+        continue;
+      }
+      const dto = await this.#toDto(
+        scope,
+        BusinessProblem.hydrate(record),
+        signal.id,
+        signal.name,
+        snapshot,
+      );
+      byId.set(dto.id, dto);
+    }
+    // Preserve the requested order (the plan list's display order).
+    const result: BusinessProblemDto[] = [];
+    for (const problemId of deduped) {
+      const dto = byId.get(problemId);
+      if (dto !== undefined) {
+        result.push(dto);
+      }
+    }
+    return result;
+  }
+
   /** Resolves one problem by id (tenant-scoped; forged ids resolve to nothing). */
   async getById(scope: DetectionScope, problemId: string): Promise<BusinessProblemDto | undefined> {
     const record = await this.#store.findById(scope.tenantId, problemId);
@@ -169,6 +288,33 @@ export class DetectionApplicationService {
     }
     const snapshot = await this.#snapshotLoader.load(scope);
     return this.#toDto(scope, BusinessProblem.hydrate(record), signal.id, signal.name, snapshot);
+  }
+
+  /**
+   * Transitions a problem's lifecycle deterministically (Phase 10 — the
+   * plan engine's lifecycle port). The transition is validated against the
+   * SAME explicit transition table as every other state change; a forged or
+   * foreign problem id (or an illegal transition) returns `false` — the
+   * engine fails safe and never mutates someone else's problem.
+   */
+  async transition(
+    scope: { userId: string; tenantId: string; workspaceId?: string },
+    problemId: string,
+    status: ProblemStatus,
+    now: string,
+  ): Promise<boolean> {
+    const record = await this.#store.findById(scope.tenantId, problemId);
+    if (record === undefined) {
+      return false;
+    }
+    try {
+      const problem = BusinessProblem.hydrate(record);
+      problem.transitionTo(status, now);
+      await this.#store.save(problem.snapshot());
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** Creates-or-refreshes the problem for one detection (dedupe by correlation). */
@@ -268,7 +414,12 @@ export class DetectionApplicationService {
     snapshot: Awaited<ReturnType<DetectionSnapshotLoader['load']>>,
   ): Promise<BusinessProblemDto> {
     const investigated = this.#investigation.investigate(problem, snapshot);
-    const discovered = await this.#discovery.discover(problem, snapshot);
+    const signal = this.#registry.get(signalId);
+    const discovered = await this.#discovery.discover(
+      problem,
+      snapshot,
+      signal?.remediationCapabilities ?? [],
+    );
 
     const recommendation = this.#recommend(
       scope,
@@ -293,6 +444,7 @@ export class DetectionApplicationService {
       detectedAt: problem.detectedAt,
       updatedAt: problem.updatedAt,
       affectedEntities: problem.affectedEntities,
+      remediationCapabilities: signal?.remediationCapabilities ?? [],
       evidence: [...investigated.evidence, ...discovered.evidence],
       rootCauses: investigated.rootCauses,
       solutions: discovered.solutions,
@@ -419,6 +571,17 @@ export class ListProblemsHandler {
   }
 }
 
+/** Handles resolving MANY problems by id (one snapshot — Phase 10). */
+export class ListProblemsByIdsHandler {
+  readonly #service: DetectionApplicationService;
+  constructor(service: DetectionApplicationService) {
+    this.#service = service;
+  }
+  handle(scope: DetectionScope, problemIds: readonly string[]): Promise<BusinessProblemDto[]> {
+    return this.#service.listByIds(scope, problemIds);
+  }
+}
+
 /** Handles resolving one problem by id (tenant-scoped). */
 export class GetProblemHandler {
   readonly #service: DetectionApplicationService;
@@ -427,5 +590,19 @@ export class GetProblemHandler {
   }
   handle(scope: DetectionScope, problemId: string): Promise<BusinessProblemDto | undefined> {
     return this.#service.getById(scope, problemId);
+  }
+}
+
+/** Handles re-evaluating ONE problem (Phase 10 — the plan engine's seam). */
+export class ReevaluateProblemHandler {
+  readonly #service: DetectionApplicationService;
+  constructor(service: DetectionApplicationService) {
+    this.#service = service;
+  }
+  handle(
+    scope: DetectionScope,
+    problemId: string,
+  ): Promise<{ stillPresent: boolean; problem: BusinessProblemDto } | undefined> {
+    return this.#service.reevaluate(scope, problemId);
   }
 }

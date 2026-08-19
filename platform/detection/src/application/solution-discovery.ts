@@ -98,8 +98,19 @@ export interface DiscoveryOutcome {
 export class SolutionDiscovery {
   constructor(private readonly sources: SolutionSources) {}
 
-  /** Runs the discovery pass for one problem. */
-  async discover(problem: BusinessProblem, snapshot: DetectionSnapshot): Promise<DiscoveryOutcome> {
+  /**
+   * Runs the discovery pass for one problem. `remediationCapabilities` is
+   * the signal's remediation vocabulary (Phase 10): an APPLICABLE solution
+   * carries it as its `requiredCapabilities`, so the remediation plan
+   * builder can derive the steps deterministically from the solution — the
+   * same capabilities are never a grant; the plan re-validates each step
+   * against the caller's agent set.
+   */
+  async discover(
+    problem: BusinessProblem,
+    snapshot: DetectionSnapshot,
+    remediationCapabilities: readonly string[] = [],
+  ): Promise<DiscoveryOutcome> {
     const solutions: SolutionCandidateDto[] = [];
     const evidence: ProblemEvidenceDto[] = [];
     const entity = problem.affectedEntities[0];
@@ -116,7 +127,12 @@ export class SolutionDiscovery {
         }),
       );
       for (const reference of references) {
-        const candidate = this.#assessKnowledge(problem, entityTerm, reference);
+        const candidate = this.#assessKnowledge(
+          problem,
+          entityTerm,
+          reference,
+          remediationCapabilities,
+        );
         solutions.push(candidate);
         evidence.push({
           id: `evd_${candidate.id}`,
@@ -167,6 +183,7 @@ export class SolutionDiscovery {
     problem: BusinessProblem,
     entityTerm: string,
     reference: KnowledgeSolutionReference,
+    remediationCapabilities: readonly string[] = [],
   ): SolutionCandidateDto {
     const haystack = `${reference.title} ${reference.snippet}`.toLowerCase();
     const entityTokens = entityTerm
@@ -198,7 +215,9 @@ export class SolutionDiscovery {
       applicability,
       rejectionReason,
       confidence: matchesSignal ? 'MEDIUM' : 'LOW',
-      requiredCapabilities: [],
+      // Phase 10: an APPLICABLE known solution carries the signal's
+      // remediation vocabulary so the plan builder can derive steps from it.
+      requiredCapabilities: applicability === 'APPLICABLE' ? [...remediationCapabilities] : [],
     };
   }
 

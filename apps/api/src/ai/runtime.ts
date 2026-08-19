@@ -68,6 +68,7 @@ import type { ListOrganizationsHandler } from '@nexora/application-organizations
 import type {
   ListActivityHandler,
   ListNotificationsHandler,
+  MarkAllNotificationsReadHandler,
   UnreadNotificationsCountHandler,
 } from '@nexora/module-notifications';
 
@@ -96,6 +97,7 @@ import { FindProjectTool } from './tools/find-project-tool.js';
 import { ListNotificationsTool } from './tools/list-notifications-tool.js';
 import { ListProjectsTool } from './tools/list-projects-tool.js';
 import { ListWorkspacesTool } from './tools/list-workspaces-tool.js';
+import { MarkAllNotificationsReadTool } from './tools/mark-all-notifications-read-tool.js';
 import { SearchDocumentsTool } from './tools/search-documents-tool.js';
 import { SearchKnowledgeTool } from './tools/search-knowledge-tool.js';
 import { WhatNeedsAttentionTool } from './tools/what-needs-attention-tool.js';
@@ -416,6 +418,39 @@ export const NOTIFICATIONS_ATTENTION_TOOL: ToolContract = {
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
 };
 
+/** The skill that implements the mark-all-notifications-read capability (write). */
+export const NOTIFICATIONS_MARK_READ_SKILL: AgentSkill = {
+  id: 'notifications.mark_read_all',
+  description: "Marks the current user's unread notifications as read",
+  toolIds: ['notifications.mark_all_read'],
+  autonomyTier: 'supervised',
+  requiresApproval: true,
+};
+
+/** The capability the AI discovers for clearing the attention backlog (write). */
+export const NOTIFICATIONS_MARK_READ_CAPABILITY: CapabilityDeclaration = {
+  id: 'notifications.mark_all_read',
+  // Deliberately shares NO noun token with "Check Attention Notifications"
+  // (`notifications.what_needs_attention`): the matcher's verb-disambiguation
+  // rule requires verb evidence whenever two candidates share a noun, and
+  // plain "what needs attention" utterances never say "clear" — sharing a
+  // noun here would silently break the existing read capability's matching.
+  name: 'Clear Notification Backlog',
+  description: "Marks the current user's unread notifications as read in the current workspace",
+  skillId: 'notifications.mark_read_all',
+  sideEffectClass: 'consequential',
+};
+
+/** The canonical tool contract for the MarkAllNotificationsReadTool. */
+export const NOTIFICATIONS_MARK_READ_TOOL: ToolContract = {
+  id: 'notifications.mark_all_read',
+  description: "Marks the current user's unread notifications as read in the current workspace",
+  sideEffectClass: 'consequential',
+  idempotent: true,
+  timeoutMs: 10_000,
+  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+};
+
 /** The skill that implements the create-calendar-event capability (write). */
 export const CALENDAR_CREATE_SKILL: AgentSkill = {
   id: 'calendar.create',
@@ -604,6 +639,8 @@ export interface AiRuntimeDependencies {
   unreadNotifications: UnreadNotificationsCountHandler;
   /** The workspace-scoped activity handler (attention tool). */
   listActivity: ListActivityHandler;
+  /** The mark-all-read command handler (clear-attention-backlog write tool). */
+  markAllNotificationsRead: MarkAllNotificationsReadHandler;
   /** Workflow instance persistence (workflow vertical slice). */
   workflowInstances: WorkflowInstanceRepository;
   /** Workflow step-journal persistence. */
@@ -857,6 +894,22 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
     }),
   );
   skills.index(NOTIFICATIONS_ATTENTION_SKILL, NOTIFICATIONS_AGENT.id, 'notifications');
+  registry.register(
+    registryEntries.tool({
+      tool: NOTIFICATIONS_MARK_READ_TOOL,
+      owner: 'notifications',
+      version: '1.0.0',
+      ownedByAgents: [NOTIFICATIONS_AGENT.id],
+    }),
+  );
+  registry.register(
+    registryEntries.capability({
+      capability: NOTIFICATIONS_MARK_READ_CAPABILITY,
+      owner: 'notifications',
+      version: '1.0.0',
+    }),
+  );
+  skills.index(NOTIFICATIONS_MARK_READ_SKILL, NOTIFICATIONS_AGENT.id, 'notifications');
 
   // Capability surface (calendar — the workspace-scoped event write).
   registry.register(
@@ -954,6 +1007,9 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
       unreadCount: dependencies.unreadNotifications,
       listActivity: dependencies.listActivity,
     }),
+  );
+  tools.register(
+    new MarkAllNotificationsReadTool({ markAllRead: dependencies.markAllNotificationsRead }),
   );
   tools.register(
     new CreateEmployeeTool({

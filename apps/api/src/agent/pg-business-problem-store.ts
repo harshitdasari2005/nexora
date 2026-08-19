@@ -10,7 +10,7 @@
  * at read time by the engine (S27 §17 minimum persistence).
  */
 
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { businessProblems, type NexoraDatabase } from '@nexora/persistence';
 import type { ProblemStore } from '@nexora/module-detection';
 import type { BusinessProblemSnapshot } from '@nexora/module-detection';
@@ -86,6 +86,19 @@ export class PgBusinessProblemStore implements ProblemStore {
       .limit(1);
     const row = rows[0];
     return row === undefined ? undefined : rowToSnapshot(row);
+  }
+
+  async findByIds(tenantId: string, problemIds: readonly string[]) {
+    if (problemIds.length === 0) {
+      return [];
+    }
+    const rows = await this.#db
+      .select()
+      .from(businessProblems)
+      .where(
+        and(eq(businessProblems.tenantId, tenantId), inArray(businessProblems.id, [...problemIds])),
+      );
+    return rows.map(rowToSnapshot);
   }
 
   async listByScope(scope: { tenantId: string; workspaceId?: string; limit: number }) {

@@ -52,7 +52,14 @@ interface ApiErrorBody {
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`/api${path}`, {
     credentials: 'include',
-    headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
+    // Only set `content-type: application/json` when a body is actually
+    // sent — a bodyless POST (e.g. an action with no payload) with this
+    // header still set reaches the server as a zero-length JSON body,
+    // which Fastify's parser rejects (FST_ERR_CTP_EMPTY_JSON_BODY).
+    headers: {
+      ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
+      ...(init.headers ?? {}),
+    },
     ...init,
   });
 

@@ -45,7 +45,14 @@ const BUSINESS_CAPABILITY_TO_AI_CAPABILITIES: Readonly<Record<string, readonly s
   'employees.manage': ['hr.create_employee'],
   // S24 Phase 5: `approvals.read` also maps to the notifications inbox so
   // the MCP `nexora.notifications.list` tool follows the same affinity.
-  'approvals.read': ['notifications.what_needs_attention', 'notifications.list'],
+  // Phase 10: the same affinity covers clearing the attention backlog — a
+  // role that can see what needs attention can also act on it (governed by
+  // the SAME approval gate every consequential write goes through).
+  'approvals.read': [
+    'notifications.what_needs_attention',
+    'notifications.list',
+    'notifications.mark_all_read',
+  ],
   'calendar.create': ['calendar.create_event'],
   // S24 Phase 4: `workflows.execute` maps to the workflow-orchestrating
   // capabilities, so a role WITH the affinity (CEO/Manager) can plan

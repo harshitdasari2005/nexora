@@ -115,7 +115,11 @@ export const INITIAL_SIGNALS: readonly BusinessSignalDefinition[] = [
     name: 'Project attention',
     description:
       'Active projects exist but the caller has unread attention items — something in the project space may need a decision.',
-    remediationCapabilities: ['projects.find_project', 'notifications.what_needs_attention'],
+    // Both capabilities are parameterless (deterministic execution through
+    // the real orchestrator, same reasoning as `workflow_degradation`):
+    // `projects.find_project` is deliberately NOT included here — it
+    // requires a `name` input the remediation engine cannot supply.
+    remediationCapabilities: ['notifications.what_needs_attention', 'notifications.mark_all_read'],
     evaluate: (snapshot) => {
       const activeProjects = snapshot.projects.filter((project) => project.status === 'active');
       if (activeProjects.length === 0) {

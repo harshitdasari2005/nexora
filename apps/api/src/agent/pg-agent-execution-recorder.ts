@@ -37,6 +37,10 @@ function rowToRecord(row: AgentExecutionRow): AgentExecutionRecord {
     runId: row.runId ?? undefined,
     reason: row.reason ?? undefined,
     createdAt: toIso(row.createdAt),
+    // Phase 10 remediation linkage (the plan console's "what happened").
+    planId: row.planId ?? undefined,
+    stepId: row.stepId ?? undefined,
+    problemId: row.problemId ?? undefined,
   };
 }
 
@@ -62,6 +66,9 @@ export class PgAgentExecutionRecorder implements AgentExecutionRecorder {
       status: record.status,
       runId: record.runId ?? null,
       reason: record.reason ?? null,
+      planId: record.planId ?? null,
+      stepId: record.stepId ?? null,
+      problemId: record.problemId ?? null,
       createdAt: new Date(record.createdAt),
     });
   }

@@ -53,6 +53,7 @@ import { buildApp } from '../src/app.js';
 import type { RepositorySet } from '../src/container.js';
 import type { OidcGateway } from '../src/oidc/gateway.js';
 import { InMemoryProblemStore } from '../src/detection/in-memory-problem-store.js';
+import { InMemoryPlanStore } from '@nexora/module-remediation';
 import {
   FakeActivityRepository,
   FakeCalendarEntryRepository,
@@ -155,6 +156,7 @@ export async function buildTestApp(
     connectors?: Parameters<typeof buildApp>[0]['connectors'];
     agentExecutionRecorder?: Parameters<typeof buildApp>[0]['agentExecutionRecorder'];
     problemStore?: Parameters<typeof buildApp>[0]['problemStore'];
+    planStore?: Parameters<typeof buildApp>[0]['planStore'];
   } = {},
 ): Promise<{ app: FastifyInstance; repos: RepositorySet; store: InMemoryConversationStore }> {
   const config = loadConfig({
@@ -209,6 +211,9 @@ export async function buildTestApp(
     // Persist detected problems in-memory so the S27 detection tests can
     // verify the problem lifecycle without a database.
     problemStore: options.problemStore ?? new InMemoryProblemStore(),
+    // Persist remediation plans in-memory so the Phase 10 tests can verify
+    // the plan lifecycle without a database.
+    planStore: options.planStore ?? new InMemoryPlanStore(),
   });
   return { app, repos: repositories, store };
 }

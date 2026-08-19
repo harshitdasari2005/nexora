@@ -682,6 +682,81 @@ export interface AgentExecutionResponse {
   outcome: AgentExecutionOutcome;
 }
 
+// --- Phase 10: governed remediation planning (problem → plan → execute) --
+
+/** The remediation plan lifecycle. */
+export type RemediationPlanStatus =
+  | 'DRAFT'
+  | 'VALIDATED'
+  | 'AWAITING_APPROVAL'
+  | 'READY'
+  | 'EXECUTING'
+  | 'PAUSED'
+  | 'REPLANNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'BLOCKED';
+
+/** The plan step lifecycle. */
+export type PlanStepStatus =
+  'PENDING' | 'AWAITING_APPROVAL' | 'RUNNING' | 'VERIFIED' | 'BLOCKED' | 'FAILED' | 'SKIPPED';
+
+/** Whether a step's capability requires a human decision before it runs. */
+export type PlanApprovalRequirement = 'NONE' | 'REQUIRED';
+
+/** The final verification of a completed plan. */
+export interface RemediationOutcomeDto {
+  status: 'resolved' | 'unresolved';
+  finalVerification: string;
+  verifiedAt: string;
+}
+
+/** One remediation plan step: what will happen, why, and how it is gated. */
+export interface PlanStepDto {
+  id: string;
+  planId: string;
+  sequence: number;
+  action: string;
+  capabilityId: string;
+  description: string;
+  rationale: string;
+  dependencies: readonly string[];
+  approvalRequirement: PlanApprovalRequirement;
+  requiredApproverRoleId?: string;
+  verificationRequirement: string;
+  status: PlanStepStatus;
+  result?: unknown;
+  evidence?: readonly string[];
+  approvalId?: string;
+  startedAt?: string;
+  completedAt?: string;
+  updatedAt: string;
+}
+
+/** A dynamic, server-validated remediation plan for a detected problem. */
+export interface RemediationPlanDto {
+  id: string;
+  problemId: string;
+  problem: BusinessProblemDto;
+  tenantId: string;
+  workspaceId?: string;
+  agentId: string;
+  roleId: string;
+  title: string;
+  objective: string;
+  status: RemediationPlanStatus;
+  version: number;
+  replanCount: number;
+  groundedSolutionId?: string;
+  reason?: string;
+  steps: readonly PlanStepDto[];
+  outcome?: RemediationOutcomeDto;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
 /** The full command-center view returned by `GET /api/command-center`. */
 export interface CommandCenterDto {
   /** The command center id. */

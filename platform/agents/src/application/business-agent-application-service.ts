@@ -149,6 +149,24 @@ export type ResolveBusinessAgentResult =
 export type ResolveAgentCapabilitiesResult =
   { ok: true; capabilityIds: readonly string[] } | { ok: false; reason: 'no-role' | 'no-agent' };
 
+/**
+ * The outcome of resolving ONLY the agent's identity + capability bound (no
+ * proposals, no problems, no journal — a pure read used by surfaces that
+ * need the agent definition without the DTO side effects, e.g. the Phase 10
+ * remediation engine deriving a plan's executing agent).
+ */
+export type ResolveBusinessAgentDefinitionResult =
+  | {
+      ok: true;
+      agent: {
+        id: BusinessAgentDefinition['id'];
+        roleId: BusinessAgentDefinition['roleId'];
+        domainId: BusinessAgentDefinition['domainId'];
+        capabilityIds: readonly string[];
+      };
+    }
+  | { ok: false; reason: 'no-role' | 'no-agent' };
+
 /** The outcome of executing a governed agent intent. */
 export type ExecuteBusinessAgentResult =
   | { ok: true; agent: BusinessAgentDto; outcome: AgentExecutionOutcome }
@@ -242,6 +260,35 @@ export class BusinessAgentApplicationService {
       return { ok: false, reason: 'no-agent' };
     }
     return { ok: true, capabilityIds: [...definition.capabilityIds] };
+  }
+
+  /**
+   * Resolves ONLY the agent definition (id/role/domain/capability set) for
+   * the trusted context — the same membership → role → agent seam, with
+   * none of the DTO side effects. Consumed by surfaces that derive plans
+   * and bound proposals without re-evaluating detection signals (Phase 10
+   * remediation).
+   */
+  async resolveDefinition(
+    context: BusinessAgentContext,
+  ): Promise<ResolveBusinessAgentDefinitionResult> {
+    const roleId = await this.#roleResolver.resolve(context);
+    if (roleId === undefined) {
+      return { ok: false, reason: 'no-role' };
+    }
+    const definition = this.#registry.resolveByRole(roleId);
+    if (definition === undefined) {
+      return { ok: false, reason: 'no-agent' };
+    }
+    return {
+      ok: true,
+      agent: {
+        id: definition.id,
+        roleId: definition.roleId,
+        domainId: definition.domainId,
+        capabilityIds: [...definition.capabilityIds],
+      },
+    };
   }
 
   /**
@@ -431,6 +478,19 @@ export class GetBusinessAgentCapabilitiesHandler {
 
   handle(context: BusinessAgentContext): Promise<ResolveAgentCapabilitiesResult> {
     return this.#service.resolveCapabilities(context);
+  }
+}
+
+/** Handles resolving ONLY the agent definition (identity + capability bound). */
+export class GetBusinessAgentDefinitionHandler {
+  readonly #service: BusinessAgentApplicationService;
+
+  constructor(service: BusinessAgentApplicationService) {
+    this.#service = service;
+  }
+
+  handle(context: BusinessAgentContext): Promise<ResolveBusinessAgentDefinitionResult> {
+    return this.#service.resolveDefinition(context);
   }
 }
 

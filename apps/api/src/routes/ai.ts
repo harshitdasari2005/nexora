@@ -276,10 +276,21 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
       // recorded above (durable state); execution is resumed by the MCP
       // client's next invocation (the approved action re-resolves the same
       // approval via its resume key, claims it atomically, and executes) —
-      // the API process never fabricates an AI plan for an MCP action. AI
+      // the API process never fabricates an AI plan for an MCP action.
+      // Phase 10 — the SAME reasoning applies to a REMEDIATION-opened
+      // approval (`remediation:` conversation id): the remediation engine
+      // owns step execution through its own capability-bound execution path
+      // (never the chat orchestrator's deterministic token match, which has
+      // no `allowedCapabilityIds` restriction and can resolve a DIFFERENT
+      // capability than the approved step). The decision is recorded above;
+      // execution is resumed by the caller's next `advance()` call, which
+      // re-checks this SAME decision and claims + executes exactly once. AI
       // chat approvals (real conversations) resume through the orchestrator
       // below, exactly as before.
-      if (approval.conversationId.startsWith('mcp:')) {
+      if (
+        approval.conversationId.startsWith('mcp:') ||
+        approval.conversationId.startsWith('remediation:')
+      ) {
         return {
           status: 'approved',
           conversationId: approval.conversationId,

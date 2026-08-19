@@ -15,6 +15,15 @@ export interface ProblemStore {
   save(problem: BusinessProblemSnapshot): Promise<void>;
   /** Resolves a problem by id within the trusted tenant scope, or `undefined`. */
   findById(tenantId: string, problemId: string): Promise<BusinessProblemSnapshot | undefined>;
+  /**
+   * Resolves MANY problems by id within the trusted tenant scope (Phase 10
+   * plan-list reads — one tenant-scoped query instead of N, S22).
+   * Non-existent or foreign ids are omitted (fail closed).
+   */
+  findByIds(
+    tenantId: string,
+    problemIds: readonly string[],
+  ): Promise<readonly BusinessProblemSnapshot[]>;
   /** Lists the scope's problems, newest detection first (bounded). */
   listByScope(scope: {
     tenantId: string;

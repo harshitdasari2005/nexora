@@ -1,0 +1,29 @@
+{
+  "name": "@nexora/module-remediation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora backend module: the governed remediation planning + execution engine (Phase 10) — turns a detected problem with a known solution into a dynamic, server-validated plan whose steps execute one at a time through the existing governed execution path (no second execution engine, no second approval system).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -69,6 +69,14 @@ function renderWidgetData(
   }
 }
 
+/** Maps a KPI tone to its display color (falls back to the default text color). */
+function kpiToneColor(tone: 'neutral' | 'success' | 'warning' | 'danger' | undefined): string {
+  if (tone === 'success') return 'var(--nexora-success)';
+  if (tone === 'warning') return 'var(--nexora-warning)';
+  if (tone === 'danger') return 'var(--nexora-danger)';
+  return 'var(--nexora-text)';
+}
+
 /** Renders a KPI metric. */
 function KpiWidget({ data }: { data: CommandCenterWidgetDataDto }): JSX.Element {
   if (data.kind !== 'kpi') {
@@ -76,7 +84,15 @@ function KpiWidget({ data }: { data: CommandCenterWidgetDataDto }): JSX.Element 
   }
   return (
     <Stack gap={0.5}>
-      <div style={{ fontSize: typography.sizes['3xl'], fontWeight: typography.weights.bold }}>
+      <div
+        style={{
+          fontSize: typography.sizes['4xl'],
+          fontWeight: typography.weights.bold,
+          lineHeight: 1,
+          color: kpiToneColor(data.tone),
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
         {data.value}
       </div>
       {data.hint !== undefined ? (
@@ -182,7 +198,13 @@ function EntryRow({
   entry: CommandCenterEntryDto;
   attention?: boolean;
 }): JSX.Element {
-  const tone = entry.priority === 'urgent' || entry.priority === 'high' ? 'warning' : undefined;
+  const successRate = parseSuccessRate(entry.status);
+  const tone =
+    successRate !== undefined
+      ? successRateTone(successRate)
+      : entry.priority === 'urgent' || entry.priority === 'high'
+        ? 'warning'
+        : undefined;
   const content = (
     <Stack
       direction="row"
@@ -229,4 +251,20 @@ function EntryRow({
   ) : (
     content
   );
+}
+
+/** Extracts a success-rate percentage from an entry status like "25% success". */
+function parseSuccessRate(status: string | undefined): number | undefined {
+  if (status === undefined) return undefined;
+  const match = /^(\d+(?:\.\d+)?)%\s*success$/i.exec(status.trim());
+  if (match?.[1] === undefined) return undefined;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+/** Colors a workflow success rate by severity — low rates read as danger, never neutral. */
+function successRateTone(rate: number): 'success' | 'warning' | 'danger' {
+  if (rate < 50) return 'danger';
+  if (rate < 90) return 'warning';
+  return 'success';
 }

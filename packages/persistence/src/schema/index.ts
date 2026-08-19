@@ -857,11 +857,20 @@ export const agentExecutions = pgTable(
     status: varchar('status', { length: 32 }).notNull(),
     runId: varchar('run_id', { length: 64 }),
     reason: text('reason'),
+    // Phase 10: the remediation linkage — which plan/step/problem this
+    // execution belongs to (one journal, fully traceable problem → plan →
+    // step → execution).
+    planId: varchar('plan_id', { length: 64 }),
+    stepId: varchar('step_id', { length: 64 }),
+    problemId: varchar('problem_id', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   },
   (table) => [
     index('agent_executions_tenant_idx').on(table.tenantId),
     index('agent_executions_tenant_user_idx').on(table.tenantId, table.userId, table.createdAt),
+    // Phase 10 traceability: plan-scoped journal reads (the remediation
+    // console's "what happened" view).
+    index('agent_executions_plan_idx').on(table.tenantId, table.planId),
   ],
 );
 
@@ -907,5 +916,94 @@ export const businessProblems = pgTable(
     // The deterministic dedupe identity — a repeated scan of the same
     // signal + scope + entity must resolve to the SAME row.
     uniqueIndex('business_problems_correlation_unique').on(table.tenantId, table.correlationId),
+  ],
+);
+
+/**
+ * remediation_plans — the durable lifecycle record of governed remediation
+ * plans (Phase 10). One row per plan aggregate; the tenant id is the
+ * isolation scope and the workspace id the workspace scope — every read is
+ * scoped by both (a forged plan id from another tenant/workspace resolves
+ * to nothing, fail closed). The plan is the dynamic, server-validated
+ * derivation of the problem's applicable known solution + the caller's
+ * agent capability set; steps live in `remediation_plan_steps` (their own
+ * table so step lifecycle transitions are cheap conditional updates — the
+ * atomic exactly-once claim that makes a duplicate advance request replay
+ * instead of re-execute).
+ *
+ * Only lifecycle facts are stored relationally: problem/agent/role
+ * references, status/version/replan count, and the grounding solution id.
+ * The full problem investigation is NOT duplicated here — it is the
+ * detection projection, recomputed deterministically at read time from the
+ * trusted snapshot (S27 §17 minimum persistence).
+ */
+export const remediationPlans = pgTable(
+  'remediation_plans',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    problemId: varchar('problem_id', { length: 64 }).notNull(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }),
+    agentId: varchar('agent_id', { length: 64 }).notNull(),
+    roleId: varchar('role_id', { length: 128 }).notNull(),
+    title: varchar('title', { length: 200 }).notNull(),
+    objective: text('objective').notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    version: integer('version').notNull().default(1),
+    replanCount: integer('replan_count').notNull().default(0),
+    groundedSolutionId: varchar('grounded_solution_id', { length: 128 }),
+    reason: text('reason'),
+    outcome: jsonb('outcome'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('remediation_plans_tenant_idx').on(table.tenantId),
+    index('remediation_plans_tenant_problem_idx').on(table.tenantId, table.problemId),
+    index('remediation_plans_tenant_workspace_idx').on(
+      table.tenantId,
+      table.workspaceId,
+      table.updatedAt,
+    ),
+  ],
+);
+
+/**
+ * remediation_plan_steps — the durable lifecycle record of one remediation
+ * plan step (Phase 10). One row per step; the tenant id is the isolation
+ * scope. Steps are the executable units of a plan: each maps to ONE
+ * capability-bound governed execution. The step lifecycle transitions are
+ * conditional updates (PENDING/AWAITING_APPROVAL → RUNNING) — the atomic
+ * exactly-once claim: a duplicate or concurrent advance of the same step
+ * can never execute the action twice.
+ */
+export const remediationPlanSteps = pgTable(
+  'remediation_plan_steps',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    planId: varchar('plan_id', { length: 64 }).notNull(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    sequence: integer('sequence').notNull(),
+    action: varchar('action', { length: 240 }).notNull(),
+    capabilityId: varchar('capability_id', { length: 128 }).notNull(),
+    description: text('description').notNull(),
+    rationale: text('rationale').notNull(),
+    dependencies: jsonb('dependencies').notNull().default([]),
+    approvalRequirement: varchar('approval_requirement', { length: 16 }).notNull(),
+    requiredApproverRoleId: varchar('required_approver_role_id', { length: 128 }),
+    verificationRequirement: text('verification_requirement').notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    result: jsonb('result'),
+    evidence: jsonb('evidence'),
+    approvalId: varchar('approval_id', { length: 64 }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('remediation_steps_plan_idx').on(table.planId),
+    index('remediation_steps_tenant_idx').on(table.tenantId),
   ],
 );

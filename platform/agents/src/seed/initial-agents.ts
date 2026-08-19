@@ -42,6 +42,7 @@ export const INITIAL_AGENTS: readonly BusinessAgentDefinition[] = [
       'knowledge.search',
       'hr.find_employee',
       'notifications.what_needs_attention',
+      'notifications.mark_all_read',
       'calendar.create_event',
       'github.repositories.list',
       'github.repositories.get',
@@ -57,7 +58,7 @@ export const INITIAL_AGENTS: readonly BusinessAgentDefinition[] = [
         name: 'Identify what needs attention',
         description:
           'Surfaces the organization-level attention items (activity, notifications) so the executive can act on real, persisted signals.',
-        capabilityIds: ['notifications.what_needs_attention'],
+        capabilityIds: ['notifications.what_needs_attention', 'notifications.mark_all_read'],
       },
       {
         id: 'executive.insights',
