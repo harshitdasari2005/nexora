@@ -47,7 +47,15 @@ export function GlobalStyles(): JSX.Element {
   return (
     <style id="nexora-global-styles">
       {`:root { ${lightThemeCss} }
-[data-theme="dark"] { ${darkThemeCss} }
+[data-theme="dark"] {
+  ${darkThemeCss}
+  /* App-shell structural tones (dark only): a visible depth ladder from
+     the deepest sidebar to the most-elevated card, distinct from the
+     generic bg/surface pair so the shell reads as layered, not flat. */
+  --nexora-shellSidebar: #05070d;
+  --nexora-shellTopbar: rgba(9, 12, 20, 0.72);
+  --nexora-shellCardElevated: #182036;
+}
 ${resetCss}`}
     </style>
   );

@@ -166,6 +166,7 @@ export function ProblemsView({
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(initialExpandedId ?? null);
+  const [filter, setFilter] = useState<'all' | 'high' | 'medium' | 'low' | 'resolved'>('all');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -205,10 +206,26 @@ export function ProblemsView({
   }, []);
 
   const highSeverity = problems.filter((problem) => problem.severity === 'high').length;
+  const visibleProblems = problems.filter((problem) => {
+    if (filter === 'all') return true;
+    if (filter === 'resolved') return problem.status === 'RESOLVED';
+    return problem.severity === filter;
+  });
 
   return (
     <Stack gap={6} style={{ maxWidth: 1080, margin: '0 auto' }}>
       <Stack gap={1}>
+        <div
+          style={{
+            fontSize: typography.sizes.xs,
+            fontWeight: typography.weights.semibold,
+            color: 'var(--nexora-textMuted)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em',
+          }}
+        >
+          Signals Nexora believes require attention
+        </div>
         <Stack
           direction="row"
           gap={3}
@@ -264,20 +281,53 @@ export function ProblemsView({
         </Card>
       ) : (
         <Stack gap={3}>
-          {problems.map((problem) => (
-            <ProblemCard
-              key={problem.id}
-              problem={problem}
-              expanded={expandedId === problem.id}
-              onToggle={() =>
-                setExpandedId((current) => (current === problem.id ? null : problem.id))
-              }
-              scope={scope}
-              organizationName={organizationName}
-              userDisplayName={userDisplayName}
-              onProblemUpdated={patchProblem}
-            />
-          ))}
+          <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
+            {(['all', 'high', 'medium', 'low', 'resolved'] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setFilter(option)}
+                style={{
+                  border: '1px solid var(--nexora-border)',
+                  borderRadius: 999,
+                  padding: '5px 12px',
+                  fontSize: typography.sizes.xs,
+                  fontWeight: typography.weights.medium,
+                  textTransform: 'capitalize',
+                  cursor: 'pointer',
+                  background: filter === option ? 'var(--nexora-primarySoft)' : 'transparent',
+                  color: filter === option ? 'var(--nexora-text)' : 'var(--nexora-textSecondary)',
+                  borderColor: filter === option ? 'var(--nexora-primary)' : 'var(--nexora-border)',
+                }}
+              >
+                {option}
+              </button>
+            ))}
+          </Stack>
+          {visibleProblems.length === 0 ? (
+            <Card>
+              <EmptyState
+                icon="⚬"
+                title="No matching problems"
+                description="Nothing matches this filter right now."
+              />
+            </Card>
+          ) : (
+            visibleProblems.map((problem) => (
+              <ProblemCard
+                key={problem.id}
+                problem={problem}
+                expanded={expandedId === problem.id}
+                onToggle={() =>
+                  setExpandedId((current) => (current === problem.id ? null : problem.id))
+                }
+                scope={scope}
+                organizationName={organizationName}
+                userDisplayName={userDisplayName}
+                onProblemUpdated={patchProblem}
+              />
+            ))
+          )}
         </Stack>
       )}
     </Stack>

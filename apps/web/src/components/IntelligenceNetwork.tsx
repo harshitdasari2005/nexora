@@ -16,15 +16,36 @@
 
 import { useEffect, useRef } from 'react';
 
+/** A subtle per-page hue for the core/connections (S32 authenticated shell). */
+export type IntelligenceNetworkTint = 'indigo' | 'amber' | 'violet' | 'teal' | 'slate';
+
 /** Props of {@link IntelligenceNetwork}. */
 export interface IntelligenceNetworkProps {
   /** Quieter, sparser composition for the Login page (default `false`). */
   quiet?: boolean;
+  /**
+   * Even quieter still — the persistent authenticated app-shell background:
+   * lower density and opacity than `quiet`, meant to sit behind productivity
+   * content for hours, not seconds (default `false`).
+   */
+  ambient?: boolean;
   /** Forces the low-density composition regardless of viewport (mobile). */
   simplified?: boolean;
   /** When true, plays the "signals converge into the core" transition. */
   converging?: boolean;
+  /** A subtle contextual hue for the core/connections (default `indigo`). */
+  tint?: IntelligenceNetworkTint;
 }
+
+/** Core/connection hue per tint — intentionally close to the base indigo,
+ * never a different theme, just a whisper of context. */
+const TINT_RGB: Record<IntelligenceNetworkTint, { core: string; core2: string; line: string }> = {
+  indigo: { core: '167, 139, 250', core2: '99, 102, 241', line: '129, 140, 248' },
+  amber: { core: '252, 211, 77', core2: '245, 158, 11', line: '217, 160, 90' },
+  violet: { core: '196, 165, 250', core2: '139, 92, 246', line: '167, 139, 250' },
+  teal: { core: '94, 234, 212', core2: '20, 184, 166', line: '94, 214, 200' },
+  slate: { core: '186, 196, 216', core2: '148, 163, 184', line: '160, 172, 196' },
+};
 
 type Phase = 'idle' | 'signal' | 'intelligence' | 'planning' | 'action' | 'verification';
 
@@ -62,8 +83,8 @@ function reducedMotion(): boolean {
   );
 }
 
-function buildNodes(density: 'full' | 'simplified', quiet: boolean): Node[] {
-  const scale = quiet ? 0.65 : 1;
+function buildNodes(density: 'full' | 'simplified', quiet: boolean, ambient: boolean): Node[] {
+  const scale = ambient ? 0.4 : quiet ? 0.65 : 1;
   const counts = density === 'full' ? { bg: 4, mid: 14, fg: 6 } : { bg: 2, mid: 6, fg: 3 };
   const midCount = Math.max(3, Math.round(counts.mid * scale));
   const fgCount = Math.max(2, Math.round(counts.fg * scale));
@@ -124,12 +145,16 @@ const HUE_RGB: Record<Node['hue'], string> = {
 /** The decorative intelligence-network scene. */
 export function IntelligenceNetwork({
   quiet = false,
+  ambient = false,
   simplified = false,
   converging = false,
+  tint = 'indigo',
 }: IntelligenceNetworkProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const convergingRef = useRef(converging);
   convergingRef.current = converging;
+  const tintRef = useRef(TINT_RGB[tint]);
+  tintRef.current = TINT_RGB[tint];
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -155,7 +180,7 @@ export function IntelligenceNetwork({
       canvas.height = Math.round(height * dpr);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
-      nodes = buildNodes(isNarrow() ? 'simplified' : 'full', quiet);
+      nodes = buildNodes(isNarrow() ? 'simplified' : 'full', quiet, ambient);
       // Recomputed on every resize — otherwise this would keep pointing at
       // nodes from the PREVIOUS layout, which are no longer drawn.
       connectedNodes = nodes.filter((n) => n.connected);
@@ -225,12 +250,14 @@ export function IntelligenceNetwork({
       const coreX = width * 0.5;
       const coreY = height * (quiet ? 0.4 : 0.46);
       const t = now / 1000;
+      const rgb = tintRef.current;
+      const alphaScale = ambient ? 0.45 : 1;
 
       const phaseElapsed = staticFrame ? 0 : now - phaseStart;
       const breathe = 0.5 + 0.5 * Math.sin(t * 0.6);
       const pulse = phase === 'intelligence' ? Math.min(1, phaseElapsed / 350) : 0;
       const corePulseScale = 1 + pulse * 0.22 * (1 - pulse) * 4;
-      const coreOpacityBase = quiet ? 0.5 : 0.62;
+      const coreOpacityBase = (quiet ? 0.5 : 0.62) * alphaScale;
       const coreOpacity = coreOpacityBase + breathe * 0.12 + pulse * 0.25 + convergeProgress * 0.3;
       const coreRadius =
         (quiet ? 90 : 130) * (1 + breathe * 0.06) * corePulseScale * (1 + convergeProgress * 0.5);
@@ -242,9 +269,9 @@ export function IntelligenceNetwork({
         const px = node.nx * width + camera.x * 8 + drift;
         const py = node.ny * height + camera.y * 8 + drift * 0.6;
         const grad = ctx.createRadialGradient(px, py, 0, px, py, node.radius);
-        const rgb = HUE_RGB[node.hue];
-        grad.addColorStop(0, `rgba(${rgb}, ${quiet ? 0.05 : 0.07})`);
-        grad.addColorStop(1, `rgba(${rgb}, 0)`);
+        const nodeRgb = HUE_RGB[node.hue];
+        grad.addColorStop(0, `rgba(${nodeRgb}, ${(quiet ? 0.05 : 0.07) * alphaScale})`);
+        grad.addColorStop(1, `rgba(${nodeRgb}, 0)`);
         ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(px, py, node.radius, 0, Math.PI * 2);
@@ -272,8 +299,8 @@ export function IntelligenceNetwork({
           reorganize > 0
             ? Math.sin(reorganize * Math.PI * 3 + node.phase) * 6 * (1 - reorganize)
             : 0;
-        const baseAlpha = quiet ? 0.05 : 0.09;
-        ctx.strokeStyle = `rgba(129, 140, 248, ${baseAlpha + convergeProgress * 0.12})`;
+        const baseAlpha = (quiet ? 0.05 : 0.09) * alphaScale;
+        ctx.strokeStyle = `rgba(${rgb.line}, ${baseAlpha + convergeProgress * 0.12})`;
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(px, py);
@@ -332,9 +359,9 @@ export function IntelligenceNetwork({
 
       // --- Core (intelligence) ---
       const coreGrad = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, coreRadius);
-      coreGrad.addColorStop(0, `rgba(167, 139, 250, ${coreOpacity})`);
-      coreGrad.addColorStop(0.4, `rgba(99, 102, 241, ${coreOpacity * 0.55})`);
-      coreGrad.addColorStop(1, 'rgba(99, 102, 241, 0)');
+      coreGrad.addColorStop(0, `rgba(${rgb.core}, ${coreOpacity})`);
+      coreGrad.addColorStop(0.4, `rgba(${rgb.core2}, ${coreOpacity * 0.55})`);
+      coreGrad.addColorStop(1, `rgba(${rgb.core2}, 0)`);
       ctx.fillStyle = coreGrad;
       ctx.beginPath();
       ctx.arc(coreX, coreY, coreRadius, 0, Math.PI * 2);
@@ -355,9 +382,9 @@ export function IntelligenceNetwork({
           camera.y * parallax +
           drift * 0.6 +
           (node.ny * height - coreY) * -convergeProgress * 0.7;
-        const rgb = HUE_RGB[node.hue];
-        const alpha = (quiet ? 0.35 : 0.5) * (1 - convergeProgress * 0.6);
-        ctx.fillStyle = `rgba(${rgb}, ${alpha})`;
+        const nodeRgb = HUE_RGB[node.hue];
+        const alpha = (quiet ? 0.35 : 0.5) * alphaScale * (1 - convergeProgress * 0.6);
+        ctx.fillStyle = `rgba(${nodeRgb}, ${alpha})`;
         ctx.beginPath();
         ctx.arc(px, py, node.radius, 0, Math.PI * 2);
         ctx.fill();
@@ -371,7 +398,7 @@ export function IntelligenceNetwork({
         const px = node.nx * width + camera.x * parallax + drift;
         const py = node.ny * height + camera.y * parallax + drift * 0.7;
         const twinkle = staticFrame ? 0.8 : 0.6 + 0.4 * Math.sin(t * 0.9 + node.phase);
-        ctx.fillStyle = `rgba(245, 245, 255, ${(quiet ? 0.3 : 0.42) * twinkle})`;
+        ctx.fillStyle = `rgba(245, 245, 255, ${(quiet ? 0.3 : 0.42) * alphaScale * twinkle})`;
         ctx.beginPath();
         ctx.arc(px, py, node.radius, 0, Math.PI * 2);
         ctx.fill();
@@ -410,8 +437,8 @@ export function IntelligenceNetwork({
       window.removeEventListener('pointermove', onPointerMove);
     };
     // Re-initializes the whole imperative scene only when density/tone
-    // props change; `converging` is read live via `convergingRef` instead.
-  }, [quiet, simplified]);
+    // props change; `converging` and `tint` are read live via refs instead.
+  }, [quiet, ambient, simplified]);
 
   return (
     <canvas

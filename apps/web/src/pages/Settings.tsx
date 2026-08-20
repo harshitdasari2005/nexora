@@ -239,7 +239,13 @@ export function Settings(): JSX.Element {
               Preferences are unavailable right now.
             </p>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                gap: 8,
+              }}
+            >
               {/* A category with no explicit preference stored is enabled by
                   default (the server's opt-out model) — shown as checked. */}
               {Object.keys(CATEGORY_LABELS)

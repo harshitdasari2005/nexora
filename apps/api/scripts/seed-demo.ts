@@ -85,6 +85,8 @@ const ADDITIONAL_PROJECT_NAMES = [
   'GST Compliance Automation',
   'Customer 360 Platform',
   'Digital Lending Transformation',
+  'Enterprise Payments Modernization',
+  'AI Operations Platform',
 ];
 /**
  * A small, consistent set of Indian employee names for the demo directory

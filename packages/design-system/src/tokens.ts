@@ -78,29 +78,34 @@ export const lightColors: ThemeColors = {
   overlay: 'rgba(28, 25, 23, 0.45)',
 };
 
-/** The dark theme. */
+/**
+ * The dark theme — a deep navy/slate palette (not warm black), the same
+ * intelligence environment as the landing/login experience, quieted down
+ * for sustained work. Every authenticated surface (AppShell, Command
+ * Center, Problems, Agent, ...) runs on this theme.
+ */
 export const darkColors: ThemeColors = {
-  bg: '#0c0a09',
-  surface: '#1c1917',
-  surfaceMuted: '#292524',
-  border: '#3f3b38',
-  borderStrong: '#57534e',
-  text: '#fafaf9',
-  textSecondary: '#d6d3d1',
-  textMuted: '#78716c',
+  bg: '#090c14',
+  surface: '#131829',
+  surfaceMuted: '#1a2036',
+  border: '#232a44',
+  borderStrong: '#333e60',
+  text: '#f1f5f9',
+  textSecondary: '#c7d0e0',
+  textMuted: '#7c88a6',
   primary: '#6366f1',
   primaryHover: '#818cf8',
   primaryForeground: '#ffffff',
-  primarySoft: 'rgba(99, 102, 241, 0.16)',
+  primarySoft: 'rgba(99, 102, 241, 0.18)',
   ai: '#a78bfa',
-  aiSoft: 'rgba(167, 139, 250, 0.14)',
+  aiSoft: 'rgba(167, 139, 250, 0.16)',
   success: '#34d399',
   successSoft: 'rgba(52, 211, 153, 0.14)',
   warning: '#fbbf24',
   warningSoft: 'rgba(251, 191, 36, 0.14)',
   danger: '#f87171',
-  dangerSoft: 'rgba(248, 113, 113, 0.14)',
-  overlay: 'rgba(0, 0, 0, 0.6)',
+  dangerSoft: 'rgba(248, 113, 113, 0.16)',
+  overlay: 'rgba(4, 6, 14, 0.65)',
 };
 
 /** The 4px-based spacing scale (rem). */

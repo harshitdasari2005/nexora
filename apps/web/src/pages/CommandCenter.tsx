@@ -29,14 +29,14 @@ import { Badge, Button, Card, EmptyState, Stack, typography } from '@nexora/desi
 import { AppShell } from '../components/AppShell.js';
 import { CommandCenterWidget } from '../components/CommandCenterWidgets.js';
 import { ErrorState } from '../components/ErrorState.js';
-import { IntelligenceNetwork } from '../components/IntelligenceNetwork.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
-import { severityAccent, severityTone } from '../components/ProblemInvestigation.js';
+import { SectionLabel, severityAccent, severityTone } from '../components/ProblemInvestigation.js';
 import { api, ApiError } from '../lib/api.js';
 import { fetchProblems } from '../lib/problems.js';
 import type {
   BusinessProblemDto,
   CommandCenterDto,
+  CommandCenterWidgetDto,
   DashboardResponse,
   RoleContextResponse,
 } from '../lib/types.js';
@@ -279,21 +279,10 @@ export function CommandCenterView({
 
   return (
     <div style={{ position: 'relative' }}>
-      {/* Premium ambient background — much quieter than the landing page,
-          purely atmospheric, never competing with the workspace content. */}
-      <div
-        aria-hidden
-        style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 0,
-          opacity: 0.4,
-          pointerEvents: 'none',
-        }}
-      >
-        <IntelligenceNetwork quiet simplified />
-      </div>
-
+      {/* The ambient intelligence-network background is now owned by AppShell
+          (one shared canvas for the whole authenticated app, tinted per
+          page) — rendering a second one here would double the animation
+          cost and the visual density for no benefit. */}
       <Stack gap={6} style={{ maxWidth: 1080, margin: '0 auto', position: 'relative', zIndex: 1 }}>
         {/* Greeting header */}
         <Stack gap={2}>
@@ -358,9 +347,10 @@ export function CommandCenterView({
           <div
             style={{
               opacity: morphing ? 0 : 1,
-              transform: morphing ? 'translateY(6px)' : 'translateY(0)',
+              transform: morphing ? 'scale(0.985) translateY(10px)' : 'scale(1) translateY(0)',
+              filter: morphing ? 'blur(3px)' : 'blur(0px)',
               transition:
-                'opacity 260ms cubic-bezier(0.2,0,0,1), transform 260ms cubic-bezier(0.2,0,0,1)',
+                'opacity 700ms cubic-bezier(0.16,1,0.3,1), transform 700ms cubic-bezier(0.16,1,0.3,1), filter 700ms cubic-bezier(0.16,1,0.3,1)',
             }}
           >
             <Stack gap={6}>
@@ -611,18 +601,22 @@ function ProblemAttentionCard({ problem }: { problem: BusinessProblemDto }): JSX
   );
 }
 
-/** The widget grid — the first KPI widget renders with hero visual weight. */
+/**
+ * The widget grid — grouped into labeled sections (BUSINESS HEALTH / BUSINESS
+ * SIGNALS / RECENT ACTIVITY) instead of one undifferentiated wall of
+ * identical cards. The grouping is purely presentational: it sorts the SAME
+ * role-composed widgets by their existing `type`, fabricating nothing. The
+ * first KPI widget keeps hero visual weight.
+ */
 function WidgetGrid({ center }: { center: CommandCenterDto }): JSX.Element {
   const heroId = center.widgets.find((w) => w.type === 'kpi')?.id;
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-        gap: 16,
-      }}
-    >
-      {center.widgets.map((widget) => (
+  const health = center.widgets.filter((w) => w.type === 'kpi');
+  const signals = center.widgets.filter((w) => w.type === 'list' || w.type === 'attention');
+  const activity = center.widgets.filter((w) => w.type === 'activity');
+
+  const renderGroup = (widgets: readonly CommandCenterWidgetDto[]): JSX.Element => (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>
+      {widgets.map((widget) => (
         <CommandCenterWidget
           key={widget.id}
           widget={widget}
@@ -631,5 +625,28 @@ function WidgetGrid({ center }: { center: CommandCenterDto }): JSX.Element {
         />
       ))}
     </div>
+  );
+
+  return (
+    <Stack gap={6}>
+      {health.length > 0 ? (
+        <Stack gap={3}>
+          <SectionLabel>Business health</SectionLabel>
+          {renderGroup(health)}
+        </Stack>
+      ) : null}
+      {signals.length > 0 ? (
+        <Stack gap={3}>
+          <SectionLabel>Business signals</SectionLabel>
+          {renderGroup(signals)}
+        </Stack>
+      ) : null}
+      {activity.length > 0 ? (
+        <Stack gap={3}>
+          <SectionLabel>Recent activity</SectionLabel>
+          {renderGroup(activity)}
+        </Stack>
+      ) : null}
+    </Stack>
   );
 }

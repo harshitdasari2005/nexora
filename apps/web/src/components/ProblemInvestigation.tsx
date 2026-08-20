@@ -285,16 +285,21 @@ export function KnownSolutionsList({
   );
 }
 
-/** The full investigation body: recommendation → evidence → root causes → solutions. */
+/**
+ * The full investigation body — a story, not a database dump: what happened
+ * → why it matters → known solutions → what Nexora recommends. The
+ * recommendation reads as a conclusion the evidence leads to, not a banner
+ * announced before any of that evidence is shown.
+ */
 export function ProblemInvestigation({ problem }: { problem: BusinessProblemDto }): JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {problem.recommendation !== undefined ? (
-        <RecommendationBanner recommendation={problem.recommendation} />
-      ) : null}
       <EvidenceList evidence={problem.evidence} />
       <RootCauseList rootCauses={problem.rootCauses} />
       <KnownSolutionsList solutions={problem.solutions} />
+      {problem.recommendation !== undefined ? (
+        <RecommendationBanner recommendation={problem.recommendation} />
+      ) : null}
     </div>
   );
 }

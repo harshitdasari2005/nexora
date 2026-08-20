@@ -298,8 +298,14 @@ export function ProjectsView({
 export function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
   return (
     <Card style={{ padding: '14px 16px' }}>
-      <Stack direction="row" gap={4} align="center" justify="space-between">
-        <Stack gap={0.5} style={{ minWidth: 0 }}>
+      <Stack
+        direction="row"
+        gap={3}
+        align="center"
+        justify="space-between"
+        style={{ flexWrap: 'wrap' }}
+      >
+        <Stack gap={0.5} style={{ minWidth: 0, flex: '1 1 200px' }}>
           <div style={{ fontWeight: typography.weights.semibold }}>{project.name}</div>
           {project.description !== undefined && project.description.length > 0 ? (
             <div
@@ -320,7 +326,7 @@ export function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
             </div>
           )}
         </Stack>
-        <Stack direction="row" gap={3} align="center">
+        <Stack direction="row" gap={3} align="center" style={{ flexShrink: 0 }}>
           <ProjectStatusBadge status={project.status} />
           <span
             style={{
