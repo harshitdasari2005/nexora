@@ -39,6 +39,15 @@ export interface RoleContextOption {
   domainName: string;
   roleId: string;
   roleName: string;
+  /**
+   * The role's RBAC permission set (S34) — the SAME `capabilityIds` the
+   * Phase 1 catalog carries, read here as the authoritative answer to "what
+   * can this role do." Drives frontend module/nav visibility and
+   * action-button gating; the backend remains authoritative regardless —
+   * every route re-checks this SAME set via `authorizePermission`, never
+   * trusting what the frontend renders.
+   */
+  permissions: readonly string[];
 }
 
 /** Dependencies of the role-context route. */
@@ -102,6 +111,7 @@ export function registerRoleContextRoutes(
           domainName: domain?.name ?? '',
           roleId,
           roleName: role?.name ?? roleId,
+          permissions: role?.capabilityIds ?? [],
         });
       }
     }

@@ -31,6 +31,10 @@ import {
   type ChatApprovalPayload,
   type ChatDonePayload,
 } from '../ai/chat-stream.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
 
 /** Request body of POST /api/ai/chat. */
 export interface ChatRequestBody {
@@ -87,6 +91,7 @@ export interface AiRoutesDependencies {
       conversationId?: string;
       approvalId?: string;
       businessContext?: AIBusinessContext;
+      allowedCapabilityIds?: readonly string[];
     }): Promise<OrchestratorResponse>;
   };
   /** Organization listing (resolves the caller's current tenant). */
@@ -110,6 +115,8 @@ export interface AiRoutesDependencies {
   approvals: ApprovalEngine;
   /** The conversation manager (records approval decisions as turns). */
   conversations: ConversationManager;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
 }
 
 /** Registers the AI routes. */
@@ -180,6 +187,15 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
         workspaceId: body.workspaceId as WorkspaceId | undefined,
         conversationId: body.conversationId,
         businessContext,
+        // S34: the RBAC ceiling for this run — the SAME executable
+        // capability ids the business context derives from the caller's
+        // trusted role. An AI action can never reach beyond what the
+        // caller's own role permits, chat included (previously only
+        // agent-triggered runs carried this ceiling; a plain chat message
+        // ran with no ceiling at all). Empty/absent keeps today's
+        // unrestricted-discovery default for any role not yet RBAC-
+        // configured — see permissions.ts's fail-open/fail-closed note.
+        allowedCapabilityIds: businessContext?.capabilityIds,
       });
     } catch (error) {
       request.log.error({ err: error, requestId: request.id }, 'ai chat failed');
@@ -234,6 +250,60 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
           error: {
             code: 'AUTHORIZATION_ERROR',
             message: 'You are not a member of this organization',
+            requestId: request.id,
+          },
+        });
+      }
+      // S34 RBAC: deciding an approval (approve OR reject) is itself a
+      // permission (`approvals.decide`), distinct from having originally
+      // been ALLOWED to open one. Approval is a governance STEP, never a
+      // substitute for the underlying permission — a role without
+      // `approvals.decide` cannot self-approve its own gated action, no
+      // matter how the approval was opened (chat, agent, or remediation).
+      const decideAuthz = await authorizePermission(
+        dependencies.permissions,
+        {
+          userId: auth.userId,
+          tenantId: approval.tenantId,
+          workspaceId: approval.workspaceId,
+        },
+        'approvals.decide',
+      );
+      if (!decideAuthz.ok) {
+        return reply.code(403).send({
+          error: {
+            code: 'AUTHORIZATION_ERROR',
+            message: 'Your current role does not have permission to decide this approval',
+            requestId: request.id,
+          },
+        });
+      }
+      // S34 RBAC: the specific EXECUTABLE capability this approval gates
+      // (e.g. `calendar.create_event`) must ALSO still be within the
+      // requester's effective EXECUTABLE capability set (the same
+      // business→executable bridge every AI surface uses — NOT the
+      // business-permission list above, a different vocabulary). Approval
+      // can never grant a capability the role doesn't otherwise have: a
+      // role change since the approval opened, or a capability outside the
+      // role's set from the start, both fail closed here rather than
+      // executing. Rebuilt from the approval's OWN recorded trusted context
+      // (never from client input) and reused below for the resumed run — one
+      // resolution, not two.
+      const businessContext = await dependencies.buildBusinessContext({
+        userId: approval.userId,
+        tenantId: approval.tenantId,
+        workspaceId: approval.workspaceId as WorkspaceId | undefined,
+      });
+      const executableCapabilityIds = businessContext?.capabilityIds ?? [];
+      if (
+        approval.capabilityId.length > 0 &&
+        executableCapabilityIds.length > 0 &&
+        !executableCapabilityIds.includes(approval.capabilityId)
+      ) {
+        return reply.code(403).send({
+          error: {
+            code: 'AUTHORIZATION_ERROR',
+            message: 'Your current role does not have permission to execute this action',
             requestId: request.id,
           },
         });
@@ -301,13 +371,9 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
       // Approve: resume the gated run through the orchestrator with the
       // server-resolved approval id — the run uses the recorded trusted
       // context, never client-supplied identity. Stream the execution.
-      // Rebuild the trusted business context for the SAME trusted context
-      // recorded on the approval — never from client input.
-      const businessContext = await dependencies.buildBusinessContext({
-        userId: approval.userId,
-        tenantId: approval.tenantId,
-        workspaceId: approval.workspaceId as WorkspaceId | undefined,
-      });
+      // `businessContext` was already rebuilt above (for the capability
+      // pre-check) from this SAME trusted context — reused here, not
+      // refetched.
       let response: OrchestratorResponse;
       try {
         response = await dependencies.orchestrator.run({
@@ -318,6 +384,7 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
           conversationId: approval.conversationId,
           approvalId: approval.id,
           businessContext,
+          allowedCapabilityIds: executableCapabilityIds,
         });
       } catch (error) {
         request.log.error({ err: error, requestId: request.id }, 'ai approval resume failed');

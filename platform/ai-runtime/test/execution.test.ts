@@ -80,6 +80,77 @@ describe('ToolExecutor', () => {
     expect(result.error?.code).toBe('NOT_FOUND');
   });
 
+  it('S34 RBAC: rejects a tool outside the caller effective capability ceiling', async () => {
+    const executor = new ToolExecutor({
+      tools: registryWith(makeTool({ id: 'calendar.create_event' })),
+    });
+    const result = await executor.execute({
+      toolId: 'calendar.create_event',
+      input: {},
+      userId: 'usr_1',
+      tenantId: 't',
+      runId: 'r',
+      // The caller's RBAC set has NOTHING to do with calendars (e.g. a
+      // Developer role) — the tool is rejected before it ever runs.
+      allowedCapabilityIds: ['problems.investigate', 'knowledge.search'],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.blocked).toBe(false);
+    expect(result.error?.code).toBe('FORBIDDEN');
+  });
+
+  it('S34 RBAC: allows a tool inside the caller effective capability ceiling', async () => {
+    const executor = new ToolExecutor({
+      tools: registryWith(makeTool({ id: 'calendar.create_event' })),
+    });
+    const result = await executor.execute({
+      toolId: 'calendar.create_event',
+      input: {},
+      userId: 'usr_1',
+      tenantId: 't',
+      runId: 'r',
+      allowedCapabilityIds: ['calendar.create_event'],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('S34 RBAC: checks the bound capabilityId, not the raw toolId, when they differ', async () => {
+    const executor = new ToolExecutor({
+      tools: registryWith(makeTool({ id: 'tool_close_sprint' })),
+    });
+    const result = await executor.execute({
+      toolId: 'tool_close_sprint',
+      capabilityId: 'projects.close_sprint',
+      input: {},
+      userId: 'usr_1',
+      tenantId: 't',
+      runId: 'r',
+      allowedCapabilityIds: ['projects.close_sprint'],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('S34 RBAC: an absent or empty ceiling applies no restriction (matches the discovery-layer default)', async () => {
+    const executor = new ToolExecutor({ tools: registryWith(makeTool({ id: 't1' })) });
+    const withoutCeiling = await executor.execute({
+      toolId: 't1',
+      input: {},
+      userId: 'usr_1',
+      tenantId: 't',
+      runId: 'r',
+    });
+    expect(withoutCeiling.ok).toBe(true);
+    const withEmptyCeiling = await executor.execute({
+      toolId: 't1',
+      input: {},
+      userId: 'usr_1',
+      tenantId: 't',
+      runId: 'r',
+      allowedCapabilityIds: [],
+    });
+    expect(withEmptyCeiling.ok).toBe(true);
+  });
+
   it('blocks consequential tools without approval', async () => {
     const executor = new ToolExecutor({
       tools: registryWith(makeTool({ id: 't1', sideEffectClass: 'consequential' })),

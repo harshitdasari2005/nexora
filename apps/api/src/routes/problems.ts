@@ -39,6 +39,11 @@ import type {
 } from '@nexora/module-detection';
 
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
+import { sendForbidden } from './permission-response.js';
 
 /** Dependencies of the problems console routes. */
 export interface ProblemsRoutesDependencies {
@@ -59,6 +64,8 @@ export interface ProblemsRoutesDependencies {
   listOrganizations: ListOrganizationsHandler;
   /** Verifies workspace membership (workspace scope). */
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
 }
 
 /** The get-one-problem params schema. */
@@ -89,6 +96,14 @@ export function registerProblemsRoutes(
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
     }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+      'problems.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view detected problems');
+    }
 
     const problems = await dependencies.list.handle({
       userId: auth.userId,
@@ -111,6 +126,14 @@ export function registerProblemsRoutes(
     );
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+      'problems.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'scan for problems');
     }
 
     const result = await dependencies.scan.handle({
@@ -144,6 +167,14 @@ export function registerProblemsRoutes(
     );
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+      'problems.investigate',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'investigate this problem');
     }
 
     const problem = await dependencies.getById.handle(

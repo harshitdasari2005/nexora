@@ -36,6 +36,11 @@ import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 import type { ExecuteBusinessAgentHandler, GetBusinessAgentHandler } from '@nexora/module-agents';
 
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
+import { sendForbidden } from './permission-response.js';
 
 /** Dependencies of the business-agent routes. */
 export interface AgentRoutesDependencies {
@@ -47,6 +52,8 @@ export interface AgentRoutesDependencies {
   listOrganizations: ListOrganizationsHandler;
   /** Verifies workspace membership (workspace scope). */
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
 }
 
 /** The proposal-execution params schema. */
@@ -87,6 +94,14 @@ export function registerAgentRoutes(
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
     }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+      'agent.use',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view the business agent');
+    }
 
     const result = await dependencies.getAgent.handle({
       userId: auth.userId,
@@ -124,6 +139,14 @@ export function registerAgentRoutes(
       if (scope.error !== undefined) {
         return reply.code(scope.error.status).send(scope.error.body);
       }
+      const authz = await authorizePermission(
+        dependencies.permissions,
+        { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+        'agent.execute',
+      );
+      if (!authz.ok) {
+        return sendForbidden(reply, request.id, 'execute the business agent');
+      }
 
       const result = await dependencies.executeAgent.handle(
         {
@@ -150,6 +173,14 @@ export function registerAgentRoutes(
     );
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+      'agent.execute',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'execute the business agent');
     }
 
     const result = await dependencies.executeAgent.handle(

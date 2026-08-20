@@ -380,6 +380,13 @@ export class EnterpriseAIOrchestrator {
           workspaceId: context.execution.workspaceId,
           runId,
           autonomyTier: context.permissions.autonomyTier,
+          // S34: the SAME capability id + RBAC ceiling discovery already
+          // honored — the executor is the final, authoritative enforcement
+          // point (a direct MCP tool invocation bypasses discovery
+          // entirely, so the ceiling must be re-checked here, not only at
+          // discovery time).
+          capabilityId: step.capabilityId,
+          allowedCapabilityIds: context.permissions.allowedActions,
         },
         approvalGranted,
       );

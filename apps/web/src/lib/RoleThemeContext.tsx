@@ -24,7 +24,13 @@ export interface RoleThemeValue {
   loading: boolean;
 }
 
-const RoleThemeContext = createContext<RoleThemeValue>({
+/**
+ * The raw context object — exported (in addition to the {@link useRoleTheme}
+ * hook) so tests can render a component that reads role-theme context
+ * (e.g. `ApprovalCard`'s permission gate) without a real `/api/role-context`
+ * fetch: wrap it in `<RoleThemeContext.Provider value={...}>` directly.
+ */
+export const RoleThemeContext = createContext<RoleThemeValue>({
   theme: DEFAULT_THEME,
   current: null,
   loading: true,

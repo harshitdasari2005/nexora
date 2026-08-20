@@ -22,6 +22,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Avatar, Badge, spacing, typography } from '@nexora/design-system';
 
+import { isModuleVisible } from '../lib/modules.js';
 import { RoleThemeProvider, useRoleTheme } from '../lib/RoleThemeContext.js';
 import type { RoleTheme } from '../lib/roleThemes.js';
 import type { UserDto } from '../lib/types.js';
@@ -78,11 +79,14 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
 ];
 
 /**
- * Reorders the fixed nav catalog so the active role's priorities lead —
- * still every existing route, in a role-appropriate order, never a
- * fabricated one.
+ * Reorders the fixed nav catalog so the active role's priorities lead, THEN
+ * filters to the modules the caller's RBAC permission set actually unlocks
+ * (S34) — real filtering, not CSS: a role without `problems.read` never
+ * sees "Problems" rendered at all, matching what the backend would actually
+ * allow (`authorizePermission` fails closed the same way). Presentation
+ * only — the backend remains authoritative regardless of what renders here.
  */
-function orderNavItems(theme: RoleTheme): readonly NavItem[] {
+function orderNavItems(theme: RoleTheme, permissions: readonly string[]): readonly NavItem[] {
   const byLabel = new Map(BASE_NAV_ITEMS.map((item) => [item.label, item] as const));
   const ordered: NavItem[] = [];
   for (const label of theme.navPriority) {
@@ -97,7 +101,7 @@ function orderNavItems(theme: RoleTheme): readonly NavItem[] {
   for (const item of BASE_NAV_ITEMS) {
     if (byLabel.has(item.label)) ordered.push(item);
   }
-  return ordered;
+  return ordered.filter((item) => isModuleVisible(item.label, permissions));
 }
 
 /** Renders the persistent application shell. */
@@ -173,7 +177,7 @@ function AppShellChrome({
     return suffix.length > 0 ? `?${suffix}` : '';
   })();
 
-  const navItems = orderNavItems(theme);
+  const navItems = orderNavItems(theme, current?.permissions ?? []);
   const roleLabel =
     current !== null ? `${current.domainName} · ${current.roleName}` : theme.identity;
 

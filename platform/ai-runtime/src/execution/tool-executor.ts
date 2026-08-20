@@ -6,6 +6,19 @@
  * tool calls. No tool executes outside this executor (ADR-001). The
  * orchestrator dispatches only through here — the runtime never calls
  * business services directly.
+ *
+ * S34 RBAC: this is also the ONE enforcement point for the caller's
+ * effective capability ceiling. When an invocation carries
+ * `allowedCapabilityIds` (the API layer populates it from the caller's
+ * TRUSTED RBAC permission set — never a client claim), a tool whose id
+ * falls outside that set is rejected with `FORBIDDEN` before the side-effect
+ * guard even runs — the AI can never execute an action the caller's own role
+ * could not perform, whether the call arrived through chat discovery, an
+ * agent proposal, or a direct MCP tool invocation (which bypasses discovery
+ * entirely and previously had no capability check at all). An
+ * absent/empty ceiling means "not yet RBAC-restricted" and applies no
+ * filter — the same fail-open default the discovery-layer affinity filter
+ * already uses for any role not yet given a real permission set.
  */
 
 import { toNexoraError } from '@nexora/shared/errors';
@@ -34,6 +47,24 @@ export interface ToolInvocation {
   runId: string;
   /** Autonomy tier of the invoking run (approval gating). */
   autonomyTier?: AutonomyTier;
+  /**
+   * The CAPABILITY id this invocation is bound to, when the caller knows it
+   * (the orchestrator always does — it comes from the planned step). Checked
+   * against `allowedCapabilityIds` — the SAME vocabulary the discovery-layer
+   * affinity/allow-list filter already checks (capability ids, which are
+   * NOT always identical to the tool id: the two coincide in this codebase's
+   * own first-party registrations, by convention, but a generic caller may
+   * register them distinctly). Falls back to `toolId` when absent, which is
+   * correct for any caller (like the direct MCP tool surface) that only
+   * knows tool ids under a convention where the two are the same string.
+   */
+  capabilityId?: string;
+  /**
+   * The caller's effective RBAC capability ceiling (S34), when the caller
+   * resolves to a trusted business role — never a client-supplied value.
+   * Absent/empty applies no restriction (see class-level doc).
+   */
+  allowedCapabilityIds?: readonly string[];
 }
 
 /** The outcome of a tool invocation. */
@@ -95,6 +126,22 @@ export class ToolExecutor {
       return this.#failure(invocation, {
         code: 'NOT_FOUND',
         message: `Tool not found: ${invocation.toolId}`,
+      });
+    }
+
+    const boundCapabilityId = invocation.capabilityId ?? invocation.toolId;
+    if (
+      invocation.allowedCapabilityIds !== undefined &&
+      invocation.allowedCapabilityIds.length > 0 &&
+      !invocation.allowedCapabilityIds.includes(boundCapabilityId)
+    ) {
+      // Fail closed, before the side-effect guard even runs: a non-empty
+      // ceiling is an explicit RBAC restriction — a capability outside it is
+      // never executed, approval or not (S34: approval is a governance
+      // step, never a substitute for the underlying permission).
+      return this.#failure(invocation, {
+        code: 'FORBIDDEN',
+        message: `Your current role does not have permission to use ${boundCapabilityId}`,
       });
     }
 

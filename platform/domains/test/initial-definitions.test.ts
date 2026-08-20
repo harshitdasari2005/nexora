@@ -1,14 +1,17 @@
 /**
- * @nexora/module-domains — initial registration tests (S24 Phase 1).
+ * @nexora/module-domains — initial registration tests (S24 Phase 1; S34 RBAC).
  *
  * The first-party seed registers the 12 initial domains, 23 initial roles,
- * and 23 initial capabilities (S24 Phase 3 added the executable AI
+ * and 32 initial capabilities (S24 Phase 3 added the executable AI
  * vocabulary: workspaces.list/create, projects.assign, calendar.create;
  * S25 Phase 7 added the external connector vocabulary: github.* and
  * slack.*; S27 Phase 6 added the legal/operations/customersuccess/procurement
- * domains and roles as an honest, capability-free catalog extension);
- * every relationship resolves; catalog integrity passes; and re-registration
- * fails fast (startup validation, never silent drift).
+ * domains and roles as an honest, capability-free catalog extension; S34
+ * added the RBAC permission vocabulary: organization.read, problems.read/
+ * .investigate, insights.read, agent.use/.execute, approvals.decide,
+ * activity.read, calendar.read); every relationship resolves; catalog
+ * integrity passes; and re-registration fails fast (startup validation,
+ * never silent drift).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -59,6 +62,15 @@ const EXPECTED_CAPABILITY_IDS = [
   'slack.channels.read',
   'slack.messages.read',
   'slack.messages.send',
+  'organization.read',
+  'problems.read',
+  'problems.investigate',
+  'insights.read',
+  'agent.use',
+  'agent.execute',
+  'approvals.decide',
+  'activity.read',
+  'calendar.read',
 ];
 
 describe('initial domain registrations', () => {
@@ -78,7 +90,7 @@ describe('initial domain registrations', () => {
     }
   });
 
-  it('registers the 23 initial capabilities', () => {
+  it('registers the 32 initial capabilities', () => {
     const catalog = createInitialCatalog();
     expect(catalog.capabilities.list().map((capability) => capability.id)).toEqual(
       EXPECTED_CAPABILITY_IDS,

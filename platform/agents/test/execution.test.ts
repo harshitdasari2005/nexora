@@ -26,6 +26,7 @@ import {
   INITIAL_AGENTS,
   type AgentExecutionPort,
   type AgentExecutionRecorder,
+  type AgentPermissionResolver,
   type AgentProblemProvider,
   type AgentProposalProvider,
   type BusinessAgentContext,
@@ -107,6 +108,7 @@ function buildService(deps: {
   port?: AgentExecutionPort;
   recorder?: AgentExecutionRecorder;
   problems?: AgentProblemProvider;
+  permissionResolver?: AgentPermissionResolver;
 }): BusinessAgentApplicationService {
   const registry = new BusinessAgentRegistry(catalog);
   for (const agent of INITIAL_AGENTS) {
@@ -120,6 +122,9 @@ function buildService(deps: {
     ...(deps.port === undefined ? {} : { execution: deps.port }),
     ...(deps.recorder === undefined ? {} : { recorder: deps.recorder }),
     ...(deps.problems === undefined ? {} : { problems: deps.problems }),
+    ...(deps.permissionResolver === undefined
+      ? {}
+      : { permissionResolver: deps.permissionResolver }),
   });
 }
 
@@ -166,6 +171,62 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     }
     expect(intents[0]?.allowedCapabilityIds).toEqual([...(executive?.capabilityIds ?? [])]);
     expect(intents[0]?.proposal).toBeUndefined();
+  });
+
+  it('S34 RBAC: binds a free-form execution to intersection(agent set, RBAC set) — never the agent set alone', async () => {
+    const { port, intents } = capturingPort();
+    // A narrower RBAC set than the executive agent's own registered set —
+    // the effective bound must be the INTERSECTION, not a union with the
+    // agent's (broader) static configuration.
+    const permissionResolver: AgentPermissionResolver = {
+      resolve: async () => ['notifications.what_needs_attention', 'projects.find_project'],
+    };
+    const service = buildService({ port, permissionResolver });
+
+    const result = await service.execute(context, { utterance: 'What needs my attention?' });
+    expect(result.ok).toBe(true);
+    // Order follows the AGENT's own registered order (the filter preserves
+    // it), not the RBAC list's order.
+    expect(intents[0]?.allowedCapabilityIds).toEqual([
+      'projects.find_project',
+      'notifications.what_needs_attention',
+    ]);
+    // Capabilities the agent DOES have but RBAC does NOT grant are excluded.
+    expect(intents[0]?.allowedCapabilityIds).not.toContain('calendar.create_event');
+  });
+
+  it('S34 RBAC: an empty RBAC set narrows the agent to nothing (fail closed, never a union)', async () => {
+    const { port, intents } = capturingPort();
+    const permissionResolver: AgentPermissionResolver = { resolve: async () => [] };
+    const service = buildService({ port, permissionResolver });
+
+    const result = await service.execute(context, { utterance: 'What needs my attention?' });
+    expect(result.ok).toBe(true);
+    expect(intents[0]?.allowedCapabilityIds).toEqual([]);
+  });
+
+  it('S34 RBAC: a proposal capability the agent has but RBAC does not grant is rejected as capability-escalation', async () => {
+    const { port, intents } = capturingPort();
+    // The executive agent DOES have `notifications.what_needs_attention` —
+    // but this caller's RBAC set does not include it.
+    const permissionResolver: AgentPermissionResolver = {
+      resolve: async () => ['projects.find_project'],
+    };
+    const service = buildService({ proposals: [inSetProposal], port, permissionResolver });
+
+    const result = await service.execute(context, { proposalId: inSetProposal.id });
+    expect(result).toEqual({ ok: false, reason: 'capability-escalation' });
+    expect(intents).toHaveLength(0);
+  });
+
+  it('S34 RBAC: without a permission resolver wired, falls back to the agent set unintersected (backward compatible)', async () => {
+    const executive = INITIAL_AGENTS.find((a) => a.id === 'executive');
+    const { port, intents } = capturingPort();
+    const service = buildService({ port }); // no permissionResolver
+
+    const result = await service.execute(context, { utterance: 'What needs my attention?' });
+    expect(result.ok).toBe(true);
+    expect(intents[0]?.allowedCapabilityIds).toEqual([...(executive?.capabilityIds ?? [])]);
   });
 
   it('rejects an unknown proposal id (fail closed, no execution)', async () => {

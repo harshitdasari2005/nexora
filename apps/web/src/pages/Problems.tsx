@@ -35,6 +35,7 @@ import {
 import { api, ApiError } from '../lib/api.js';
 import { decideApproval } from '../lib/chat.js';
 import { fetchProblems, scanProblems } from '../lib/problems.js';
+import { useRoleTheme } from '../lib/RoleThemeContext.js';
 import {
   advanceRemediationPlan,
   cancelRemediationPlan,
@@ -470,6 +471,12 @@ function PlanSection({
   const [busy, setBusy] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // S34 RBAC: presentation-only gating — the backend re-checks the SAME
+  // permissions on the decide/advance routes regardless of what renders
+  // here (this can never be the real access control).
+  const { current } = useRoleTheme();
+  const canDecide = current?.permissions.includes('approvals.decide') ?? false;
+  const canExecute = current?.permissions.includes('agent.execute') ?? false;
 
   const loadExisting = useCallback(async () => {
     setLoading(true);
@@ -605,14 +612,20 @@ function PlanSection({
               Derive a step-by-step plan from the applicable known solution — every step is
               capability-bound and approval-gated where policy requires.
             </p>
-            <Button
-              size="sm"
-              onClick={() => void create()}
-              disabled={busy || !problem.solutions.some((s) => s.applicability === 'APPLICABLE')}
-            >
-              {busy ? 'Creating…' : 'Create remediation plan'}
-            </Button>
-            {!problem.solutions.some((s) => s.applicability === 'APPLICABLE') ? (
+            {canExecute ? (
+              <Button
+                size="sm"
+                onClick={() => void create()}
+                disabled={busy || !problem.solutions.some((s) => s.applicability === 'APPLICABLE')}
+              >
+                {busy ? 'Creating…' : 'Create remediation plan'}
+              </Button>
+            ) : (
+              <p style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+                Your current role does not have permission to execute a remediation plan.
+              </p>
+            )}
+            {canExecute && !problem.solutions.some((s) => s.applicability === 'APPLICABLE') ? (
               <p style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
                 No applicable known solution yet — a plan cannot be built.
               </p>
@@ -690,19 +703,25 @@ function PlanSection({
               >
                 {userDisplayName} · {organizationName} · {pendingStep.capabilityId}
               </div>
-              <Stack direction="row" gap={2}>
-                <Button size="sm" onClick={() => void decide('approve')} disabled={deciding}>
-                  {deciding ? 'Deciding…' : 'Approve'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void decide('reject')}
-                  disabled={deciding}
-                >
-                  Reject
-                </Button>
-              </Stack>
+              {canDecide ? (
+                <Stack direction="row" gap={2}>
+                  <Button size="sm" onClick={() => void decide('approve')} disabled={deciding}>
+                    {deciding ? 'Deciding…' : 'Approve'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void decide('reject')}
+                    disabled={deciding}
+                  >
+                    Reject
+                  </Button>
+                </Stack>
+              ) : (
+                <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+                  Your current role does not have permission to decide this approval.
+                </div>
+              )}
             </div>
           ) : null}
 
@@ -761,9 +780,15 @@ function PlanSection({
 
           <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
             {isExecutable(plan.status) && pendingStep === undefined ? (
-              <Button size="sm" onClick={() => void advance()} disabled={busy}>
-                {busy ? 'Working…' : 'Run next step'}
-              </Button>
+              canExecute ? (
+                <Button size="sm" onClick={() => void advance()} disabled={busy}>
+                  {busy ? 'Working…' : 'Run next step'}
+                </Button>
+              ) : (
+                <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+                  Your current role does not have permission to execute this plan.
+                </div>
+              )
             ) : null}
             {plan.status === 'BLOCKED' || plan.status === 'FAILED' ? (
               <Button size="sm" variant="secondary" onClick={() => void replan()} disabled={busy}>

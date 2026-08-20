@@ -327,6 +327,11 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     workspaces: repositories.workspaces,
   });
   const domainCatalog = createInitialCatalog();
+  // S34: the ONE RBAC permission-resolution dependency, shared by every route
+  // that needs it — the SAME trusted resolver + catalog every other surface
+  // (Command Center, AI, agent) already uses, never a second authorization
+  // system.
+  const rbac = { roleResolver: businessRoleResolver, catalog: domainCatalog };
   registerAiRoutes(app, {
     orchestrator: ai.orchestrator,
     listOrganizations: container.listOrganizations,
@@ -338,6 +343,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       ),
     approvals: ai.approvals,
     conversations: ai.conversations,
+    permissions: rbac,
   });
   registerWorkflowRoutes(app, {
     startWorkflow: new StartWorkflowHandler(ai.workflows),
@@ -350,6 +356,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     getTenantMeasurements: container.getTenantMeasurements,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
   });
   registerDomainRoutes(app, {
     listDomainCatalog: container.listDomainCatalog,
@@ -471,6 +478,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     executeAgent: agentSurface.executeAgent,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
   });
   // S27 problems console: the dedicated HTTP surface over the SAME
   // detection engine that feeds the agent DTO. The routes resolve the
@@ -485,6 +493,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     getAgentCapabilities: agentSurface.getCapabilities,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
   });
   // Phase 10: the governed remediation surface. Composed here next to the
   // detection + agent surfaces it builds on: the agent resolver is the SAME

@@ -82,6 +82,22 @@ export interface AgentProposalProvider {
 }
 
 /**
+ * Resolves the caller's EFFECTIVE RBAC capability set (S34) — the SAME
+ * business→executable bridge every AI surface uses, derived from the
+ * caller's trusted role, never a client claim. Implemented by the API layer
+ * by reusing `buildBusinessContext` (the SAME function the Command Center
+ * and AI Runtime already call): `resolve(context).then(ctx => ctx?.
+ * capabilityIds)`. Optional — when absent, the agent's own registered set
+ * is used unintersected (today's pre-S34 behavior; every agent-bearing role
+ * has an RBAC set as of S34, so this only matters for a caller that hasn't
+ * wired the resolver at all, e.g. an older composition site or a test).
+ */
+export interface AgentPermissionResolver {
+  /** Returns the caller's effective EXECUTABLE capability ids, or `undefined` when unresolvable. */
+  resolve(context: BusinessAgentContext): Promise<readonly string[] | undefined>;
+}
+
+/**
  * Provides the detected business problems of the caller's scope (S27).
  * Implemented by the API layer over the detection engine; the agent DTO
  * surfaces them alongside its proposals, and problem-derived action
@@ -134,6 +150,16 @@ export interface BusinessAgentApplicationServiceDependencies {
    * runs without problems (an empty list — never fabricated).
    */
   problems?: AgentProblemProvider;
+  /**
+   * Resolves the caller's EFFECTIVE RBAC capability set (S34). When present,
+   * EVERY capability-bearing surface of this service (the advertised DTO,
+   * proposal validation, free-form execution's ceiling) is bound to
+   * `intersection(agent.capabilityIds, rbacCapabilityIds)` — never the
+   * agent's own set alone (which would let the agent's static configuration
+   * outrun the caller's REAL permission, a union rather than an
+   * intersection). Absent falls back to the agent's own set unintersected.
+   */
+  permissionResolver?: AgentPermissionResolver;
 }
 
 /** The outcome of resolving a business agent. */
@@ -195,6 +221,7 @@ export class BusinessAgentApplicationService {
   readonly #execution?: AgentExecutionPort;
   readonly #recorder?: AgentExecutionRecorder;
   readonly #problems?: AgentProblemProvider;
+  readonly #permissionResolver?: AgentPermissionResolver;
 
   constructor(dependencies: BusinessAgentApplicationServiceDependencies) {
     this.#registry = dependencies.registry;
@@ -204,6 +231,35 @@ export class BusinessAgentApplicationService {
     this.#execution = dependencies.execution;
     this.#recorder = dependencies.recorder;
     this.#problems = dependencies.problems;
+    this.#permissionResolver = dependencies.permissionResolver;
+  }
+
+  /**
+   * Binds a resolved agent definition to `intersection(agent.capabilityIds,
+   * effective RBAC capability ids)` (S34) — never the agent's set alone.
+   * Every downstream read (the advertised DTO, proposal validation,
+   * free-form execution's ceiling) uses this bounded copy, not the raw
+   * registry definition, so the intersection is enforced exactly once per
+   * request and can never be bypassed by a code path that forgot to apply
+   * it. Falls back to the agent's own set unintersected when no permission
+   * resolver is wired (pre-S34 composition sites, tests).
+   */
+  async #bindToEffectivePermissions(
+    context: BusinessAgentContext,
+    definition: BusinessAgentDefinition,
+  ): Promise<BusinessAgentDefinition> {
+    if (this.#permissionResolver === undefined) {
+      return definition;
+    }
+    const rbacCapabilityIds = await this.#permissionResolver.resolve(context);
+    if (rbacCapabilityIds === undefined) {
+      return definition;
+    }
+    const allowed = new Set(rbacCapabilityIds);
+    return {
+      ...definition,
+      capabilityIds: definition.capabilityIds.filter((id) => allowed.has(id)),
+    };
   }
 
   /**
@@ -217,10 +273,11 @@ export class BusinessAgentApplicationService {
     if (roleId === undefined) {
       return { ok: false, reason: 'no-role' };
     }
-    const definition = this.#registry.resolveByRole(roleId);
-    if (definition === undefined) {
+    const registered = this.#registry.resolveByRole(roleId);
+    if (registered === undefined) {
       return { ok: false, reason: 'no-agent' };
     }
+    const definition = await this.#bindToEffectivePermissions(context, registered);
     const [proposals, recentRuns, problems] = await Promise.all([
       this.#proposalProvider.propose(context, definition),
       this.#recorder === undefined
@@ -255,10 +312,11 @@ export class BusinessAgentApplicationService {
     if (roleId === undefined) {
       return { ok: false, reason: 'no-role' };
     }
-    const definition = this.#registry.resolveByRole(roleId);
-    if (definition === undefined) {
+    const registered = this.#registry.resolveByRole(roleId);
+    if (registered === undefined) {
       return { ok: false, reason: 'no-agent' };
     }
+    const definition = await this.#bindToEffectivePermissions(context, registered);
     return { ok: true, capabilityIds: [...definition.capabilityIds] };
   }
 
@@ -276,10 +334,11 @@ export class BusinessAgentApplicationService {
     if (roleId === undefined) {
       return { ok: false, reason: 'no-role' };
     }
-    const definition = this.#registry.resolveByRole(roleId);
-    if (definition === undefined) {
+    const registered = this.#registry.resolveByRole(roleId);
+    if (registered === undefined) {
       return { ok: false, reason: 'no-agent' };
     }
+    const definition = await this.#bindToEffectivePermissions(context, registered);
     return {
       ok: true,
       agent: {
@@ -311,13 +370,14 @@ export class BusinessAgentApplicationService {
     if (roleId === undefined) {
       return { ok: false, reason: 'no-role' };
     }
-    const definition = this.#registry.resolveByRole(roleId);
-    if (definition === undefined) {
+    const registered = this.#registry.resolveByRole(roleId);
+    if (registered === undefined) {
       return { ok: false, reason: 'no-agent' };
     }
     if (this.#execution === undefined) {
       return { ok: false, reason: 'not-configured' };
     }
+    const definition = await this.#bindToEffectivePermissions(context, registered);
 
     const intent = await this.#resolveIntent(context, definition, request);
     if (intent.kind === 'rejected') {

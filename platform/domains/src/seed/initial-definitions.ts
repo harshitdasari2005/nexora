@@ -1,5 +1,5 @@
 /**
- * @nexora/module-domains — initial registrations (S24 Phase 1).
+ * @nexora/module-domains — initial registrations (S24 Phase 1; S34 RBAC).
  *
  * The first-party Domain → Role → Capability seed. These are INITIAL
  * REGISTRATIONS ONLY — no application logic is built for any role. The
@@ -11,14 +11,24 @@
  * exists yet, the description says so — a definition is never presented as
  * executable (S24: do not pretend).
  *
- * Role `capabilityIds` are BUSINESS AFFINITY, never a grant (ROLE ≠
- * PERMISSION): they say what the role's work is ABOUT. Phase 3 assigned
- * affinities to the roles that power role-aware experiences (executive.ceo,
- * delivery.manager, technology.developer) — each maps to existing executable
- * AI capabilities via the API-layer bridge. Other roles keep empty
- * affinities (no AI focus — discovery stays unrestricted for them, which is
- * the safe default). The role → capability relationship is validated by
- * tests and the Legal extensibility fixture.
+ * Role `capabilityIds` ARE the role's effective RBAC permission set (S34):
+ * the API layer's `authorizePermission()` seam (apps/api/src/business-
+ * context/permissions.ts) treats this SAME list as the authoritative answer
+ * to "is this role allowed to do X" for protected routes, while the AI
+ * Runtime's capability-discovery affinity filter treats it as a soft FOCUS
+ * (S24 Phase 3 behavior, unchanged: an EMPTY list there still means
+ * "unrestricted discovery," never "denied" — only a route's explicit
+ * `authorizePermission()` check treats an empty/missing set as "no
+ * permission," so a role not yet assigned a real set here simply keeps
+ * today's permissive default instead of silently losing route access).
+ * S34 populated the 13 named business roles (executive.ceo, finance.cfo,
+ * technology.cto/.engineering_manager/.developer, product.product_manager,
+ * people.hr, growth.sales_manager/.marketing_manager, legal.general_counsel,
+ * operations.manager, customersuccess.manager, procurement.manager) with a
+ * deliberate, real permission set; every other registered role keeps its
+ * pre-S34 shape (empty, or the pre-existing delivery.manager set) untouched.
+ * The role → capability relationship is validated by tests and the Legal/
+ * finance.controller extensibility fixtures.
  */
 
 import type {
@@ -113,13 +123,20 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     // Organization-level oversight: every executable AI surface (S24 Phase 3
     // affinity — business context, never a grant). S25 Phase 7: broad
     // enterprise integration oversight — all external connector surfaces
-    // (GitHub + Slack) are within executive focus.
+    // (GitHub + Slack) are within executive focus. S34: broad organizational
+    // RBAC permissions — the CEO is the one role that reads AND decides
+    // across every surface (never write access it has no executable tool
+    // for, e.g. projects.update has no executable surface anywhere yet).
     capabilityIds: [
+      'organization.read',
       'workspaces.list',
       'workspaces.create',
       'projects.read',
       'projects.create',
       'projects.assign',
+      'problems.read',
+      'problems.investigate',
+      'insights.read',
       'documents.read',
       'knowledge.read',
       'employees.read',
@@ -127,6 +144,11 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'workflows.read',
       'workflows.execute',
       'approvals.read',
+      'approvals.decide',
+      'agent.use',
+      'agent.execute',
+      'activity.read',
+      'calendar.read',
       'calendar.create',
       'github.repositories.read',
       'github.issues.read',
@@ -141,28 +163,81 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'CFO',
     description: 'Chief Financial Officer',
     domainId: 'finance',
-    capabilityIds: [],
+    // Financial/organizational focus (S34): visibility + approval authority
+    // over projects, problems, and insights — no employee-management or
+    // workflow-execution reach (that stays with People/Delivery).
+    capabilityIds: [
+      'projects.read',
+      'problems.read',
+      'insights.read',
+      'approvals.read',
+      'approvals.decide',
+      'documents.read',
+      'agent.use',
+      'activity.read',
+    ],
   },
   {
     id: 'people.hr',
     name: 'HR / CHRO',
     description: 'Human resources / Chief Human Resources Officer',
     domainId: 'people',
-    capabilityIds: [],
+    // People-related access only (S34): employee records, people-adjacent
+    // problems, and documents — no project/financial/technical reach.
+    capabilityIds: [
+      'employees.read',
+      'employees.manage',
+      'documents.read',
+      'problems.read',
+      'agent.use',
+      'activity.read',
+    ],
   },
   {
     id: 'technology.cto',
     name: 'CTO',
     description: 'Chief Technology Officer',
     domainId: 'technology',
-    capabilityIds: [],
+    // Technology-focused (S34): full engineering visibility + governed
+    // execution + the GitHub connector surface — no HR/financial/approval
+    // authority outside its own domain's problems.
+    capabilityIds: [
+      'projects.read',
+      'projects.update',
+      'problems.read',
+      'problems.investigate',
+      'insights.read',
+      'agent.use',
+      'agent.execute',
+      'documents.read',
+      'knowledge.read',
+      'activity.read',
+      'github.repositories.read',
+      'github.issues.read',
+      'github.issues.create',
+    ],
   },
   {
     id: 'technology.engineering_manager',
     name: 'Engineering Manager',
     description: 'Leads an engineering team',
     domainId: 'technology',
-    capabilityIds: [],
+    // Delivery/engineering focus (S34): same technical execution reach as
+    // the CTO minus organization-wide insight — a team-level, not
+    // company-level, technology lens.
+    capabilityIds: [
+      'projects.read',
+      'projects.update',
+      'problems.read',
+      'problems.investigate',
+      'agent.use',
+      'agent.execute',
+      'knowledge.read',
+      'activity.read',
+      'github.repositories.read',
+      'github.issues.read',
+      'github.issues.create',
+    ],
   },
   {
     id: 'technology.developer',
@@ -173,13 +248,23 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     // knowledge, workflows, approvals (S24 Phase 3 affinity — business
     // context, never a grant; write capabilities stay out of the AI focus).
     // S25 Phase 7: GitHub repository/issue focus (the Developer's external
-    // work surface); Slack stays outside the Developer focus.
+    // work surface); Slack stays outside the Developer focus. S34:
+    // execution-focused RBAC — deliberately NO organization-wide executive
+    // permission (no insights.read, no approvals.decide, no calendar.create,
+    // no employees.*) — a Developer sees and investigates problems and works
+    // projects/knowledge/GitHub, nothing broader.
     capabilityIds: [
       'projects.read',
+      'projects.update',
       'documents.read',
       'knowledge.read',
       'workflows.read',
       'approvals.read',
+      'problems.read',
+      'problems.investigate',
+      'agent.use',
+      'agent.execute',
+      'activity.read',
       'github.repositories.read',
       'github.issues.read',
       'github.issues.create',
@@ -204,14 +289,30 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'Sales Manager',
     description: 'Leads sales',
     domainId: 'growth',
-    capabilityIds: [],
+    // Growth/customer access only (S34) — projects and problems visibility
+    // plus insight into performance signals; no employee/financial reach.
+    capabilityIds: [
+      'projects.read',
+      'problems.read',
+      'insights.read',
+      'agent.use',
+      'activity.read',
+    ],
   },
   {
     id: 'growth.marketing_manager',
     name: 'Marketing Manager',
     description: 'Leads marketing',
     domainId: 'growth',
-    capabilityIds: [],
+    // Marketing/growth access only (S34) — knowledge and document reach for
+    // campaign material, plus performance signals.
+    capabilityIds: [
+      'knowledge.read',
+      'documents.read',
+      'insights.read',
+      'agent.use',
+      'activity.read',
+    ],
   },
   {
     id: 'growth.growth_manager',
@@ -225,7 +326,18 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'Product Manager',
     description: 'Owns a product area',
     domainId: 'product',
-    capabilityIds: [],
+    // Product/delivery focus (S34): projects + problems (with investigation)
+    // + insight + knowledge — no organization-wide approval authority.
+    capabilityIds: [
+      'projects.read',
+      'projects.update',
+      'problems.read',
+      'problems.investigate',
+      'insights.read',
+      'knowledge.read',
+      'agent.use',
+      'activity.read',
+    ],
   },
   {
     id: 'product.product_lead',
@@ -243,7 +355,10 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     // (S24 Phase 3 affinity — business context, never a grant). S25 Phase
     // 7: project + communication focus — GitHub repository/issue surfaces
     // and Slack channels/send (no message-history read; communication
-    // focus, never surveillance).
+    // focus, never surveillance). S34: RBAC additions matching this role's
+    // EXISTING agent ("Manager Agent") and problems-console reach — a role
+    // that already had a non-empty set needed the new permission ids too,
+    // or it would silently lose access to routes it already used.
     capabilityIds: [
       'projects.read',
       'projects.create',
@@ -253,6 +368,11 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'workflows.read',
       'workflows.execute',
       'approvals.read',
+      'problems.read',
+      'problems.investigate',
+      'agent.use',
+      'agent.execute',
+      'activity.read',
       'github.repositories.read',
       'github.issues.read',
       'github.issues.create',
@@ -272,7 +392,17 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'General Counsel',
     description: 'Chief legal officer',
     domainId: 'legal',
-    capabilityIds: [],
+    // Governance/document/approval access (S34) — General Counsel reviews
+    // and decides, but has no project/technical/financial reach.
+    capabilityIds: [
+      'documents.read',
+      'documents.upload',
+      'knowledge.read',
+      'approvals.read',
+      'approvals.decide',
+      'agent.use',
+      'activity.read',
+    ],
   },
   {
     id: 'legal.compliance_manager',
@@ -293,14 +423,32 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'Operations Manager',
     description: 'Runs day-to-day operations',
     domainId: 'operations',
-    capabilityIds: [],
+    // Operational/project/workflow access (S34) — runs the day-to-day, sees
+    // and acts on process problems, no approval-decision authority.
+    capabilityIds: [
+      'projects.read',
+      'projects.update',
+      'workflows.read',
+      'workflows.execute',
+      'problems.read',
+      'agent.use',
+      'activity.read',
+    ],
   },
   {
     id: 'customersuccess.manager',
     name: 'Customer Success Manager',
     description: 'Owns customer outcomes and retention',
     domainId: 'customersuccess',
-    capabilityIds: [],
+    // Customer/project/problem access (S34) — owns outcomes, needs to see
+    // the projects and problems that bear on them.
+    capabilityIds: [
+      'projects.read',
+      'problems.read',
+      'documents.read',
+      'agent.use',
+      'activity.read',
+    ],
   },
   {
     id: 'customersuccess.support_manager',
@@ -314,7 +462,16 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'Procurement Manager',
     description: 'Leads sourcing and purchasing',
     domainId: 'procurement',
-    capabilityIds: [],
+    // Procurement/document/approval access (S34) — sources and purchases
+    // through documented, approval-gated decisions.
+    capabilityIds: [
+      'documents.read',
+      'documents.upload',
+      'approvals.read',
+      'approvals.decide',
+      'agent.use',
+      'activity.read',
+    ],
   },
   {
     id: 'procurement.vendor_manager',
@@ -455,5 +612,62 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     id: 'slack.messages.send',
     name: 'Send Slack Messages',
     description: 'Send a Slack message (existing surface: Slack connector governed message send)',
+  },
+  // S34 RBAC: the small set of additional permission ids needed to gate the
+  // surfaces the S24 catalog didn't yet cover (organization overview,
+  // detected problems, insights, the business-agent surface, and deciding —
+  // not just opening — an approval). Each gates a real existing route; none
+  // invents a new one.
+  {
+    id: 'organization.read',
+    name: 'Read Organization',
+    description:
+      'Read organization-level overview data (existing surface: the dashboard/overview route)',
+  },
+  {
+    id: 'problems.read',
+    name: 'Read Problems',
+    description:
+      'List detected business problems (existing surface: the problems console list/scan)',
+  },
+  {
+    id: 'problems.investigate',
+    name: 'Investigate Problems',
+    description:
+      'Open a single problem’s full investigation — evidence, root cause, known solutions (existing surface: the problems console detail read)',
+  },
+  {
+    id: 'insights.read',
+    name: 'Read Insights',
+    description:
+      'Read the tenant measurement/insights snapshot (existing surface: the insights route)',
+  },
+  {
+    id: 'agent.use',
+    name: 'Use Agent',
+    description: 'View the caller’s governed business agent (existing surface: GET /api/agent)',
+  },
+  {
+    id: 'agent.execute',
+    name: 'Execute Agent',
+    description:
+      'Execute a governed agent proposal or free-form intent (existing surface: the agent execute routes)',
+  },
+  {
+    id: 'approvals.decide',
+    name: 'Decide Approvals',
+    description:
+      'Approve or reject an approval request (existing surface: the approval decision route) — distinct from approvals.create/approvals.read: deciding is authorizing an action, not merely seeing or opening one',
+  },
+  {
+    id: 'activity.read',
+    name: 'Read Activity',
+    description:
+      'Read the recent business activity feed (existing surface: the activity feed read)',
+  },
+  {
+    id: 'calendar.read',
+    name: 'Read Calendar',
+    description: 'Read calendar events (existing surface: calendar listing)',
   },
 ];

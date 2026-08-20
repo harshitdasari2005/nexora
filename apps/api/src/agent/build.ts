@@ -118,6 +118,17 @@ export function buildAgent(options: BuildAgentOptions): AgentSurface {
       listActivity: options.listActivity,
       listNotifications: options.listNotifications,
     }),
+    // S34 RBAC: binds the agent's own registered capability set to
+    // intersection(agent set, caller's REAL RBAC permission) — reuses the
+    // SAME business-context builder passed in above (already resolves
+    // trusted role → Phase 1 catalog → executable capability ids); never a
+    // second resolution path.
+    permissionResolver: {
+      resolve: async (context) => {
+        const business = await options.buildBusinessContext(context);
+        return business?.capabilityIds;
+      },
+    },
     // Governed execution through the EXISTING runtime — never a second
     // execution engine or approval system.
     execution: new ApiAgentExecutionPort({

@@ -20,6 +20,7 @@ import {
   type ChatDone,
   type ChatPlanStep,
 } from '../lib/chat.js';
+import { useRoleTheme } from '../lib/RoleThemeContext.js';
 
 /** A rendered message in the panel. */
 export interface PanelMessage {
@@ -554,6 +555,10 @@ export function ApprovalCard({
   const name = typeof approval.input?.name === 'string' ? approval.input.name : undefined;
   const risk =
     approval.sideEffectClass === 'consequential' ? 'Persistent state change' : 'State change';
+  // S34 RBAC: presentation-only — the decision route re-checks the SAME
+  // `approvals.decide` permission regardless of what renders here.
+  const { current } = useRoleTheme();
+  const canDecide = current?.permissions.includes('approvals.decide') ?? false;
   return (
     <div
       role="group"
@@ -611,14 +616,20 @@ export function ApprovalCard({
         <ApprovalRow label="Risk" value={risk} />
       </dl>
 
-      <div style={{ display: 'flex', gap: spacing[2] }}>
-        <Button size="sm" onClick={onApprove} disabled={deciding}>
-          {deciding ? 'Submitting…' : 'Approve'}
-        </Button>
-        <Button size="sm" variant="secondary" onClick={onReject} disabled={deciding}>
-          Reject
-        </Button>
-      </div>
+      {canDecide ? (
+        <div style={{ display: 'flex', gap: spacing[2] }}>
+          <Button size="sm" onClick={onApprove} disabled={deciding}>
+            {deciding ? 'Submitting…' : 'Approve'}
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onReject} disabled={deciding}>
+            Reject
+          </Button>
+        </div>
+      ) : (
+        <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+          Your current role does not have permission to decide this approval.
+        </div>
+      )}
     </div>
   );
 }

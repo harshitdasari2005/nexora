@@ -226,6 +226,10 @@ async function readToolInvoke(
       workspaceId: context.workspaceId,
       runId: context.correlationId,
       autonomyTier: 'supervised',
+      // S34: the MCP surface bypasses discovery entirely (direct tool
+      // invocation by name) — the executor's own RBAC ceiling check is the
+      // ONLY enforcement point for it.
+      allowedCapabilityIds: context.capabilityIds,
     },
     false,
   );

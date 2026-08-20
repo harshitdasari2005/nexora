@@ -29,6 +29,7 @@ export {
   GetBusinessAgentCapabilitiesHandler,
   GetBusinessAgentDefinitionHandler,
   GetBusinessAgentHandler,
+  type AgentPermissionResolver,
   type AgentProblemProvider,
   type AgentProposalProvider,
   type BusinessAgentContext,

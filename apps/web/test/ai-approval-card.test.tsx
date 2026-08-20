@@ -6,11 +6,14 @@
  * convention (no DOM or network required).
  */
 
+import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { renderToString } from 'react-dom/server';
 
 import { ApprovalCard, humanizeAction, type AiPanelProps } from '../src/components/AiPanel.js';
 import type { ChatApproval } from '../src/lib/chat.js';
+import { RoleThemeContext } from '../src/lib/RoleThemeContext.js';
+import { DEFAULT_THEME } from '../src/lib/roleThemes.js';
 
 const pendingApproval: ChatApproval = {
   id: 'apr_1',
@@ -21,6 +24,37 @@ const pendingApproval: ChatApproval = {
   sideEffectClass: 'consequential',
   input: { name: 'Engineering' },
 };
+
+/**
+ * Wraps a rendered tree in a role context that HAS `approvals.decide` (S34)
+ * — `ApprovalCard` gates its own Approve/Reject actions on this permission,
+ * so a test exercising them needs a role context carrying it, exactly as a
+ * real CEO/CFO/General Counsel session would.
+ */
+function withDecidePermission(children: ReactNode): JSX.Element {
+  return (
+    <RoleThemeContext.Provider
+      value={{
+        theme: DEFAULT_THEME,
+        loading: false,
+        current: {
+          organizationId: 'org_1',
+          organizationName: 'Acme Inc.',
+          workspaceId: 'wsp_1',
+          workspaceName: 'Executive',
+          workspaceType: 'executive',
+          domainId: 'executive',
+          domainName: 'Executive',
+          roleId: 'executive.ceo',
+          roleName: 'CEO',
+          permissions: ['approvals.decide'],
+        },
+      }}
+    >
+      {children}
+    </RoleThemeContext.Provider>
+  );
+}
 
 describe('humanizeAction', () => {
   it('turns a tool id into a readable action', () => {
@@ -57,6 +91,21 @@ describe('ApprovalCard', () => {
 
   it('renders Approve and Reject actions', () => {
     const html = renderToString(
+      withDecidePermission(
+        <ApprovalCard
+          approval={pendingApproval}
+          deciding={false}
+          onApprove={() => undefined}
+          onReject={() => undefined}
+        />,
+      ),
+    );
+    expect(html).toContain('Approve');
+    expect(html).toContain('Reject');
+  });
+
+  it('hides Approve and Reject when the role lacks approvals.decide', () => {
+    const html = renderToString(
       <ApprovalCard
         approval={pendingApproval}
         deciding={false}
@@ -64,8 +113,8 @@ describe('ApprovalCard', () => {
         onReject={() => undefined}
       />,
     );
-    expect(html).toContain('Approve');
-    expect(html).toContain('Reject');
+    expect(html).not.toContain('>Approve<');
+    expect(html).toContain('does not have permission to decide');
   });
 
   it('never exposes internal approval ids in the rendered card', () => {
@@ -83,12 +132,14 @@ describe('ApprovalCard', () => {
 
   it('disables the actions while a decision is in flight', () => {
     const html = renderToString(
-      <ApprovalCard
-        approval={pendingApproval}
-        deciding
-        onApprove={() => undefined}
-        onReject={() => undefined}
-      />,
+      withDecidePermission(
+        <ApprovalCard
+          approval={pendingApproval}
+          deciding
+          onApprove={() => undefined}
+          onReject={() => undefined}
+        />,
+      ),
     );
     expect(html).toContain('disabled');
     expect(html).toContain('Submitting…');

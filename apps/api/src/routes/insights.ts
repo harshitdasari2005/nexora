@@ -22,6 +22,11 @@ import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 import type { GetTenantMeasurementsHandler } from '@nexora/module-measurements';
 
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
+import { sendForbidden } from './permission-response.js';
 
 /** Dependencies of the insights route. */
 export interface InsightsRoutesDependencies {
@@ -31,6 +36,8 @@ export interface InsightsRoutesDependencies {
   listOrganizations: ListOrganizationsHandler;
   /** Verifies workspace membership (workspace scope). */
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
 }
 
 /** Registers the insights route. */
@@ -84,6 +91,15 @@ export function registerInsightsRoutes(
           },
         });
       }
+    }
+
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId, workspaceId: query.workspaceId },
+      'insights.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view insights');
     }
 
     const snapshot = await dependencies.getTenantMeasurements.handle({

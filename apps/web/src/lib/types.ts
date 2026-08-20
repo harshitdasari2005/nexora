@@ -781,6 +781,13 @@ export interface RoleContextOption {
   domainName: string;
   roleId: string;
   roleName: string;
+  /**
+   * The role's RBAC permission set (S34) — drives module/nav visibility and
+   * action-button gating. Presentation only: the backend re-checks the SAME
+   * set on every protected route, so this can never be the source of real
+   * access.
+   */
+  permissions: readonly string[];
 }
 
 /** The `/role-context` response — the current role plus every switchable option. */
