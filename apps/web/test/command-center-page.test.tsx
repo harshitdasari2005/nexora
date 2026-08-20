@@ -118,7 +118,10 @@ describe('CommandCenterView (S24 Phase 2)', () => {
 
   it('renders the CEO configuration through the generic page', () => {
     const html = renderView(center());
-    expect(html).toContain('Command Center');
+    // The eyebrow reflects the resolved role's theme identity (S33); this
+    // test renders CommandCenterView outside a RoleThemeProvider, so it
+    // resolves the safe default theme, not a fabricated CEO-specific string.
+    expect(html).toContain('Business Intelligence');
     expect(html).toContain('CEO');
     expect(html).toContain('Executive');
     // Real measurement KPI value flows into the shared KPI renderer.

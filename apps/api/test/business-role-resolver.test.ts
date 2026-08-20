@@ -3,12 +3,15 @@
  *
  * Verifies the workspace-aware role switching added on top of the existing
  * trusted membership resolution:
- * - Workspace types with no override entry (`engineering`, `general`, and no
- *   workspace at all) resolve through the EXACT original default mapping —
- *   zero behavior change for pre-existing callers.
+ * - Workspace types with no override entry (`engineering`, and no workspace
+ *   at all) resolve through the EXACT original default mapping — zero
+ *   behavior change for pre-existing callers.
  * - Workspace types WITH an override resolve to the type-specific business
  *   role, scoped by the caller's REAL membership role — never a role the
  *   client requested, only what trusted membership + workspace type imply.
+ *   `general` (S33) is one such override: all three membership tiers are
+ *   spent on the technology domain's own hierarchy (CTO/Engineering
+ *   Manager/Developer) rather than falling through to the generic default.
  * - Omitting the `workspaces` dependency (older composition sites) falls
  *   back to the default mapping, never throws.
  */
@@ -53,14 +56,21 @@ describe('MembershipBusinessRoleResolver — workspace-type override (S27 Phase 
     expect(role).toBe('technology.developer');
   });
 
-  it('resolves the original default mapping for the untouched `general` type', async () => {
-    const resolver = buildResolver('admin', 'general');
-    const role = await resolver.resolve({
-      userId: 'usr_1',
-      tenantId: 'org_1',
-      workspaceId: 'ws_1',
-    });
-    expect(role).toBe('delivery.manager');
+  it('overrides `general` to the technology-domain hierarchy (S33) — owner/admin/member each resolve to a different, already-cataloged role', async () => {
+    const owner = buildResolver('owner', 'general');
+    expect(await owner.resolve({ userId: 'usr_1', tenantId: 'org_1', workspaceId: 'ws_1' })).toBe(
+      'technology.cto',
+    );
+
+    const admin = buildResolver('admin', 'general');
+    expect(await admin.resolve({ userId: 'usr_1', tenantId: 'org_1', workspaceId: 'ws_1' })).toBe(
+      'technology.engineering_manager',
+    );
+
+    const member = buildResolver('member', 'general');
+    expect(await member.resolve({ userId: 'usr_1', tenantId: 'org_1', workspaceId: 'ws_1' })).toBe(
+      'technology.developer',
+    );
   });
 
   it('does NOT override `engineering` (the existing demo workspace type) — the hero-flow owner still resolves executive.ceo', async () => {
@@ -99,6 +109,7 @@ describe('MembershipBusinessRoleResolver — workspace-type override (S27 Phase 
       'operations',
       'customer_success',
       'procurement',
+      'general',
     ];
     const expected: Record<string, string> = {
       executive: 'executive.ceo',
@@ -111,6 +122,7 @@ describe('MembershipBusinessRoleResolver — workspace-type override (S27 Phase 
       operations: 'operations.manager',
       customer_success: 'customersuccess.support_manager',
       procurement: 'procurement.vendor_manager',
+      general: 'technology.developer',
     };
     for (const type of types) {
       const resolver = buildResolver('member', type);

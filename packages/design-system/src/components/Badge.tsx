@@ -18,6 +18,14 @@ export interface BadgeProps {
   dot?: boolean;
   /** Children. */
   children: ReactNode;
+  /**
+   * Optional style override, merged over the tone's colors — for callers
+   * that need a caller-specific accent (e.g. a role's theme color) instead
+   * of a fixed semantic tone. Leaves every existing call site unaffected.
+   */
+  style?: CSSProperties;
+  /** Overrides the dot's color independent of `tone` (see `style`). */
+  dotColor?: string;
 }
 
 const toneStyles: Record<BadgeTone, CSSProperties> = {
@@ -63,7 +71,13 @@ const dotColors: Record<BadgeTone, string> = {
 };
 
 /** Renders a status badge. */
-export function Badge({ tone = 'neutral', dot = false, children }: BadgeProps): JSX.Element {
+export function Badge({
+  tone = 'neutral',
+  dot = false,
+  children,
+  style,
+  dotColor,
+}: BadgeProps): JSX.Element {
   return (
     <span
       style={{
@@ -77,6 +91,7 @@ export function Badge({ tone = 'neutral', dot = false, children }: BadgeProps): 
         fontSize: typography.sizes.xs,
         fontWeight: typography.weights.medium,
         whiteSpace: 'nowrap',
+        ...style,
       }}
     >
       {dot ? (
@@ -86,7 +101,7 @@ export function Badge({ tone = 'neutral', dot = false, children }: BadgeProps): 
             width: 6,
             height: 6,
             borderRadius: '50%',
-            background: dotColors[tone],
+            background: dotColor ?? dotColors[tone],
           }}
         />
       ) : null}

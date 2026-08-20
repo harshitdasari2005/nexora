@@ -16,8 +16,27 @@
 
 import { useEffect, useRef } from 'react';
 
-/** A subtle per-page hue for the core/connections (S32 authenticated shell). */
-export type IntelligenceNetworkTint = 'indigo' | 'amber' | 'violet' | 'teal' | 'slate';
+/**
+ * A subtle contextual hue for the core/connections (S32 authenticated
+ * shell; S33 expanded the palette so each business role's workspace reads
+ * as a genuinely different operating environment, not just a different
+ * page within one).
+ */
+export type IntelligenceNetworkTint =
+  | 'indigo'
+  | 'amber'
+  | 'violet'
+  | 'teal'
+  | 'slate'
+  | 'gold'
+  | 'cyan'
+  | 'emerald'
+  | 'rose'
+  | 'jade'
+  | 'magenta'
+  | 'olive'
+  | 'orange'
+  | 'steel';
 
 /** Props of {@link IntelligenceNetwork}. */
 export interface IntelligenceNetworkProps {
@@ -45,6 +64,15 @@ const TINT_RGB: Record<IntelligenceNetworkTint, { core: string; core2: string; l
   violet: { core: '196, 165, 250', core2: '139, 92, 246', line: '167, 139, 250' },
   teal: { core: '94, 234, 212', core2: '20, 184, 166', line: '94, 214, 200' },
   slate: { core: '186, 196, 216', core2: '148, 163, 184', line: '160, 172, 196' },
+  gold: { core: '250, 219, 141', core2: '217, 160, 60', line: '224, 184, 110' },
+  cyan: { core: '148, 233, 255', core2: '14, 165, 204', line: '94, 214, 240' },
+  emerald: { core: '167, 243, 208', core2: '16, 150, 110', line: '110, 220, 175' },
+  rose: { core: '253, 205, 220', core2: '225, 110, 150', line: '235, 160, 185' },
+  jade: { core: '190, 242, 210', core2: '34, 170, 120', line: '120, 220, 175' },
+  magenta: { core: '244, 190, 235', core2: '190, 70, 165', line: '215, 130, 200' },
+  olive: { core: '224, 224, 160', core2: '150, 150, 60', line: '190, 190, 110' },
+  orange: { core: '254, 202, 152', core2: '230, 120, 40', line: '240, 160, 95' },
+  steel: { core: '186, 210, 240', core2: '70, 120, 190', line: '140, 175, 220' },
 };
 
 type Phase = 'idle' | 'signal' | 'intelligence' | 'planning' | 'action' | 'verification';

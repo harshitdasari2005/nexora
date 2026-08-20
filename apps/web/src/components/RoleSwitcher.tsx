@@ -1,5 +1,6 @@
 /**
- * @nexora/app-web — RoleSwitcher (S27 Phase 6).
+ * @nexora/app-web — RoleSwitcher (S27 Phase 6; S33 domain-grouped premium
+ * pass).
  *
  * The role/context switcher: lets the user change their business lens
  * (organization + workspace, which resolves to a business role) WITHOUT
@@ -10,6 +11,12 @@
  * and never sends one: selecting an option only updates the trusted scope
  * query params (`organizationId` / `workspaceId`), which every page already
  * re-validates against the caller's real membership server-side.
+ *
+ * S33: options are grouped by business DOMAIN (Executive, Technology,
+ * Finance, ...) rather than by organization — the grouping a user actually
+ * thinks in when picking a business lens — and each option shows a small
+ * dot in that role's own theme accent, so the list itself previews the
+ * environment switching to it will feel like.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -17,6 +24,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Badge, Spinner, Stack, typography } from '@nexora/design-system';
 
 import { api } from '../lib/api.js';
+import { themeForRole } from '../lib/roleThemes.js';
 import type { RoleContextOption, RoleContextResponse } from '../lib/types.js';
 
 /** Props of {@link RoleSwitcher}. */
@@ -31,23 +39,15 @@ export interface RoleSwitcherProps {
   workspaceName: string;
 }
 
-/** Groups options by organization, preserving first-seen order. */
-function groupByOrganization(
+/** Groups options by business DOMAIN, preserving first-seen order. */
+function groupByDomain(
   options: readonly RoleContextOption[],
-): readonly { organizationId: string; organizationName: string; options: RoleContextOption[] }[] {
-  const groups: {
-    organizationId: string;
-    organizationName: string;
-    options: RoleContextOption[];
-  }[] = [];
+): readonly { domainId: string; domainName: string; options: RoleContextOption[] }[] {
+  const groups: { domainId: string; domainName: string; options: RoleContextOption[] }[] = [];
   for (const option of options) {
-    let group = groups.find((g) => g.organizationId === option.organizationId);
+    let group = groups.find((g) => g.domainId === option.domainId);
     if (group === undefined) {
-      group = {
-        organizationId: option.organizationId,
-        organizationName: option.organizationName,
-        options: [],
-      };
+      group = { domainId: option.domainId, domainName: option.domainName, options: [] };
       groups.push(group);
     }
     group.options.push(option);
@@ -55,7 +55,7 @@ function groupByOrganization(
   return groups;
 }
 
-/** The sidebar workspace-context card, now an interactive role/context switcher. */
+/** The sidebar workspace-context card, now a domain-grouped role/context switcher. */
 export function RoleSwitcher({
   organizationId,
   workspaceId,
@@ -102,6 +102,7 @@ export function RoleSwitcher({
   }, [open]);
 
   const current = context?.current ?? null;
+  const currentTheme = themeForRole(current?.roleId);
   const canSwitch = (context?.options.length ?? 0) > 1;
 
   function selectOption(option: RoleContextOption): void {
@@ -112,7 +113,7 @@ export function RoleSwitcher({
     );
   }
 
-  const groups = context === null ? [] : groupByOrganization(context.options);
+  const groups = context === null ? [] : groupByDomain(context.options);
 
   return (
     <div ref={panelRef} style={{ position: 'relative' }}>
@@ -132,35 +133,48 @@ export function RoleSwitcher({
         }}
       >
         <Stack direction="row" gap={2} align="center" justify="space-between">
-          <Stack gap={0.5} style={{ minWidth: 0 }}>
-            <div
+          <Stack direction="row" gap={2} align="center" style={{ minWidth: 0, flex: 1 }}>
+            <span
+              aria-hidden
               style={{
-                fontSize: typography.sizes.xs,
-                color: 'var(--nexora-textMuted)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: currentTheme.accent,
+                flexShrink: 0,
+                boxShadow: `0 0 8px ${currentTheme.accent}`,
               }}
-            >
-              {current?.organizationName ?? organizationName}
-            </div>
-            <div
-              style={{
-                fontWeight: typography.weights.semibold,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {current?.workspaceName ?? workspaceName}
-            </div>
-            {loading ? (
-              <Spinner size={12} />
-            ) : current !== undefined && current !== null ? (
-              <Badge tone="primary" dot>
-                {current.domainName} · {current.roleName}
-              </Badge>
-            ) : null}
+            />
+            <Stack gap={0.5} style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: typography.sizes.xs,
+                  color: 'var(--nexora-textMuted)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {current?.organizationName ?? organizationName}
+              </div>
+              <div
+                style={{
+                  fontWeight: typography.weights.semibold,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {current?.workspaceName ?? workspaceName}
+              </div>
+              {loading ? (
+                <Spinner size={12} />
+              ) : current !== undefined && current !== null ? (
+                <Badge dotColor={currentTheme.accent} dot style={{ color: currentTheme.accent }}>
+                  {current.domainName} · {current.roleName}
+                </Badge>
+              ) : null}
+            </Stack>
           </Stack>
           {canSwitch ? (
             <span aria-hidden style={{ color: 'var(--nexora-textMuted)', fontSize: 11 }}>
@@ -182,10 +196,10 @@ export function RoleSwitcher({
             width: 300,
             maxHeight: '60vh',
             overflowY: 'auto',
-            background: 'var(--nexora-surface)',
+            background: 'var(--nexora-shellCardElevated, var(--nexora-surface))',
             border: '1px solid var(--nexora-borderStrong)',
             borderRadius: 14,
-            boxShadow: '0 12px 40px rgba(0,0,0,0.18)',
+            boxShadow: '0 20px 48px rgba(2, 4, 10, 0.55)',
             zIndex: 50,
           }}
         >
@@ -196,25 +210,29 @@ export function RoleSwitcher({
               fontSize: typography.sizes.xs,
               color: 'var(--nexora-textMuted)',
               fontWeight: typography.weights.medium,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
             }}
           >
-            Switch business context
+            Switch business lens
           </div>
           {groups.map((group) => (
-            <div key={group.organizationId}>
-              {groups.length > 1 ? (
-                <div
-                  style={{
-                    padding: '8px 14px 4px',
-                    fontSize: typography.sizes.xs,
-                    color: 'var(--nexora-textMuted)',
-                  }}
-                >
-                  {group.organizationName}
-                </div>
-              ) : null}
+            <div key={group.domainId}>
+              <div
+                style={{
+                  padding: '10px 14px 4px',
+                  fontSize: typography.sizes.xs,
+                  fontWeight: typography.weights.semibold,
+                  color: 'var(--nexora-textMuted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                {group.domainName}
+              </div>
               {group.options.map((option) => {
                 const isCurrent = option.workspaceId === current?.workspaceId;
+                const optionTheme = themeForRole(option.roleId);
                 return (
                   <button
                     key={option.workspaceId}
@@ -228,39 +246,54 @@ export function RoleSwitcher({
                       textAlign: 'left',
                       padding: '10px 14px',
                       border: 'none',
-                      background: isCurrent ? 'var(--nexora-primarySoft)' : 'transparent',
+                      background: isCurrent ? optionTheme.accentSoft : 'transparent',
                       cursor: 'pointer',
                     }}
                   >
-                    <Stack gap={0.5}>
-                      <Stack direction="row" gap={2} align="center">
+                    <Stack direction="row" gap={2} align="center">
+                      <span
+                        aria-hidden
+                        style={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: '50%',
+                          background: optionTheme.accent,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <Stack gap={0.5} style={{ minWidth: 0, flex: 1 }}>
+                        <Stack direction="row" gap={2} align="center">
+                          <span
+                            style={{
+                              fontSize: typography.sizes.sm,
+                              fontWeight: isCurrent
+                                ? typography.weights.semibold
+                                : typography.weights.medium,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {option.workspaceName}
+                          </span>
+                          {isCurrent ? (
+                            <span
+                              aria-hidden
+                              style={{ marginLeft: 'auto', color: optionTheme.accent }}
+                            >
+                              ✓
+                            </span>
+                          ) : null}
+                        </Stack>
                         <span
                           style={{
-                            fontSize: typography.sizes.sm,
-                            fontWeight: isCurrent
-                              ? typography.weights.semibold
-                              : typography.weights.medium,
+                            fontSize: typography.sizes.xs,
+                            color: 'var(--nexora-textSecondary)',
                           }}
                         >
-                          {option.workspaceName}
+                          {option.roleName} · {optionTheme.identity}
                         </span>
-                        {isCurrent ? (
-                          <span
-                            aria-hidden
-                            style={{ marginLeft: 'auto', color: 'var(--nexora-primary)' }}
-                          >
-                            ✓
-                          </span>
-                        ) : null}
                       </Stack>
-                      <span
-                        style={{
-                          fontSize: typography.sizes.xs,
-                          color: 'var(--nexora-textSecondary)',
-                        }}
-                      >
-                        {option.domainName} · {option.roleName}
-                      </span>
                     </Stack>
                   </button>
                 );

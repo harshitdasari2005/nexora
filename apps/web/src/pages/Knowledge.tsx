@@ -35,7 +35,10 @@ export function Knowledge(): JSX.Element {
   }>({ dashboard: null, articles: [], categories: [], loading: true, error: null });
 
   const load = useCallback(async () => {
-    setState({ dashboard: null, articles: [], categories: [], loading: true, error: null });
+    // Keeps any already-loaded dashboard visible while refetching — a role
+    // switch re-runs this exact effect, and resetting to `null` would
+    // unmount AppShell (sidebar included) on every switch.
+    setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const params = new URLSearchParams();
       const organizationId = searchParams.get('organizationId');
@@ -61,14 +64,12 @@ export function Knowledge(): JSX.Element {
         error: null,
       });
     } catch (error) {
-      setState({
-        dashboard: null,
-        articles: [],
-        categories: [],
+      setState((current) => ({
+        ...current,
         loading: false,
         error:
           error instanceof ApiError ? error : new ApiError(0, 'INTERNAL_ERROR', 'Request failed'),
-      });
+      }));
     }
   }, [searchParams]);
 
@@ -76,7 +77,7 @@ export function Knowledge(): JSX.Element {
     void load();
   }, [load]);
 
-  if (state.loading) {
+  if (state.loading && state.dashboard === null) {
     return <LoadingScreen />;
   }
   if (state.error !== null) {

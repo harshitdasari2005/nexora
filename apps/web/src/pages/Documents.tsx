@@ -53,7 +53,10 @@ export function Documents(): JSX.Element {
   }>({ dashboard: null, documents: [], loading: true, error: null });
 
   const load = useCallback(async () => {
-    setState({ dashboard: null, documents: [], loading: true, error: null });
+    // Keeps any already-loaded dashboard visible while refetching — a role
+    // switch re-runs this exact effect, and resetting to `null` would
+    // unmount AppShell (sidebar included) on every switch.
+    setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const params = new URLSearchParams();
       const organizationId = searchParams.get('organizationId');
@@ -71,13 +74,12 @@ export function Documents(): JSX.Element {
       );
       setState({ dashboard, documents: listed.documents, loading: false, error: null });
     } catch (error) {
-      setState({
-        dashboard: null,
-        documents: [],
+      setState((current) => ({
+        ...current,
         loading: false,
         error:
           error instanceof ApiError ? error : new ApiError(0, 'INTERNAL_ERROR', 'Request failed'),
-      });
+      }));
     }
   }, [searchParams]);
 
@@ -85,7 +87,7 @@ export function Documents(): JSX.Element {
     void load();
   }, [load]);
 
-  if (state.loading) {
+  if (state.loading && state.dashboard === null) {
     return <LoadingScreen />;
   }
   if (state.error !== null) {

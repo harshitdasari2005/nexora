@@ -9,15 +9,24 @@
  * S32: the shell runs the dark navy theme (the same intelligence
  * environment as Landing/Login, quieted to `ambient`) so every authenticated
  * page inherits the premium look instead of silently falling back to light.
+ *
+ * S33: the shell's atmosphere, accent, navigation priority, and role badge
+ * are now driven by the caller's RESOLVED business role (`RoleThemeContext`)
+ * rather than the current page path — switching roles changes the
+ * environment; switching pages within one role does not. A signature
+ * "signal sweep" plays across the shell whenever the resolved role changes,
+ * so a role switch reads as Nexora recalculating context, not a reload.
  */
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Avatar, Badge, spacing, typography } from '@nexora/design-system';
 
+import { RoleThemeProvider, useRoleTheme } from '../lib/RoleThemeContext.js';
+import type { RoleTheme } from '../lib/roleThemes.js';
 import type { UserDto } from '../lib/types.js';
 import { CommandPalette } from './CommandPalette.js';
-import { IntelligenceNetwork, type IntelligenceNetworkTint } from './IntelligenceNetwork.js';
+import { IntelligenceNetwork } from './IntelligenceNetwork.js';
 import { NotificationCenter } from './NotificationCenter.js';
 import { RoleSwitcher } from './RoleSwitcher.js';
 
@@ -50,7 +59,7 @@ interface NavItem {
   action?: 'search';
 }
 
-const NAV_ITEMS: readonly NavItem[] = [
+const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'Overview', icon: '◎', to: '/app' },
   { label: 'Command Center', icon: '✦', to: '/app/command-center' },
   { label: 'Agent', icon: '✦', to: '/app/agent' },
@@ -68,28 +77,40 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Settings', icon: '⚙', to: '/app/settings' },
 ];
 
-/** The extremely-subtle per-page atmosphere hue (never a different theme). */
-function pageTintFor(pathname: string): IntelligenceNetworkTint {
-  if (pathname.startsWith('/app/problems')) return 'amber';
-  if (pathname.startsWith('/app/agent') || pathname.startsWith('/app/assistant')) return 'violet';
-  if (pathname.startsWith('/app/insights')) return 'teal';
-  if (
-    pathname.startsWith('/app/settings') ||
-    pathname.startsWith('/app/projects') ||
-    pathname.startsWith('/app/workflows') ||
-    pathname.startsWith('/app/apps') ||
-    pathname.startsWith('/app/integrations') ||
-    pathname.startsWith('/app/documents') ||
-    pathname.startsWith('/app/knowledge') ||
-    pathname.startsWith('/app/employees')
-  ) {
-    return 'slate';
+/**
+ * Reorders the fixed nav catalog so the active role's priorities lead —
+ * still every existing route, in a role-appropriate order, never a
+ * fabricated one.
+ */
+function orderNavItems(theme: RoleTheme): readonly NavItem[] {
+  const byLabel = new Map(BASE_NAV_ITEMS.map((item) => [item.label, item] as const));
+  const ordered: NavItem[] = [];
+  for (const label of theme.navPriority) {
+    const item = byLabel.get(label);
+    if (item !== undefined) {
+      ordered.push(item);
+      byLabel.delete(label);
+    }
   }
-  return 'indigo';
+  // 'Overview' is a legacy landing route, not part of any role's priority
+  // list by design — keep it available, just last, rather than dropping it.
+  for (const item of BASE_NAV_ITEMS) {
+    if (byLabel.has(item.label)) ordered.push(item);
+  }
+  return ordered;
 }
 
 /** Renders the persistent application shell. */
-export function AppShell({
+export function AppShell(props: AppShellProps): JSX.Element {
+  return (
+    <RoleThemeProvider organizationId={props.organizationId} workspaceId={props.workspaceId}>
+      <AppShellChrome {...props} />
+    </RoleThemeProvider>
+  );
+}
+
+/** The actual shell chrome — reads the resolved role theme via context. */
+function AppShellChrome({
   user,
   organizationName,
   workspaceName,
@@ -101,6 +122,7 @@ export function AppShell({
   const { pathname } = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { theme, current } = useRoleTheme();
 
   // Global ⌘K / Ctrl+K opens the search palette from anywhere in the shell.
   // Escape closes the mobile drawer when it's open.
@@ -122,6 +144,23 @@ export function AppShell({
     setMobileNavOpen(false);
   }, [pathname]);
 
+  // The signature role-transition signal: replays whenever the RESOLVED
+  // role actually changes (never on first paint, never on a plain page
+  // navigation within the same role). A CSS keyframe animation keyed by an
+  // incrementing counter — no manual timers, and it collapses to nothing
+  // under `prefers-reduced-motion` via the same global rule that flattens
+  // every animation-duration to 0.01ms.
+  const previousRoleIdRef = useRef<string | undefined>(undefined);
+  const [sweepGeneration, setSweepGeneration] = useState(0);
+  useEffect(() => {
+    const roleId = current?.roleId;
+    if (roleId === undefined) return;
+    if (previousRoleIdRef.current !== undefined && previousRoleIdRef.current !== roleId) {
+      setSweepGeneration((value) => value + 1);
+    }
+    previousRoleIdRef.current = roleId;
+  }, [current?.roleId]);
+
   // Carries the current trusted (organization, workspace) scope across
   // in-app navigation — otherwise every nav link would reset to the
   // server's default scope and undo a role switch the moment the user
@@ -134,7 +173,9 @@ export function AppShell({
     return suffix.length > 0 ? `?${suffix}` : '';
   })();
 
-  const tint = pageTintFor(pathname);
+  const navItems = orderNavItems(theme);
+  const roleLabel =
+    current !== null ? `${current.domainName} · ${current.roleName}` : theme.identity;
 
   return (
     <div
@@ -150,14 +191,46 @@ export function AppShell({
       }}
     >
       {/* Global ambient background — the same intelligence environment as
-          Landing/Login, quieted for sustained work. Sits behind every
-          region; sidebar/topbar stay solid so it never fights legibility. */}
+          Landing/Login, quieted for sustained work, tinted to the active
+          ROLE's atmosphere (not the page) so switching business lenses is
+          the thing that visibly changes the environment. */}
       <div
         aria-hidden="true"
         style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}
       >
-        <IntelligenceNetwork quiet ambient tint={tint} />
+        <IntelligenceNetwork quiet ambient tint={theme.tint} />
       </div>
+
+      {/* A very low-opacity corner wash in the role's accent — the
+          "different atmosphere per role" cue that survives even when the
+          canvas scene itself is sparse or reduced-motion static. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 0,
+          pointerEvents: 'none',
+          background: `radial-gradient(ellipse 70% 55% at 12% -8%, ${theme.accentSoft}, transparent 62%)`,
+        }}
+      />
+
+      {/* The signature role-transition signal: a soft accent pulse from the
+          workspace center, replayed by remounting on `sweepGeneration`. */}
+      {sweepGeneration > 0 ? (
+        <div
+          key={sweepGeneration}
+          aria-hidden="true"
+          className="nexora-role-sweep"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            pointerEvents: 'none',
+            background: `radial-gradient(circle at 50% 42%, ${theme.accent}59, transparent 60%)`,
+          }}
+        />
+      ) : null}
 
       {/* Sidebar */}
       <aside
@@ -242,7 +315,7 @@ export function AppShell({
             overflowY: 'auto',
           }}
         >
-          {NAV_ITEMS.map((item) => {
+          {navItems.map((item) => {
             const active =
               item.to !== undefined &&
               (item.to === '/app' ? pathname === '/app' : pathname.startsWith(item.to));
@@ -283,9 +356,9 @@ export function AppShell({
               borderRadius: 8,
               fontSize: typography.sizes.base,
               color: active ? 'var(--nexora-text)' : 'var(--nexora-textSecondary)',
-              background: active ? 'var(--nexora-primarySoft)' : 'transparent',
-              borderLeft: active ? '2px solid var(--nexora-primary)' : '2px solid transparent',
-              boxShadow: active ? '0 0 20px -6px rgba(99, 102, 241, 0.45)' : 'none',
+              background: active ? theme.accentSoft : 'transparent',
+              borderLeft: active ? `2px solid ${theme.accent}` : '2px solid transparent',
+              boxShadow: active ? `0 0 20px -6px ${theme.accent}` : 'none',
               fontWeight: active ? typography.weights.medium : typography.weights.regular,
               cursor: item.soon ? 'default' : 'pointer',
               opacity: item.soon ? 0.7 : 1,
@@ -468,9 +541,23 @@ export function AppShell({
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-            <Badge tone="ai" dot>
-              AI platform
-            </Badge>
+            <span
+              key={sweepGeneration}
+              className="nexora-role-badge-pulse"
+              style={{ display: 'inline-flex' }}
+            >
+              <Badge
+                dot
+                dotColor={theme.accent}
+                style={{
+                  background: theme.accentSoft,
+                  color: theme.accent,
+                  border: `1px solid ${theme.accent}55`,
+                }}
+              >
+                {roleLabel}
+              </Badge>
+            </span>
             <NotificationCenter organizationId={organizationId} workspaceId={workspaceId} />
           </div>
         </header>
@@ -511,6 +598,22 @@ export function AppShell({
           inset: 0;
           background: var(--nexora-overlay);
           z-index: 39;
+        }
+        @keyframes nexora-role-sweep {
+          0% { opacity: 0; transform: scale(0.82); }
+          32% { opacity: 1; }
+          100% { opacity: 0; transform: scale(1.55); }
+        }
+        .nexora-role-sweep {
+          animation: nexora-role-sweep 750ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes nexora-role-badge-pulse {
+          0% { transform: scale(1); }
+          30% { transform: scale(1.08); }
+          100% { transform: scale(1); }
+        }
+        .nexora-role-badge-pulse {
+          animation: nexora-role-badge-pulse 550ms cubic-bezier(0.16, 1, 0.3, 1);
         }
         @media (max-width: 900px) {
           .nexora-crumb-org { display: none; }

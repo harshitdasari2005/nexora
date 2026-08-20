@@ -33,6 +33,8 @@ import { LoadingScreen } from '../components/LoadingScreen.js';
 import { SectionLabel, severityAccent, severityTone } from '../components/ProblemInvestigation.js';
 import { api, ApiError } from '../lib/api.js';
 import { fetchProblems } from '../lib/problems.js';
+import { useRoleTheme } from '../lib/RoleThemeContext.js';
+import type { RoleTheme } from '../lib/roleThemes.js';
 import type {
   BusinessProblemDto,
   CommandCenterDto,
@@ -54,7 +56,12 @@ export function CommandCenter(): JSX.Element {
   }>({ dashboard: null, loading: true, error: null });
 
   const load = useCallback(async () => {
-    setState({ dashboard: null, loading: true, error: null });
+    // Keeps any already-loaded dashboard visible while refetching (a role
+    // switch is a search-param change, which re-runs this exact effect) —
+    // resetting to `null` here would unmount AppShell itself on every
+    // switch, replacing the whole shell (sidebar included) with a bare
+    // LoadingScreen and destroying the signature role-transition entirely.
+    setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const params = new URLSearchParams();
       const organizationId = searchParams.get('organizationId');
@@ -65,12 +72,12 @@ export function CommandCenter(): JSX.Element {
       const dashboard = await api<DashboardResponse>(`/dashboard${suffix}`);
       setState({ dashboard, loading: false, error: null });
     } catch (error) {
-      setState({
-        dashboard: null,
+      setState((current) => ({
+        ...current,
         loading: false,
         error:
           error instanceof ApiError ? error : new ApiError(0, 'INTERNAL_ERROR', 'Request failed'),
-      });
+      }));
     }
   }, [searchParams]);
 
@@ -78,7 +85,7 @@ export function CommandCenter(): JSX.Element {
     void load();
   }, [load]);
 
-  if (state.loading) {
+  if (state.loading && state.dashboard === null) {
     return <LoadingScreen />;
   }
   if (state.error !== null) {
@@ -223,6 +230,7 @@ export function CommandCenterView({
   // new center has painted.
   const [morphing, setMorphing] = useState(false);
   const firstLoadRef = useRef(true);
+  const { theme } = useRoleTheme();
 
   const load = useCallback(async () => {
     if (!firstLoadRef.current) {
@@ -295,7 +303,7 @@ export function CommandCenterView({
               letterSpacing: '0.08em',
             }}
           >
-            Command Center
+            {theme.identity}
           </div>
           <Stack direction="row" gap={3} align="center" style={{ flexWrap: 'wrap' }}>
             <h1
@@ -309,13 +317,17 @@ export function CommandCenterView({
               {firstName !== undefined ? `, ${firstName}` : ''}.
             </h1>
             {roleLabel !== undefined ? (
-              <Badge tone="primary" dot>
+              <Badge
+                dot
+                dotColor={theme.accent}
+                style={{ color: theme.accent, background: theme.accentSoft }}
+              >
                 {roleLabel}
               </Badge>
             ) : null}
           </Stack>
           <p style={{ fontSize: typography.sizes.md, color: 'var(--nexora-textSecondary)' }}>
-            {organizationName} · Here&apos;s what needs your attention today.
+            {organizationName} · {theme.tagline}
           </p>
         </Stack>
 
@@ -354,11 +366,12 @@ export function CommandCenterView({
             }}
           >
             <Stack gap={6}>
-              {/* Nexora Brief */}
+              {/* Nexora Brief — tinted to the role's accent, not a fixed
+                  indigo/violet gradient, so the same card reads as visibly
+                  different across roles. */}
               <Card
                 style={{
-                  background:
-                    'linear-gradient(135deg, var(--nexora-aiSoft), var(--nexora-primarySoft))',
+                  background: `linear-gradient(135deg, ${theme.accentSoft}, var(--nexora-primarySoft))`,
                   border: '1px solid var(--nexora-border)',
                 }}
               >
@@ -369,13 +382,13 @@ export function CommandCenterView({
                       width: 36,
                       height: 36,
                       borderRadius: 10,
-                      background: 'linear-gradient(135deg, #6366f1, #7c3aed)',
+                      background: `linear-gradient(135deg, ${theme.accent}, var(--nexora-primary))`,
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       fontSize: 16,
                       flexShrink: 0,
-                      color: '#fff',
+                      color: '#0b0e16',
                     }}
                   >
                     ✦
@@ -385,12 +398,12 @@ export function CommandCenterView({
                       style={{
                         fontSize: typography.sizes.xs,
                         fontWeight: typography.weights.semibold,
-                        color: 'var(--nexora-ai)',
+                        color: theme.accent,
                         textTransform: 'uppercase',
                         letterSpacing: '0.06em',
                       }}
                     >
-                      Nexora Brief
+                      {theme.briefLabel}
                     </div>
                     <p
                       style={{
@@ -420,7 +433,7 @@ export function CommandCenterView({
                       fontWeight: typography.weights.semibold,
                     }}
                   >
-                    Needs your attention
+                    {theme.sections.attention}
                   </h2>
                   <Stack gap={3}>
                     {sortedProblems.map((problem) => (
@@ -451,7 +464,7 @@ export function CommandCenterView({
                         fontWeight: typography.weights.medium,
                       }}
                     >
-                      &ldquo;What needs my attention?&rdquo;
+                      &ldquo;{theme.briefQuestion}&rdquo;
                     </p>
                     <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
                       <Link to="/app/assistant" style={{ textDecoration: 'none' }}>
@@ -518,7 +531,7 @@ export function CommandCenterView({
                   first KPI widget gets hero visual weight — the most
                   important number should dominate, not blend into a grid of
                   identical cards. */}
-              <WidgetGrid center={center} />
+              <WidgetGrid center={center} theme={theme} />
             </Stack>
           </div>
         )}
@@ -602,17 +615,27 @@ function ProblemAttentionCard({ problem }: { problem: BusinessProblemDto }): JSX
 }
 
 /**
- * The widget grid — grouped into labeled sections (BUSINESS HEALTH / BUSINESS
- * SIGNALS / RECENT ACTIVITY) instead of one undifferentiated wall of
- * identical cards. The grouping is purely presentational: it sorts the SAME
- * role-composed widgets by their existing `type`, fabricating nothing. The
- * first KPI widget keeps hero visual weight.
+ * The widget grid — grouped into labeled sections (role-specific terminology,
+ * e.g. "Engineering Health" for a CTO vs "Financial Health" for a CFO)
+ * instead of one undifferentiated wall of identical cards, composed in the
+ * ROLE's own order (a Developer sees signals before health; everyone else
+ * sees health first). The grouping is purely presentational: it sorts the
+ * SAME role-composed widgets by their existing `type`, fabricating nothing.
+ * The first KPI widget keeps hero visual weight.
  */
-function WidgetGrid({ center }: { center: CommandCenterDto }): JSX.Element {
+function WidgetGrid({
+  center,
+  theme,
+}: {
+  center: CommandCenterDto;
+  theme: RoleTheme;
+}): JSX.Element {
   const heroId = center.widgets.find((w) => w.type === 'kpi')?.id;
-  const health = center.widgets.filter((w) => w.type === 'kpi');
-  const signals = center.widgets.filter((w) => w.type === 'list' || w.type === 'attention');
-  const activity = center.widgets.filter((w) => w.type === 'activity');
+  const groups: Record<'health' | 'signals' | 'activity', CommandCenterWidgetDto[]> = {
+    health: center.widgets.filter((w) => w.type === 'kpi'),
+    signals: center.widgets.filter((w) => w.type === 'list' || w.type === 'attention'),
+    activity: center.widgets.filter((w) => w.type === 'activity'),
+  };
 
   const renderGroup = (widgets: readonly CommandCenterWidgetDto[]): JSX.Element => (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>
@@ -629,24 +652,14 @@ function WidgetGrid({ center }: { center: CommandCenterDto }): JSX.Element {
 
   return (
     <Stack gap={6}>
-      {health.length > 0 ? (
-        <Stack gap={3}>
-          <SectionLabel>Business health</SectionLabel>
-          {renderGroup(health)}
-        </Stack>
-      ) : null}
-      {signals.length > 0 ? (
-        <Stack gap={3}>
-          <SectionLabel>Business signals</SectionLabel>
-          {renderGroup(signals)}
-        </Stack>
-      ) : null}
-      {activity.length > 0 ? (
-        <Stack gap={3}>
-          <SectionLabel>Recent activity</SectionLabel>
-          {renderGroup(activity)}
-        </Stack>
-      ) : null}
+      {theme.order.map((key) =>
+        groups[key].length > 0 ? (
+          <Stack gap={3} key={key}>
+            <SectionLabel>{theme.sections[key]}</SectionLabel>
+            {renderGroup(groups[key])}
+          </Stack>
+        ) : null,
+      )}
     </Stack>
   );
 }

@@ -121,14 +121,12 @@ export function Settings(): JSX.Element {
       ]);
       setState({ dashboard, roleContext, preferences, loading: false, error: null });
     } catch (error) {
-      setState({
-        dashboard: null,
-        roleContext: null,
-        preferences: null,
+      setState((current) => ({
+        ...current,
         loading: false,
         error:
           error instanceof ApiError ? error : new ApiError(0, 'INTERNAL_ERROR', 'Request failed'),
-      });
+      }));
     }
   }, [scopeSuffix]);
 
@@ -154,7 +152,7 @@ export function Settings(): JSX.Element {
     [scopeSuffix],
   );
 
-  if (state.loading) {
+  if (state.loading && state.dashboard === null) {
     return <LoadingScreen />;
   }
   if (state.error !== null) {

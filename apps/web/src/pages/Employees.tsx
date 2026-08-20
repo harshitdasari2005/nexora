@@ -43,7 +43,10 @@ export function Employees(): JSX.Element {
   }>({ dashboard: null, employees: [], loading: true, error: null });
 
   const load = useCallback(async () => {
-    setState({ dashboard: null, employees: [], loading: true, error: null });
+    // Keeps any already-loaded dashboard visible while refetching — a role
+    // switch re-runs this exact effect, and resetting to `null` would
+    // unmount AppShell (sidebar included) on every switch.
+    setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const params = new URLSearchParams();
       const organizationId = searchParams.get('organizationId');
@@ -59,13 +62,12 @@ export function Employees(): JSX.Element {
       );
       setState({ dashboard, employees: listed.employees, loading: false, error: null });
     } catch (error) {
-      setState({
-        dashboard: null,
-        employees: [],
+      setState((current) => ({
+        ...current,
         loading: false,
         error:
           error instanceof ApiError ? error : new ApiError(0, 'INTERNAL_ERROR', 'Request failed'),
-      });
+      }));
     }
   }, [searchParams]);
 
@@ -73,7 +75,7 @@ export function Employees(): JSX.Element {
     void load();
   }, [load]);
 
-  if (state.loading) {
+  if (state.loading && state.dashboard === null) {
     return <LoadingScreen />;
   }
   if (state.error !== null) {

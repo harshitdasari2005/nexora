@@ -98,6 +98,18 @@ const WORKSPACE_TYPE_ROLE_OVERRIDE: Readonly<Record<string, Readonly<Record<stri
     admin: 'procurement.vendor_manager',
     member: 'procurement.vendor_manager',
   },
+  // `general` had no prior override (fell through to the unconditional
+  // default). S33 spends its three membership tiers on the technology
+  // domain's own hierarchy — CTO at the top, Engineering Manager in the
+  // middle, Developer at the base — so the demo's three technology-domain
+  // workspaces (Technology/Engineering/Developer) each resolve to a
+  // genuinely different, already-cataloged role rather than all three
+  // collapsing onto the generic owner/admin/member default.
+  general: {
+    owner: 'technology.cto',
+    admin: 'technology.engineering_manager',
+    member: 'technology.developer',
+  },
 };
 
 /** Dependencies of the resolver. */

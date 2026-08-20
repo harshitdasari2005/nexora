@@ -51,6 +51,7 @@ import {
 import { Email } from '@nexora/domain-identity';
 import { Organization, OrganizationId } from '@nexora/domain-organizations';
 import { Project } from '@nexora/domain-projects';
+import type { MembershipRole } from '@nexora/domain-workspaces';
 import { Notification } from '@nexora/module-notifications';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 
@@ -218,45 +219,82 @@ async function main(): Promise<void> {
   }
   const workspaceIdBranded = workspaceId as WorkspaceId;
 
-  // --- 2b. role-switching workspaces (S27 Phase 6): one per business domain
-  // the workspace-type role override supports, so switching context in the
-  // UI resolves a genuinely different, trusted business role — never a
+  // --- 2b. role-switching workspaces (S27 Phase 6; S33 added the technology
+  // trio + admin-tier retargeting): one per business role the workspace-type
+  // + membership-role override resolves, so switching context in the UI
+  // resolves a genuinely different, trusted business role — never a
   // fabricated one. Idempotent, same as the primary demo workspace above.
+  //
+  // `membershipRole` defaults to 'owner' (the role `createWorkspace` always
+  // grants its creator). Where the desired role sits at the admin/member
+  // tier of an existing type's override (S33: Product Manager, Operations
+  // Manager) or where all three tiers of a still-unused type are spent on
+  // one role family (S33: the `general`-typed CTO/Engineering
+  // Manager/Developer trio), the demo user's own membership is retargeted
+  // in place via the aggregate's own `changeRole` — the same sanctioned
+  // mutator a real admin console would call, never a fabricated role.
   const ROLE_SWITCHING_WORKSPACES: ReadonlyArray<{
     slug: string;
     name: string;
     type: string;
+    membershipRole?: MembershipRole;
   }> = [
     { slug: 'finance', name: 'Finance', type: 'finance' },
     { slug: 'people', name: 'People', type: 'hr' },
     { slug: 'sales', name: 'Sales', type: 'sales' },
     { slug: 'marketing', name: 'Marketing', type: 'marketing' },
-    { slug: 'product', name: 'Product', type: 'product' },
+    // admin tier of 'product' resolves to Product Manager (owner resolves to
+    // the less specific Product Lead) — this workspace demonstrates the
+    // named role the product workspace universe actually asks for.
+    { slug: 'product', name: 'Product', type: 'product', membershipRole: 'admin' },
     { slug: 'legal', name: 'Legal', type: 'legal' },
-    { slug: 'operations', name: 'Operations', type: 'operations' },
+    // admin tier of 'operations' resolves to Operations Manager (owner
+    // resolves to the more senior Head of Operations).
+    { slug: 'operations', name: 'Operations', type: 'operations', membershipRole: 'admin' },
     { slug: 'customer-success', name: 'Customer Success', type: 'customer_success' },
     { slug: 'procurement', name: 'Procurement', type: 'procurement' },
+    // The technology trio: 'general' had no prior override, so all three of
+    // its membership tiers are spent on one role family here, each
+    // workspace fixing the demo user at a different tier.
+    { slug: 'technology', name: 'Technology', type: 'general', membershipRole: 'owner' },
+    { slug: 'engineering', name: 'Engineering', type: 'general', membershipRole: 'admin' },
+    { slug: 'developer', name: 'Developer', type: 'general', membershipRole: 'member' },
   ];
   for (const definition of ROLE_SWITCHING_WORKSPACES) {
+    const desiredRole = definition.membershipRole ?? 'owner';
+    let targetWorkspaceId: string;
     const existing = existingWorkspaces.value.find((ws) => ws.slug === definition.slug);
     if (existing !== undefined) {
       log(`Reusing workspace ${definition.name} (${existing.id})`);
-      continue;
+      targetWorkspaceId = existing.id;
+    } else {
+      const created = await container.createWorkspace.handle({
+        organizationId: tenantId,
+        slug: definition.slug,
+        name: definition.name,
+        type: definition.type,
+        actorId: userId,
+        correlationId: `demo-seed:create-workspace:${definition.slug}`,
+      });
+      if (!created.ok) {
+        throw new Error(
+          `Could not create the ${definition.name} workspace: ${created.error.message}`,
+        );
+      }
+      log(`Created workspace ${definition.name} (${created.value.workspace.id})`);
+      targetWorkspaceId = created.value.workspace.id;
     }
-    const created = await container.createWorkspace.handle({
-      organizationId: tenantId,
-      slug: definition.slug,
-      name: definition.name,
-      type: definition.type,
-      actorId: userId,
-      correlationId: `demo-seed:create-workspace:${definition.slug}`,
-    });
-    if (!created.ok) {
-      throw new Error(
-        `Could not create the ${definition.name} workspace: ${created.error.message}`,
+    if (desiredRole !== 'owner') {
+      const membership = await repositories.workspaceMemberships.findByWorkspaceAndUser(
+        targetWorkspaceId as WorkspaceId,
+        userId,
       );
+      if (membership !== undefined && membership.role !== desiredRole) {
+        membership.changeRole(desiredRole);
+        await repositories.workspaceMemberships.save(membership);
+        log(`Set demo user's role on ${definition.name} to ${desiredRole}`);
+      }
     }
-    log(`Created workspace ${definition.name} (${created.value.workspace.id})`);
   }
 
   // --- 3. ACTIVE projects (v1 projects auto-activate on creation) -----------

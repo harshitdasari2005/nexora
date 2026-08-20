@@ -45,9 +45,12 @@ export function Projects(): JSX.Element {
     async (options?: { silent?: boolean }) => {
       // Silent reloads (e.g. after a create) keep the current view mounted and
       // refresh data in the background — the full-screen loading state only
-      // appears on the initial fetch (no flash on every create).
+      // appears on the true first fetch. Non-silent reloads (including a
+      // role switch, which re-runs this same effect) still keep any
+      // already-loaded dashboard visible — nulling it here would unmount
+      // AppShell (sidebar included) on every switch.
       if (options?.silent !== true) {
-        setState({ dashboard: null, projects: [], loading: true, error: null });
+        setState((current) => ({ ...current, loading: true, error: null }));
       }
       try {
         const params = new URLSearchParams();
@@ -70,13 +73,12 @@ export function Projects(): JSX.Element {
         if (options?.silent === true) {
           return;
         }
-        setState({
-          dashboard: null,
-          projects: [],
+        setState((current) => ({
+          ...current,
           loading: false,
           error:
             error instanceof ApiError ? error : new ApiError(0, 'INTERNAL_ERROR', 'Request failed'),
-        });
+        }));
       }
     },
     [searchParams],
@@ -86,7 +88,7 @@ export function Projects(): JSX.Element {
     void load();
   }, [load]);
 
-  if (state.loading) {
+  if (state.loading && state.dashboard === null) {
     return <LoadingScreen />;
   }
   if (state.error !== null) {
