@@ -204,7 +204,7 @@ export function WorkflowsView({
           <EmptyState
             icon="⧉"
             title="No workflows yet"
-            description="Ask the AI: “Create a project called Mobile Banking and assign Sarah to it.” The workflow will appear here."
+            description="Ask the AI: “Create a project called Mobile Banking and assign Priya to it.” The workflow will appear here."
           />
         </Card>
       ) : (

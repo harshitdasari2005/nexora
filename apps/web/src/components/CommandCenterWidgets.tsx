@@ -23,22 +23,45 @@ export interface CommandCenterWidgetProps {
   widget: CommandCenterWidgetDto;
   /** The widget's resolved data (missing data renders an empty state). */
   data?: CommandCenterWidgetDataDto;
+  /**
+   * Gives the widget hero visual weight (the single most important number,
+   * not a grid of identical cards). Only meaningful on `kpi` widgets.
+   */
+  hero?: boolean;
 }
 
 /** Renders one widget through the widget-type → renderer registry. */
-export function CommandCenterWidget({ widget, data }: CommandCenterWidgetProps): JSX.Element {
+export function CommandCenterWidget({
+  widget,
+  data,
+  hero = false,
+}: CommandCenterWidgetProps): JSX.Element {
+  const isHeroKpi = hero && widget.type === 'kpi';
   return (
     <Card
       padding={5}
+      interactive
       style={{
-        gridColumn: widget.span === 2 ? 'span 2' : 'span 1',
+        gridColumn: widget.span === 2 || isHeroKpi ? 'span 2' : 'span 1',
         minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
+        ...(isHeroKpi
+          ? {
+              background:
+                'linear-gradient(135deg, var(--nexora-primarySoft), var(--nexora-surface))',
+              border: '1px solid var(--nexora-borderStrong)',
+            }
+          : null),
       }}
     >
       <Stack gap={1} style={{ marginBottom: 12 }}>
-        <h2 style={{ fontSize: typography.sizes.md, fontWeight: typography.weights.semibold }}>
+        <h2
+          style={{
+            fontSize: isHeroKpi ? typography.sizes.lg : typography.sizes.md,
+            fontWeight: typography.weights.semibold,
+          }}
+        >
           {widget.title}
         </h2>
         {widget.description !== undefined ? (
@@ -47,7 +70,11 @@ export function CommandCenterWidget({ widget, data }: CommandCenterWidgetProps):
           </p>
         ) : null}
       </Stack>
-      {data === undefined ? <EmptyState title="No data" /> : renderWidgetData(widget.type, data)}
+      {data === undefined ? (
+        <EmptyState title="No data" />
+      ) : (
+        renderWidgetData(widget.type, data, isHeroKpi)
+      )}
     </Card>
   );
 }
@@ -56,10 +83,11 @@ export function CommandCenterWidget({ widget, data }: CommandCenterWidgetProps):
 function renderWidgetData(
   type: CommandCenterWidgetDto['type'],
   data: CommandCenterWidgetDataDto,
+  hero = false,
 ): JSX.Element {
   switch (type) {
     case 'kpi':
-      return <KpiWidget data={data} />;
+      return <KpiWidget data={data} hero={hero} />;
     case 'activity':
       return <ActivityWidget data={data} />;
     case 'attention':
@@ -77,16 +105,23 @@ function kpiToneColor(tone: 'neutral' | 'success' | 'warning' | 'danger' | undef
   return 'var(--nexora-text)';
 }
 
-/** Renders a KPI metric. */
-function KpiWidget({ data }: { data: CommandCenterWidgetDataDto }): JSX.Element {
+/** Renders a KPI metric — hero KPIs render noticeably larger. */
+function KpiWidget({
+  data,
+  hero = false,
+}: {
+  data: CommandCenterWidgetDataDto;
+  hero?: boolean;
+}): JSX.Element {
   if (data.kind !== 'kpi') {
     return <EmptyState title="No metric" />;
   }
   return (
-    <Stack gap={0.5}>
+    <Stack gap={hero ? 1 : 0.5}>
       <div
+        className="nexora-kpi-value"
         style={{
-          fontSize: typography.sizes['4xl'],
+          fontSize: hero ? typography.sizes['5xl'] : typography.sizes['4xl'],
           fontWeight: typography.weights.bold,
           lineHeight: 1,
           color: kpiToneColor(data.tone),
@@ -96,7 +131,12 @@ function KpiWidget({ data }: { data: CommandCenterWidgetDataDto }): JSX.Element 
         {data.value}
       </div>
       {data.hint !== undefined ? (
-        <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+        <div
+          style={{
+            fontSize: hero ? typography.sizes.sm : typography.sizes.xs,
+            color: 'var(--nexora-textMuted)',
+          }}
+        >
           {data.hint}
         </div>
       ) : null}

@@ -49,6 +49,8 @@ import {
   type NexoraDatabase,
 } from '@nexora/persistence';
 import { Email } from '@nexora/domain-identity';
+import { Organization, OrganizationId } from '@nexora/domain-organizations';
+import { Project } from '@nexora/domain-projects';
 import { Notification } from '@nexora/module-notifications';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 
@@ -60,12 +62,46 @@ import type { ApiConfig } from '../src/config.js';
 /** The demo user's email — override with DEMO_USER_EMAIL if needed. */
 const DEMO_USER_EMAIL = process.env['DEMO_USER_EMAIL']?.trim() || 'alex@nexora.dev';
 
+/**
+ * The demo user's display name — a realistic Indian enterprise persona
+ * (CEO of the demo org). Renamed here (not just at first provisioning)
+ * because OIDC JIT-provisioning only sets the display name ONCE — an
+ * already-provisioned local account keeps whatever name it had before.
+ */
+const DEMO_USER_DISPLAY_NAME = 'Arjun Mehta';
+
 /** Fixed, deterministic demo identifiers (never touches any other org/workspace). */
 const DEMO_ORG_SLUG = 'nexora-demo';
-const DEMO_ORG_NAME = 'Nexora Demo';
+const DEMO_ORG_NAME = 'Nexora Technologies India';
+/** The org's name before this rebrand — renamed in place, never duplicated. */
+const LEGACY_ORG_NAME = 'Nexora Demo';
 const DEMO_WORKSPACE_SLUG = 'demo';
 const DEMO_WORKSPACE_NAME = 'Demo';
-const DEMO_PROJECT_NAME = 'Mobile Banking Demo';
+const DEMO_PROJECT_NAME = 'Mobile Banking Platform';
+/** The primary project's name before this rebrand — renamed in place. */
+const LEGACY_PROJECT_NAME = 'Mobile Banking Demo';
+/** Additional realistic Indian-enterprise projects (kept small — S27/S28 style). */
+const ADDITIONAL_PROJECT_NAMES = [
+  'GST Compliance Automation',
+  'Customer 360 Platform',
+  'Digital Lending Transformation',
+];
+/**
+ * A small, consistent set of Indian employee names for the demo directory
+ * (Employees list, team widgets) — the same people appear throughout the
+ * demo rather than being randomly generated per page.
+ */
+const DEMO_EMPLOYEE_NAMES = [
+  'Priya Sharma',
+  'Rahul Nair',
+  'Ananya Iyer',
+  'Rohan Deshmukh',
+  'Sneha Reddy',
+  'Vikram Malhotra',
+  'Karthik Rao',
+  'Neha Kapoor',
+  'Aditi Shah',
+];
 const DEMO_ARTICLE_TITLE = 'Project attention playbook';
 const DEMO_ARTICLE_BODY =
   'When active projects need attention: review the project attention queue, ' +
@@ -104,12 +140,22 @@ async function main(): Promise<void> {
   const userId = user.id as UserId;
   log(`Demo user: ${DEMO_USER_EMAIL} (${userId})`);
 
+  // --- 0b. rename the demo user's display name (JIT-provisioning only sets
+  // it once, so an already-provisioned local account needs an explicit
+  // update to pick up the realistic Indian persona) -------------------------
+  if (user.profile.displayName.value !== DEMO_USER_DISPLAY_NAME) {
+    user.updateProfile({ displayName: DEMO_USER_DISPLAY_NAME });
+    await repositories.users.save(user);
+    log(`Renamed demo user display name to "${DEMO_USER_DISPLAY_NAME}"`);
+  }
+
   // --- 1. organization (idempotent: reuse if it already exists) -------------
   const existingOrgs = await container.listOrganizations.handle({ userId });
   if (!existingOrgs.ok) {
     throw new Error('Could not list organizations for the demo user.');
   }
-  let organizationId = existingOrgs.value.find((org) => org.slug === DEMO_ORG_SLUG)?.id;
+  const existingOrg = existingOrgs.value.find((org) => org.slug === DEMO_ORG_SLUG);
+  let organizationId = existingOrg?.id;
   if (organizationId === undefined) {
     const created = await container.createOrganization.handle({
       name: DEMO_ORG_NAME,
@@ -123,6 +169,20 @@ async function main(): Promise<void> {
     }
     organizationId = created.value.organization.id;
     log(`Created organization ${DEMO_ORG_NAME} (${organizationId})`);
+  } else if (existingOrg !== undefined && existingOrg.name === LEGACY_ORG_NAME) {
+    // Rebrand in place (never a duplicate) — the org name is set once at
+    // creation with no dedicated rename command, so this reconstructs the
+    // aggregate via its own snapshot/hydrate round-trip with the new name.
+    const org = await repositories.organizations.findById(OrganizationId.from(organizationId));
+    if (org !== undefined) {
+      const snapshot = Organization.snapshot(org);
+      const renamed = Organization.hydrate({
+        ...snapshot,
+        profile: { ...snapshot.profile, name: DEMO_ORG_NAME },
+      });
+      await repositories.organizations.save(renamed);
+      log(`Renamed organization "${LEGACY_ORG_NAME}" -> "${DEMO_ORG_NAME}" (${organizationId})`);
+    }
   } else {
     log(`Reusing organization ${DEMO_ORG_NAME} (${organizationId})`);
   }
@@ -197,21 +257,75 @@ async function main(): Promise<void> {
     log(`Created workspace ${definition.name} (${created.value.workspace.id})`);
   }
 
-  // --- 3. an ACTIVE project (v1 projects auto-activate on creation) ---------
+  // --- 3. ACTIVE projects (v1 projects auto-activate on creation) -----------
+  // The primary project (the one the notification/known-solution/hero flow
+  // targets) — renamed in place from its pre-rebrand name when found, never
+  // duplicated.
   const existingProjects = await repositories.projects.findByName(tenantId, DEMO_PROJECT_NAME);
   if (existingProjects.length === 0) {
-    const created = await container.createProject.handle({
-      organizationId: tenantId,
-      name: DEMO_PROJECT_NAME,
-      actorId: userId,
-      correlationId: 'demo-seed:create-project',
-    });
-    if (!created.ok) {
-      throw new Error(`Could not create the demo project: ${created.error.message}`);
+    const legacy = await repositories.projects.findByName(tenantId, LEGACY_PROJECT_NAME);
+    const legacyProject = legacy[0];
+    if (legacyProject !== undefined) {
+      const renamed = Project.hydrate({
+        ...Project.snapshot(legacyProject),
+        name: DEMO_PROJECT_NAME,
+      });
+      await repositories.projects.save(renamed);
+      log(`Renamed project "${LEGACY_PROJECT_NAME}" -> "${DEMO_PROJECT_NAME}" (${renamed.id})`);
+    } else {
+      const created = await container.createProject.handle({
+        organizationId: tenantId,
+        name: DEMO_PROJECT_NAME,
+        actorId: userId,
+        correlationId: 'demo-seed:create-project',
+      });
+      if (!created.ok) {
+        throw new Error(`Could not create the demo project: ${created.error.message}`);
+      }
+      log(`Created project ${DEMO_PROJECT_NAME} (${created.value.project.id})`);
     }
-    log(`Created project ${DEMO_PROJECT_NAME} (${created.value.project.id})`);
   } else {
     log(`Reusing project ${DEMO_PROJECT_NAME} (${existingProjects[0]?.id})`);
+  }
+
+  // A small, realistic set of additional Indian-enterprise projects — gives
+  // the Command Center a genuine "12 active projects" feel without a large
+  // fake dataset.
+  for (const name of ADDITIONAL_PROJECT_NAMES) {
+    const existing = await repositories.projects.findByName(tenantId, name);
+    if (existing.length > 0) {
+      log(`Reusing project ${name} (${existing[0]?.id})`);
+      continue;
+    }
+    const created = await container.createProject.handle({
+      organizationId: tenantId,
+      name,
+      actorId: userId,
+      correlationId: `demo-seed:create-project:${name}`,
+    });
+    if (!created.ok) {
+      throw new Error(`Could not create project "${name}": ${created.error.message}`);
+    }
+    log(`Created project ${name} (${created.value.project.id})`);
+  }
+
+  // --- 3b. a small, consistent Indian employee directory --------------------
+  const existingEmployees = await repositories.employees.listByOrganization(tenantId);
+  for (const name of DEMO_EMPLOYEE_NAMES) {
+    if (existingEmployees.some((employee) => employee.name.value === name)) {
+      log(`Reusing employee ${name}`);
+      continue;
+    }
+    const created = await container.createEmployee.handle({
+      organizationId: tenantId,
+      name,
+      actorId: userId,
+      correlationId: `demo-seed:create-employee:${name}`,
+    });
+    if (!created.ok) {
+      throw new Error(`Could not create employee "${name}": ${created.error.message}`);
+    }
+    log(`Created employee ${name} (${created.value.employee.id})`);
   }
 
   // --- 4. the known-solution knowledge article (published + indexed) --------

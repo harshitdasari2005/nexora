@@ -6,7 +6,7 @@
  * with loading, empty, and error states. The page talks to the same
  * application layer the AI uses (`GET /api/employees`) — one business
  * execution path for humans and agents. Employees are typically created by
- * the flagship workflow (“Hire Sarah and assign her to Mobile Banking”) or
+ * the flagship workflow (“Hire Priya and assign her to Mobile Banking”) or
  * the AI hire capability, so this view is intentionally read-only: the
  * authoritative write path is the governed AI/approval surface.
  */
@@ -173,7 +173,7 @@ export function EmployeesView({
             <EmptyState
               icon="⚕"
               title="No employees yet"
-              description="Ask the AI: “Hire Sarah and assign her to the Mobile Banking project.”"
+              description="Ask the AI: “Hire Priya and assign her to the Mobile Banking project.”"
             />
           </Card>
         ) : (

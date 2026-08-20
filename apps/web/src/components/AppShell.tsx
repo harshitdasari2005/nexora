@@ -325,7 +325,9 @@ export function AppShell({
 
       {/* Optional right column (AI panel) */}
       {right !== undefined ? (
-        <aside style={{ width: 380, flexShrink: 0, minWidth: 0 }}>{right}</aside>
+        <aside className="nexora-right-panel" style={{ width: 380, flexShrink: 0, minWidth: 0 }}>
+          {right}
+        </aside>
       ) : null}
 
       <CommandPalette
@@ -342,7 +344,10 @@ export function AppShell({
           .nexora-sidebar { display: none !important; }
         }
         @media (max-width: 1100px) {
-          .nexora-shell aside:last-of-type { display: none !important; }
+          /* Targets the optional right AI panel specifically — never
+             last-of-type, which would also match the sidebar aside on
+             pages with no right panel, hiding all navigation. */
+          .nexora-right-panel { display: none !important; }
         }
       `}</style>
     </div>

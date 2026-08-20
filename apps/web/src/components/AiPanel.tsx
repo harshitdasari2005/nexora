@@ -46,7 +46,7 @@ export interface AiPanelProps {
 // Curated to capabilities registered in the AI Runtime (v1: workspaces,
 // projects, and the first workflow).
 const EXAMPLE_PROMPTS = [
-  'Create a project called Mobile Banking and assign Sarah to it',
+  'Create a project called Customer Onboarding and assign Priya to it',
   'What workspaces do I have?',
   'Create a workspace called Engineering',
 ];

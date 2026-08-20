@@ -32,6 +32,11 @@ a:hover { text-decoration: underline; }
 }
 @keyframes nexora-spin { to { transform: rotate(360deg); } }
 @keyframes nexora-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes nexora-kpi-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.nexora-kpi-value { animation: nexora-kpi-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

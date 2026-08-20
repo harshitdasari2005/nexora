@@ -253,7 +253,7 @@ export function DashboardView({ data }: { data: DashboardResponse }): JSX.Elemen
               fontSize: typography.sizes.sm,
             }}
           >
-            <span>“Hire Sarah and assign her to the Mobile Banking project…”</span>
+            <span>“Hire Priya and assign her to the Mobile Banking project…”</span>
             <span>⌘K</span>
           </div>
         </Stack>
