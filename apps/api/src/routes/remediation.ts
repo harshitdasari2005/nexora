@@ -31,6 +31,11 @@ import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 import type { RemediationSurface } from '../remediation/build.js';
 
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
+import { sendForbidden } from './permission-response.js';
 
 /** Dependencies of the remediation console routes. */
 export interface RemediationRoutesDependencies {
@@ -40,6 +45,14 @@ export interface RemediationRoutesDependencies {
   listOrganizations: ListOrganizationsHandler;
   /** Verifies workspace membership (workspace scope). */
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /**
+   * RBAC permission resolution — driving a remediation plan (create /
+   * advance / replan / cancel) requires `problems.investigate`, the same
+   * capability that unlocks a problem's investigation. The existing
+   * domain-level capability-escalation check on `advance` stays as
+   * defense-in-depth.
+   */
+  permissions: PermissionResolverDependencies;
 }
 
 /** The create-plan body schema. */
@@ -136,6 +149,14 @@ export function registerRemediationRoutes(
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
     }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+      'problems.investigate',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'drive problem remediation');
+    }
     const result = await dependencies.remediation.advance(
       { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
       planId,
@@ -172,6 +193,14 @@ export function registerRemediationRoutes(
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
     }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+      'problems.investigate',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'drive problem remediation');
+    }
     const result = await dependencies.remediation.replan(
       { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
       planId,
@@ -201,6 +230,14 @@ export function registerRemediationRoutes(
     );
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+      'problems.investigate',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'drive problem remediation');
     }
     const result = await dependencies.remediation.cancel(
       { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
@@ -235,6 +272,14 @@ export function registerRemediationRoutes(
       );
       if (scope.error !== undefined) {
         return reply.code(scope.error.status).send(scope.error.body);
+      }
+      const authz = await authorizePermission(
+        dependencies.permissions,
+        { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+        'problems.investigate',
+      );
+      if (!authz.ok) {
+        return sendForbidden(reply, request.id, 'drive problem remediation');
       }
       const result = await dependencies.remediation.createPlan(
         { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },

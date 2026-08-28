@@ -145,6 +145,17 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireKnowledgeCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'knowledge.publish',
+      'author a knowledge article',
+    );
+    if (capable !== true) return capable;
     const created = await dependencies.createArticle.handle({
       tenantId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -194,6 +205,17 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireKnowledgeCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'knowledge.publish',
+      'edit a knowledge article',
+    );
+    if (capable !== true) return capable;
     const updated = await dependencies.updateArticle.handle({
       tenantId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -258,6 +280,17 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireKnowledgeCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'knowledge.publish',
+      'publish a knowledge article',
+    );
+    if (capable !== true) return capable;
     const published = await dependencies.publishArticle.handle({
       tenantId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -322,6 +355,17 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireKnowledgeCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'knowledge.publish',
+      'archive a knowledge article',
+    );
+    if (capable !== true) return capable;
     const archived = await dependencies.archiveArticle.handle({
       tenantId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -479,6 +523,17 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireKnowledgeCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'knowledge.publish',
+      'create a knowledge category',
+    );
+    if (capable !== true) return capable;
     const created = await dependencies.createCategory.handle({
       tenantId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,

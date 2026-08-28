@@ -29,6 +29,15 @@
  * pre-S34 shape (empty, or the pre-existing delivery.manager set) untouched.
  * The role → capability relationship is validated by tests and the Legal/
  * finance.controller extensibility fixtures.
+ *
+ * Backend RBAC enforcement closed the last un-gated mutating surfaces:
+ * added `integrations.manage` + `marketplace.manage` (granted to
+ * executive.ceo, technology.cto/.engineering_manager, operations.manager)
+ * and wired the previously-defined-but-ungranted `knowledge.publish` onto
+ * the knowledge authors (executive.ceo, technology.cto/.engineering_manager,
+ * growth.marketing_manager, legal.general_counsel, finance.cfo) — each also
+ * holds `knowledge.read` (finance.cfo gained both: a CFO curating finance
+ * runbooks in its own workspace, not company-wide knowledge reach).
  */
 
 import type {
@@ -139,6 +148,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'insights.read',
       'documents.read',
       'knowledge.read',
+      'knowledge.publish',
       'employees.read',
       'employees.manage',
       'workflows.read',
@@ -157,6 +167,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'slack.channels.read',
       'slack.messages.read',
       'slack.messages.send',
+      'integrations.manage',
+      'marketplace.manage',
     ],
   },
   {
@@ -188,6 +200,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'approvals.read',
       'approvals.decide',
       'documents.read',
+      'knowledge.read',
+      'knowledge.publish',
       'agent.use',
       'agent.execute',
       'activity.read',
@@ -232,10 +246,13 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'agent.execute',
       'documents.read',
       'knowledge.read',
+      'knowledge.publish',
       'activity.read',
       'github.repositories.read',
       'github.issues.read',
       'github.issues.create',
+      'integrations.manage',
+      'marketplace.manage',
     ],
   },
   {
@@ -254,10 +271,13 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'agent.use',
       'agent.execute',
       'knowledge.read',
+      'knowledge.publish',
       'activity.read',
       'github.repositories.read',
       'github.issues.read',
       'github.issues.create',
+      'integrations.manage',
+      'marketplace.manage',
     ],
   },
   {
@@ -329,6 +349,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     // campaign material, plus performance signals.
     capabilityIds: [
       'knowledge.read',
+      'knowledge.publish',
       'documents.read',
       'insights.read',
       'agent.use',
@@ -421,6 +442,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'documents.read',
       'documents.upload',
       'knowledge.read',
+      'knowledge.publish',
       'approvals.read',
       'approvals.decide',
       'agent.use',
@@ -453,6 +475,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     domainId: 'operations',
     // Operational/project/workflow access (S34) — runs the day-to-day, sees
     // and acts on process problems, no approval-decision authority.
+    // Backend RBAC enforcement: also owns integration + app lifecycle.
     capabilityIds: [
       'projects.read',
       'projects.update',
@@ -461,6 +484,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'problems.read',
       'agent.use',
       'activity.read',
+      'integrations.manage',
+      'marketplace.manage',
     ],
   },
   {
@@ -737,5 +762,22 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     name: 'Decide Expenses',
     description:
       'Approve or reject a pending expense (existing surface: the Finance expense decision route) — a real money movement (BR-19), distinct from expenses.read/expenses.create.',
+  },
+  // Backend RBAC enforcement: the last two mutating surfaces the S24/S34
+  // catalog did not yet cover — inbound webhook administration and the
+  // workspace app lifecycle. Each gates a real existing route; a role
+  // without the capability now gets 403 where before any org/workspace
+  // member could act.
+  {
+    id: 'integrations.manage',
+    name: 'Manage Integrations',
+    description:
+      'Create, update, enable, and delete inbound webhook endpoints (existing surface: the integrations webhook routes)',
+  },
+  {
+    id: 'marketplace.manage',
+    name: 'Manage Marketplace Apps',
+    description:
+      'Install, update, and uninstall workspace apps (existing surface: the marketplace app lifecycle routes)',
   },
 ];

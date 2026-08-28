@@ -289,6 +289,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listInstalledApps: container.listInstalledApps,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
   });
   registerCalendarRoutes(app, {
     createCalendarEvent: container.createCalendarEvent,
@@ -321,6 +322,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     createWorkspace: container.createWorkspace,
     listWorkspaces: container.listWorkspaces,
     listOrganizations: container.listOrganizations,
+    permissions: rbac,
   });
   registerDashboardRoutes(app, {
     getCurrentUser: container.getCurrentUser,
@@ -602,6 +604,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     remediation: remediationSurface,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
   });
 
   // --- Audit Center --------------------------------------------------------
@@ -732,6 +735,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     inboundSecret: dependencies.config.integrations.inboundSecret,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
   });
 
   app.setErrorHandler((error: FastifyError, request, reply) => {

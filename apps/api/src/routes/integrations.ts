@@ -28,6 +28,11 @@ import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 
 import { requireAuth } from '../plugins/auth.js';
 import { toHttpError } from '../http/errors.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
+import { sendForbidden } from './permission-response.js';
 import { authorizeScope, readScope } from './scope.js';
 
 /** Dependencies of the integrations routes. */
@@ -38,6 +43,8 @@ export interface IntegrationsRoutesDependencies {
   inboundSecret: string;
   listOrganizations: ListOrganizationsHandler;
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /** RBAC permission resolution — webhook administration requires `integrations.manage`. */
+  permissions: PermissionResolverDependencies;
 }
 
 /** Registers the integrations routes. */
@@ -129,6 +136,14 @@ export async function registerIntegrationsRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.organizationId, workspaceId: scope.workspaceId },
+      'integrations.manage',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'manage integrations');
+    }
     const result = await dependencies.integrations.createWebhookEndpoint({
       organizationId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -196,6 +211,14 @@ export async function registerIntegrationsRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.organizationId, workspaceId: scope.workspaceId },
+      'integrations.manage',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'manage integrations');
+    }
     const result = await dependencies.integrations.updateWebhookEndpoint({
       organizationId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -249,6 +272,14 @@ export async function registerIntegrationsRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.organizationId, workspaceId: scope.workspaceId },
+      'integrations.manage',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'manage integrations');
+    }
     const result = await dependencies.integrations.setWebhookEndpointEnabled({
       organizationId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -293,6 +324,14 @@ export async function registerIntegrationsRoutes(
       return reply.code(403).send({
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.organizationId, workspaceId: scope.workspaceId },
+      'integrations.manage',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'manage integrations');
     }
     const result = await dependencies.integrations.deleteWebhookEndpoint({
       organizationId: scope.organizationId as TenantId,

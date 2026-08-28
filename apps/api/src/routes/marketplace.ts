@@ -24,6 +24,11 @@ import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 
 import { requireAuth } from '../plugins/auth.js';
 import { toHttpError } from '../http/errors.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
+import { sendForbidden } from './permission-response.js';
 import { authorizeScope, readScope } from './scope.js';
 
 /** Dependencies of the marketplace routes. */
@@ -35,6 +40,8 @@ export interface MarketplaceRoutesDependencies {
   listInstalledApps: ListInstalledAppsHandler;
   listOrganizations: ListOrganizationsHandler;
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /** RBAC permission resolution — the app lifecycle requires `marketplace.manage`. */
+  permissions: PermissionResolverDependencies;
 }
 
 /** Registers the marketplace routes. */
@@ -153,6 +160,15 @@ export function registerMarketplaceRoutes(
       });
     }
 
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.organizationId, workspaceId: scope.workspaceId },
+      'marketplace.manage',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'manage marketplace apps');
+    }
+
     const result = await dependencies.installApp.handle({
       organizationId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -200,6 +216,15 @@ export function registerMarketplaceRoutes(
       });
     }
 
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.organizationId, workspaceId: scope.workspaceId },
+      'marketplace.manage',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'manage marketplace apps');
+    }
+
     const result = await dependencies.updateApp.handle({
       organizationId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -245,6 +270,15 @@ export function registerMarketplaceRoutes(
       return reply.code(403).send({
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
+    }
+
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.organizationId, workspaceId: scope.workspaceId },
+      'marketplace.manage',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'manage marketplace apps');
     }
 
     const result = await dependencies.uninstallApp.handle({

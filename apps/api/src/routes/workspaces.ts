@@ -14,6 +14,11 @@ import type { ListOrganizationsHandler } from '@nexora/application-organizations
 
 import { requireAuth } from '../plugins/auth.js';
 import { toHttpError } from '../http/errors.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
+import { sendForbidden } from './permission-response.js';
 
 /** Request body schema for POST /api/workspaces. */
 const createWorkspaceSchema: FastifySchema = {
@@ -35,6 +40,8 @@ export interface WorkspaceRoutesDependencies {
   createWorkspace: CreateWorkspaceHandler;
   listWorkspaces: ListWorkspacesHandler;
   listOrganizations: ListOrganizationsHandler;
+  /** RBAC permission resolution — creating a workspace requires `workspaces.create`. */
+  permissions: PermissionResolverDependencies;
 }
 
 /** Registers the workspace routes. */
@@ -62,6 +69,18 @@ export function registerWorkspaceRoutes(
           requestId: request.id,
         },
       });
+    }
+
+    // Organization-scoped (no workspace yet): the caller's org membership
+    // role must hold `workspaces.create`. A fresh org owner resolves to
+    // executive.ceo (which holds it); a plain member does not.
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: body.organizationId },
+      'workspaces.create',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'create a workspace');
     }
 
     const result = await dependencies.createWorkspace.handle({
