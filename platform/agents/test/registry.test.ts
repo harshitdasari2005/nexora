@@ -139,17 +139,18 @@ describe('BusinessAgentRegistry (S26 Phase 8)', () => {
     expect(registry.resolveByRole('finance.cfo')).toBeUndefined();
   });
 
-  it('the INITIAL_AGENTS seed registers and resolves CEO/Manager/Developer', () => {
+  it('the INITIAL_AGENTS seed registers and resolves CEO/Manager/Developer/Finance', () => {
     const registry = new BusinessAgentRegistry(catalog);
     for (const agent of INITIAL_AGENTS) {
       registry.register(agent);
     }
-    expect(registry.list()).toHaveLength(3);
+    expect(registry.list()).toHaveLength(4);
     expect(registry.resolveByRole('executive.ceo')?.id).toBe('executive');
     expect(registry.resolveByRole('delivery.manager')?.id).toBe('manager');
     expect(registry.resolveByRole('technology.developer')?.id).toBe('developer');
+    expect(registry.resolveByRole('finance.cfo')?.id).toBe('finance');
     // Roles without an agent fail safely.
-    expect(registry.resolveByRole('finance.cfo')).toBeUndefined();
+    expect(registry.resolveByRole('people.hr')).toBeUndefined();
   });
 
   it('extensibility: a test-only Legal agent registers without engine changes', () => {

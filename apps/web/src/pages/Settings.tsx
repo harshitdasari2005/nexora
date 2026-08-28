@@ -285,9 +285,13 @@ export function Settings(): JSX.Element {
               })}
             />
           </Stack>
-          <a href="/api/auth/logout" style={{ textDecoration: 'none', alignSelf: 'flex-start' }}>
-            <Button variant="secondary">Sign out</Button>
-          </a>
+          {/* Visually separated: the one action on this page that ends the
+              current session, not just information to read. */}
+          <div style={{ paddingTop: 12, borderTop: '1px solid var(--nexora-border)' }}>
+            <a href="/api/auth/logout" style={{ textDecoration: 'none' }}>
+              <Button variant="secondary">Sign out</Button>
+            </a>
+          </div>
         </Section>
       </Stack>
     </AppShell>

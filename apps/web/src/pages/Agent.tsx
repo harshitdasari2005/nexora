@@ -31,6 +31,7 @@ import {
 import { api, ApiError } from '../lib/api.js';
 import { decideApproval, type ChatDone } from '../lib/chat.js';
 import { executeAgentIntent, executeProposal, fetchAgent } from '../lib/agent.js';
+import { humanizeIdentifier, humanizeProblemText, humanizeProblemTitle } from '../lib/humanize.js';
 import type {
   AgentExecutionOutcome,
   AgentExecutionResponse,
@@ -524,14 +525,16 @@ function ProblemRow({
       >
         <Stack gap={0.5} style={{ minWidth: 0 }}>
           <Stack direction="row" gap={2} align="center" style={{ flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: typography.weights.medium }}>{problem.title}</span>
+            <span style={{ fontWeight: typography.weights.medium }}>
+              {humanizeProblemTitle(problem.title)}
+            </span>
             <Badge tone={severityTone(problem.severity)}>{problem.severity}</Badge>
             <Badge>{problem.status.replace(/_/g, ' ')}</Badge>
           </Stack>
           <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textSecondary)' }}>
             {problem.signalName} ·{' '}
             {problem.affectedEntities.map((entity) => entity.title).join(', ') ||
-              problem.description}
+              humanizeProblemText(problem.description)}
           </div>
         </Stack>
         <Stack direction="row" gap={2} align="center" style={{ flexWrap: 'wrap' }}>
@@ -561,7 +564,7 @@ function ProblemRow({
       </Stack>
 
       <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
-        {problem.description}
+        {humanizeProblemText(problem.description)}
       </div>
 
       <ProblemInvestigation problem={problem} />
@@ -657,7 +660,7 @@ function ProposalRow({
           <Badge>{`${proposal.affectedEntity.type}: ${proposal.affectedEntity.title}`}</Badge>
         ) : null}
         <Badge tone="ai">{proposal.targetSystem}</Badge>
-        <Badge>{proposal.requiredCapability}</Badge>
+        <Badge>{humanizeIdentifier(proposal.requiredCapability)}</Badge>
         <Badge tone={proposal.requiresApproval ? 'warning' : undefined}>
           {proposal.requiresApproval ? 'Approval required' : 'Read only'}
         </Badge>
@@ -770,7 +773,9 @@ function ExecutionPanel({
                 <span aria-hidden style={{ width: 16, textAlign: 'center' }}>
                   {step.status === 'succeeded' ? '✓' : step.status === 'failed' ? '✕' : '…'}
                 </span>
-                <span style={{ fontWeight: typography.weights.medium }}>{step.toolId}</span>
+                <span style={{ fontWeight: typography.weights.medium }} title={step.toolId}>
+                  {humanizeIdentifier(step.toolId)}
+                </span>
                 {step.verified ? (
                   <span style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-success)' }}>
                     verified

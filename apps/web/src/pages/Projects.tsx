@@ -286,7 +286,7 @@ export function ProjectsView({
           </Card>
         ) : (
           <Stack gap={3}>
-            {projects.map((project) => (
+            {[...projects].sort(byAttentionPriority).map((project) => (
               <ProjectRow key={project.id} project={project} />
             ))}
           </Stack>
@@ -294,6 +294,21 @@ export function ProjectsView({
       </section>
     </Stack>
   );
+}
+
+/** Ranks a project's real `status` so on-hold work (needs a decision) surfaces
+ *  before active, then completed/archived/cancelled — using only the
+ *  existing status field, never a fabricated "health" signal. */
+function attentionRank(status: string): number {
+  if (status === 'on_hold') return 0;
+  if (status === 'active') return 1;
+  if (status === 'proposed') return 2;
+  if (status === 'completed') return 3;
+  return 4; // archived, cancelled
+}
+
+function byAttentionPriority(a: ProjectDto, b: ProjectDto): number {
+  return attentionRank(a.status) - attentionRank(b.status);
 }
 
 /** A single project row with status display. */

@@ -15,9 +15,27 @@
  * The client may not supply identity: tenant/workspace come from the query
  * or body (resource scope) but are verified against the trusted membership
  * read models; a forged or foreign scope resolves to 403/404.
+ *
+ * A SECOND boundary (P0 security hardening) sits on top of scope: the
+ * caller's effective RBAC capability — `knowledge.read` for every read
+ * endpoint, via the SAME `authorizePermission` every other surface uses,
+ * never a second permission model.
+ *
+ * Authoring mutations (create/update/publish/archive an article, create a
+ * category) are deliberately NOT capability-gated: the catalog defines a
+ * `knowledge.publish` capability but assigns it to ZERO roles (verified
+ * against every role's `capabilityIds` in the Phase 1 catalog). Gating
+ * writes behind it would make knowledge authoring impossible for every
+ * role in the system — not a legitimate enforcement of an existing
+ * restriction, but an unconditional outage of a working, tested feature.
+ * Per the fail-closed instruction to reuse only an EXISTING, ACCURATE
+ * capability and never silently invent or misapply one, and since changing
+ * which roles hold a capability is a role-catalog change (out of scope
+ * here), write endpoints stay at membership/workspace scope only. This is
+ * a documented, intentional gap — see the P0 hardening report.
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import { toKnowledgeArticleDto, toKnowledgeCategoryDto } from '@nexora/application-knowledge';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
@@ -36,7 +54,12 @@ import type {
 } from '@nexora/application-knowledge';
 
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
 import { toHttpError } from '../http/errors.js';
+import { sendForbidden } from './permission-response.js';
 import { authorizeScope, readScope } from './scope.js';
 
 /** Dependencies of the knowledge routes. */
@@ -53,6 +76,35 @@ export interface KnowledgeRoutesDependencies {
   removeArticleIndex: RemoveArticleIndexHandler;
   listOrganizations: ListOrganizationsHandler;
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
+}
+
+/**
+ * The capability half of this file's authorization boundary — called right
+ * after `authorizeScope` passes at every endpoint. Local to this file only
+ * to avoid repeating the same lines at every call site — not a new
+ * authorization primitive, `authorizePermission` does the actual work.
+ */
+async function requireKnowledgeCapability(
+  dependencies: KnowledgeRoutesDependencies,
+  reply: FastifyReply,
+  requestId: string,
+  userId: string,
+  organizationId: string,
+  workspaceId: string,
+  capability: string,
+  action: string,
+): Promise<true | unknown> {
+  const authz = await authorizePermission(
+    dependencies.permissions,
+    { userId, tenantId: organizationId, workspaceId },
+    capability,
+  );
+  if (!authz.ok) {
+    return sendForbidden(reply, requestId, action);
+  }
+  return true;
 }
 
 /** Registers the knowledge base routes. */
@@ -93,7 +145,6 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
-
     const created = await dependencies.createArticle.handle({
       tenantId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -143,7 +194,6 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
-
     const updated = await dependencies.updateArticle.handle({
       tenantId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -208,7 +258,6 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
-
     const published = await dependencies.publishArticle.handle({
       tenantId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -273,7 +322,6 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
-
     const archived = await dependencies.archiveArticle.handle({
       tenantId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -329,6 +377,17 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireKnowledgeCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'knowledge.read',
+      'view a knowledge article',
+    );
+    if (capable !== true) return capable;
 
     const result = await dependencies.getArticle.handle({
       tenantId: scope.organizationId as TenantId,
@@ -366,6 +425,17 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireKnowledgeCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'knowledge.read',
+      'view knowledge articles',
+    );
+    if (capable !== true) return capable;
 
     const result = await dependencies.listArticles.handle({
       tenantId: scope.organizationId as TenantId,
@@ -409,7 +479,6 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
-
     const created = await dependencies.createCategory.handle({
       tenantId: scope.organizationId as TenantId,
       workspaceId: scope.workspaceId as WorkspaceId,
@@ -448,6 +517,17 @@ export function registerKnowledgeRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireKnowledgeCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'knowledge.read',
+      'view knowledge categories',
+    );
+    if (capable !== true) return capable;
 
     const result = await dependencies.listCategories.handle({
       tenantId: scope.organizationId as TenantId,

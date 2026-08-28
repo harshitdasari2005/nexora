@@ -40,6 +40,10 @@ export const COMMAND_CENTER_DATA_SOURCES: readonly string[] = [
   'employees.list',
   'documents.list',
   'knowledge.articles',
+  'budgets.active',
+  'budgets.utilization',
+  'budgets.health',
+  'expenses.pending',
 ] as const;
 
 /** The supported widget types (the minimum reusable renderer set). */

@@ -32,7 +32,7 @@
  * user-controlled arguments that define the action to resume.
  */
 
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { approvalRequests, type NexoraDatabase } from '@nexora/persistence';
 import {
   type ApprovalEngine,
@@ -266,6 +266,23 @@ export class PgApprovalEngine implements ApprovalEngine {
     resumeKey: string,
   ): Promise<ApprovalRequestRecord | undefined> {
     return this.#findByResumeKey(tenantId, resumeKey);
+  }
+
+  async listByTenant(
+    tenantId: string,
+    options: { workspaceId?: string; limit: number },
+  ): Promise<readonly ApprovalRequestRecord[]> {
+    const conditions = [eq(approvalRequests.tenantId, tenantId)];
+    if (options.workspaceId !== undefined) {
+      conditions.push(eq(approvalRequests.workspaceId, options.workspaceId));
+    }
+    const rows = await this.#db
+      .select()
+      .from(approvalRequests)
+      .where(and(...conditions))
+      .orderBy(desc(approvalRequests.createdAt))
+      .limit(options.limit);
+    return rows.map(rowToRecord);
   }
 
   async #findByResumeKey(

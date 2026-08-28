@@ -26,7 +26,16 @@ export interface CardProps {
   children: ReactNode;
 }
 
-/** An elevated surface container. */
+/**
+ * An elevated surface container. In the default light theme this is a
+ * plain opaque card — subtle border, restrained shadow, nothing behind it
+ * to justify glass. Under `[data-theme="dark"]` (Login only, as of S44 —
+ * the authenticated app no longer runs this theme) it becomes a
+ * translucent glass panel over that page's 3D scene instead, via the
+ * `--nexora-card*` custom properties GlobalStyles defines per theme. Every
+ * page built on `Card` inherits whichever is active automatically — one
+ * shared component, not a per-page rewrite.
+ */
 export function Card({
   padding = 6,
   elevationLevel = 'sm',
@@ -37,38 +46,21 @@ export function Card({
   children,
 }: CardProps): JSX.Element {
   const style: CSSProperties = {
-    background: 'var(--nexora-surface)',
+    background: 'var(--nexora-cardBg, var(--nexora-surface))',
+    backdropFilter: 'var(--nexora-cardBackdropFilter, none)',
+    WebkitBackdropFilter: 'var(--nexora-cardBackdropFilter, none)',
     border: '1px solid var(--nexora-border)',
     borderRadius: radius.lg,
-    boxShadow: elevation[elevationLevel],
+    boxShadow: `${elevation[elevationLevel]}, var(--nexora-cardInsetHighlight, inset 0 1px 0 rgba(255, 255, 255, 0))`,
     padding: spacing[padding],
     transition: `box-shadow ${motion.duration.base} ${motion.easing.standard}, transform ${motion.duration.base} ${motion.easing.emphasis}`,
     ...extraStyle,
   };
-  if (interactive) {
-    style.cursor = 'pointer';
-    style.outlineOffset = '2px';
-  }
+  const classes = [interactive ? 'nexora-card-interactive' : '', className]
+    .filter(Boolean)
+    .join(' ');
   return (
-    <div
-      id={id}
-      className={className}
-      style={style}
-      onMouseEnter={
-        interactive
-          ? (event) => {
-              event.currentTarget.style.boxShadow = elevation.md;
-            }
-          : undefined
-      }
-      onMouseLeave={
-        interactive
-          ? (event) => {
-              event.currentTarget.style.boxShadow = elevation[elevationLevel];
-            }
-          : undefined
-      }
-    >
+    <div id={id} className={classes.length > 0 ? classes : undefined} style={style}>
       {children}
     </div>
   );

@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Button, Card, Stack, typography } from '@nexora/design-system';
 
+import { DigitalHeadquarters } from '../components/DigitalHeadquarters.js';
 import { IntelligenceNetwork } from '../components/IntelligenceNetwork.js';
 import { useSession } from '../session.js';
 
@@ -50,6 +51,7 @@ export function Login(): JSX.Element {
         overflow: 'hidden',
       }}
     >
+      <DigitalHeadquarters quiet />
       <IntelligenceNetwork quiet />
 
       <Card

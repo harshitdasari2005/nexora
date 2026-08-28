@@ -16,8 +16,10 @@ import {
   createDatabase,
   type NexoraDatabase,
   PgActivityRepository,
+  PgBudgetRepository,
   PgCalendarEventRepository,
   PgDocumentRepository,
+  PgExpenseRepository,
   PgDocumentTemplateRepository,
   PgDocumentVersionRepository,
   PgEmailOutboxRepository,
@@ -99,6 +101,7 @@ import {
   StartWorkflowHandler,
 } from '@nexora/module-workflow';
 import { registerCalendarRoutes } from './routes/calendar.js';
+import { registerFinanceRoutes } from './routes/finance.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
@@ -122,6 +125,8 @@ import { registerProblemsRoutes } from './routes/problems.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
 import { registerWorkflowRoutes } from './routes/workflows.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
+import { registerAuditRoutes } from './routes/audit.js';
+import { AuditQueryService } from './audit/audit-query-service.js';
 
 /** Dependencies required to build the application. */
 export interface AppDependencies {
@@ -186,6 +191,26 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   });
   const container = buildContainer({ config: dependencies.config, repositories, publisher });
 
+  // S24 Phase 3: the TRUSTED business context builder feeds every AI request
+  // with the caller's domain/role/capability affinity — resolved from the
+  // SAME membership seam the Command Center uses (one source of truth) and
+  // the Phase 1 catalog. The model never supplies these values. Constructed
+  // here (moved up from its original AI-routes-adjacent position) because
+  // P0 security hardening now wires the SAME `rbac` dependency into the
+  // resource routes (projects, employees, documents, knowledge, ...)
+  // registered below, not just the AI/agent surface.
+  const businessRoleResolver = new MembershipBusinessRoleResolver({
+    memberships: repositories.memberships,
+    workspaceMemberships: repositories.workspaceMemberships,
+    workspaces: repositories.workspaces,
+  });
+  const domainCatalog = createInitialCatalog();
+  // S34: the ONE RBAC permission-resolution dependency, shared by every route
+  // that needs it — the SAME trusted resolver + catalog every other surface
+  // (Command Center, AI, agent) already uses, never a second authorization
+  // system.
+  const rbac = { roleResolver: businessRoleResolver, catalog: domainCatalog };
+
   // The integration application service is composed AFTER the AI runtime
   // (its inbound router targets the existing ApprovalEngine); the webhook
   // dispatcher + email projection are registered onto the same chain.
@@ -213,11 +238,13 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listProjectMembers: container.listProjectMembers,
     listEmployeesByIds: container.listEmployeesByIds,
     listOrganizations: container.listOrganizations,
+    permissions: rbac,
   });
   registerEmployeeRoutes(app, {
     createEmployee: container.createEmployee,
     listEmployees: container.listEmployees,
     listOrganizations: container.listOrganizations,
+    permissions: rbac,
   });
   registerDocumentRoutes(app, {
     uploadDocument: container.uploadDocument,
@@ -237,6 +264,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     retrieveKnowledge: container.retrieveKnowledge,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
   });
   registerKnowledgeRoutes(app, {
     createArticle: container.createArticle,
@@ -251,6 +279,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     removeArticleIndex: container.removeArticleIndex,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
   });
   registerMarketplaceRoutes(app, {
     installApp: container.installApp,
@@ -269,6 +298,24 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     getCalendarEvent: container.getCalendarEvent,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+  });
+  registerFinanceRoutes(app, {
+    createBudget: container.createBudget,
+    reviseBudget: container.reviseBudget,
+    closeBudget: container.closeBudget,
+    clearBudgetReview: container.clearBudgetReview,
+    flagOverBudgetItems: container.flagOverBudgetItems,
+    listBudgets: container.listBudgets,
+    getBudget: container.getBudget,
+    listBudgetUtilization: container.listBudgetUtilization,
+    submitExpense: container.submitExpense,
+    decideExpense: container.decideExpense,
+    listExpenses: container.listExpenses,
+    getExpense: container.getExpense,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
   });
   registerWorkspaceRoutes(app, {
     createWorkspace: container.createWorkspace,
@@ -291,6 +338,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
     stream: notificationStream,
+    permissions: rbac,
   });
 
   // Enterprise AI Runtime: register the workspaces capability surface and
@@ -317,21 +365,6 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     aiStore: dependencies.aiStore,
     connectors,
   });
-  // S24 Phase 3: the TRUSTED business context builder feeds every AI request
-  // with the caller's domain/role/capability affinity — resolved from the
-  // SAME membership seam the Command Center uses (one source of truth) and
-  // the Phase 1 catalog. The model never supplies these values.
-  const businessRoleResolver = new MembershipBusinessRoleResolver({
-    memberships: repositories.memberships,
-    workspaceMemberships: repositories.workspaceMemberships,
-    workspaces: repositories.workspaces,
-  });
-  const domainCatalog = createInitialCatalog();
-  // S34: the ONE RBAC permission-resolution dependency, shared by every route
-  // that needs it — the SAME trusted resolver + catalog every other surface
-  // (Command Center, AI, agent) already uses, never a second authorization
-  // system.
-  const rbac = { roleResolver: businessRoleResolver, catalog: domainCatalog };
   registerAiRoutes(app, {
     orchestrator: ai.orchestrator,
     listOrganizations: container.listOrganizations,
@@ -351,6 +384,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     getWorkflow: new GetWorkflowHandler(ai.workflows),
     listWorkflows: new ListWorkflowsHandler(ai.workflows),
     listOrganizations: container.listOrganizations,
+    permissions: rbac,
   });
   registerInsightsRoutes(app, {
     getTenantMeasurements: container.getTenantMeasurements,
@@ -414,6 +448,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       listArticles: container.listArticles,
       listActivity: container.listActivity,
       listNotifications: container.listNotifications,
+      listBudgetUtilization: container.listBudgetUtilization,
+      listExpenses: container.listExpenses,
     }),
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
@@ -445,6 +481,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listProjects: container.listProjects,
     listActivity: container.listActivity,
     listNotifications: container.listNotifications,
+    listBudgetUtilization: container.listBudgetUtilization,
     retrieveKnowledge: container.retrieveKnowledge,
     executionRecorder,
     publisher,
@@ -565,6 +602,27 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     remediation: remediationSurface,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
+  });
+
+  // --- Audit Center --------------------------------------------------------
+  // A READ-ONLY view over four EXISTING journals — never a second execution
+  // engine, approval system, or audit log (see `audit/audit-query-service.ts`
+  // for the full contract). Composed here, after both the agent-execution
+  // recorder and the AI runtime's approval engine exist, since it reads both.
+  registerAuditRoutes(app, {
+    auditQuery: new AuditQueryService({
+      agentExecutions: executionRecorder,
+      approvals: ai.approvals,
+      workflowStepExecutions: repositories.workflowStepExecutions,
+      workflowInstances: repositories.workflowInstances,
+      activity: repositories.activity,
+      users: repositories.users,
+      workspaces: repositories.workspaces,
+      catalog: domainCatalog,
+    }),
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
   });
 
   // --- Integrations platform (S20) ----------------------------------------
@@ -724,6 +782,8 @@ export function buildPgRepositories(
     knowledgeArticles: new PgKnowledgeArticleRepository(database),
     knowledgeCategories: new PgKnowledgeCategoryRepository(database),
     calendarEvents: new PgCalendarEventRepository(database),
+    budgets: new PgBudgetRepository(database),
+    expenses: new PgExpenseRepository(database),
     webhookEndpoints: new PgWebhookEndpointRepository(database),
     webhookDeliveries: new PgWebhookDeliveryRepository(database),
     emailOutbox: new PgEmailOutboxRepository(database),

@@ -99,7 +99,9 @@ describe('ProblemsView (Phase 10 hero flow)', () => {
   it('renders a detected problem summary row', () => {
     const html = renderView([problem()]);
     expect(html).toContain('Problems');
-    expect(html).toContain('employee-onboarding requires attention');
+    // S36: the display humanization layer normalizes "requires attention"
+    // to "needs attention" — same underlying problem, humanized copy.
+    expect(html).toContain('employee-onboarding needs attention');
     expect(html).toContain('high');
     expect(html).toContain('DETECTED');
   });

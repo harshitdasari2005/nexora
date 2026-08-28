@@ -498,7 +498,13 @@ function TemplateRow({
 
   return (
     <Card style={{ padding: '14px 16px' }}>
-      <Stack direction="row" gap={4} align="center" justify="space-between">
+      <Stack
+        direction="row"
+        gap={3}
+        align="center"
+        justify="space-between"
+        style={{ flexWrap: 'wrap' }}
+      >
         <Stack gap={0.5} style={{ minWidth: 0 }}>
           <div style={{ fontWeight: typography.weights.semibold }}>{template.name}</div>
           <div
@@ -650,7 +656,13 @@ export function DocumentRow({
   return (
     <Card style={{ padding: '14px 16px' }}>
       <Stack gap={3}>
-        <Stack direction="row" gap={4} align="center" justify="space-between">
+        <Stack
+          direction="row"
+          gap={3}
+          align="center"
+          justify="space-between"
+          style={{ flexWrap: 'wrap' }}
+        >
           <Stack gap={0.5} style={{ minWidth: 0 }}>
             <div style={{ fontWeight: typography.weights.semibold }}>{document.title}</div>
             <div
@@ -662,8 +674,9 @@ export function DocumentRow({
                 textOverflow: 'ellipsis',
                 maxWidth: 480,
               }}
+              title={document.id}
             >
-              {document.contentType} · ID {document.id}
+              {document.contentType} · v{document.contentVersion}
             </div>
             {document.status === 'failed' && document.failureReason !== undefined ? (
               <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-danger)' }}>
@@ -676,7 +689,7 @@ export function DocumentRow({
               </div>
             ) : null}
           </Stack>
-          <Stack direction="row" gap={3} align="center">
+          <Stack direction="row" gap={3} align="center" style={{ flexShrink: 0 }}>
             <DocumentStatusBadge status={document.status} />
             <span
               style={{

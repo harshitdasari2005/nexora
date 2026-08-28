@@ -20,6 +20,8 @@ import {
   type ChatDone,
   type ChatPlanStep,
 } from '../lib/chat.js';
+import { humanizeIdentifier } from '../lib/humanize.js';
+import { resolvePersonaForRole } from '../lib/rolePersonas.js';
 import { useRoleTheme } from '../lib/RoleThemeContext.js';
 
 /** A rendered message in the panel. */
@@ -34,6 +36,8 @@ export interface PanelMessage {
 
 /** Props of {@link AiPanel}. */
 export interface AiPanelProps {
+  /** The current organization scope (sent so the API doesn't default to the caller's first org). */
+  organizationId?: string;
   /** The current workspace scope, when one is active. */
   workspaceId?: string;
   /** The current organization name (approval card context). */
@@ -45,8 +49,10 @@ export interface AiPanelProps {
 }
 
 // Curated to capabilities registered in the AI Runtime (v1: workspaces,
-// projects, and the first workflow).
-const EXAMPLE_PROMPTS = [
+// projects, and the first workflow). Used only when the resolved role
+// doesn't map to one of the six curated personas below — every persona
+// gets its own role-specific set instead (S35).
+const DEFAULT_EXAMPLE_PROMPTS = [
   'Create a project called Customer Onboarding and assign Priya to it',
   'What workspaces do I have?',
   'Create a workspace called Engineering',
@@ -56,6 +62,7 @@ const EXAMPLE_PROMPTS = [
  * The dashboard AI assistant panel.
  */
 export function AiPanel({
+  organizationId,
   workspaceId,
   organizationName,
   userDisplayName,
@@ -72,6 +79,13 @@ export function AiPanel({
   const [deciding, setDeciding] = useState(false);
   const [plan, setPlan] = useState<readonly ChatPlanStep[]>([]);
   const [workflow, setWorkflow] = useState<WorkflowTimelineData | null>(null);
+
+  // S35: suggested prompts read the caller's real resolved role — a CFO and
+  // a Developer see different starting questions for the SAME empty state,
+  // never a fabricated per-role UI.
+  const { current: currentRole } = useRoleTheme();
+  const examplePrompts =
+    resolvePersonaForRole(currentRole?.roleId)?.aiPrompts ?? DEFAULT_EXAMPLE_PROMPTS;
 
   const conversationIdRef = useRef<string | undefined>(undefined);
   const lastPromptRef = useRef('');
@@ -120,6 +134,7 @@ export function AiPanel({
         await streamChat(
           {
             message,
+            organizationId,
             workspaceId,
             conversationId: conversationIdRef.current,
           },
@@ -156,7 +171,7 @@ export function AiPanel({
         setStreaming(false);
       }
     },
-    [nextId, workspaceId],
+    [nextId, organizationId, workspaceId],
   );
 
   /** Approves the pending request: the gated run resumes and streams. */
@@ -311,7 +326,7 @@ export function AiPanel({
         }}
       >
         {!hasContent ? (
-          <EmptyConversation onPick={(prompt) => void send(prompt)} />
+          <EmptyConversation prompts={examplePrompts} onPick={(prompt) => void send(prompt)} />
         ) : (
           <>
             {messages.map((message) => (
@@ -654,14 +669,13 @@ function ApprovalRow({ label, value }: { label: string; value: string }): JSX.El
   );
 }
 
-/** Humanizes a tool id (`workspaces.create_workspace` → `Create Workspace`). */
+/**
+ * Humanizes a tool id (`workspaces.create_workspace` → `Create Workspace`).
+ * Re-exported here (in addition to `../lib/humanize.js`) since it's part of
+ * this module's existing tested public surface — same shared implementation.
+ */
 export function humanizeAction(toolId: string): string {
-  const segment = toolId.split('.').pop() ?? toolId;
-  return segment
-    .split('_')
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+  return humanizeIdentifier(toolId);
 }
 
 /** The workflow journal rendered as a timeline (safe display data only). */
@@ -853,7 +867,13 @@ export function WorkflowTimeline({ data }: { data: WorkflowTimelineData }): JSX.
 }
 
 /** The empty conversation state with example prompts. */
-function EmptyConversation({ onPick }: { onPick: (prompt: string) => void }): JSX.Element {
+function EmptyConversation({
+  prompts,
+  onPick,
+}: {
+  prompts: readonly string[];
+  onPick: (prompt: string) => void;
+}): JSX.Element {
   return (
     <div
       style={{
@@ -896,7 +916,7 @@ function EmptyConversation({ onPick }: { onPick: (prompt: string) => void }): JS
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: spacing[2], width: '100%' }}>
-        {EXAMPLE_PROMPTS.map((prompt) => (
+        {prompts.map((prompt) => (
           <button
             key={prompt}
             type="button"

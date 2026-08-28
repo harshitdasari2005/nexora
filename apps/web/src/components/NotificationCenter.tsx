@@ -27,6 +27,23 @@ export interface NotificationCenterProps {
   workspaceId?: string;
 }
 
+/**
+ * Builds the `api()` call for marking one notification read — a pure,
+ * dependency-free helper so the request shape (path + method) is directly
+ * unit-testable without rendering the component. Both mark-read endpoints
+ * are POST-only server-side (`apps/api/src/routes/notifications.ts`); a
+ * bodyless `api()` call with no explicit method defaults to GET and 404s
+ * silently against them (S37 fix — this used to be exactly that bug).
+ */
+export function markReadRequest(notificationId: string): [string, RequestInit] {
+  return [`/notifications/${notificationId}/read`, { method: 'POST' }];
+}
+
+/** Builds the `api()` call for marking every notification in scope read. */
+export function markAllReadRequest(scopeSuffix: string): [string, RequestInit] {
+  return [`/notifications/read-all${scopeSuffix}`, { method: 'POST' }];
+}
+
 /** The category labels shown in the preferences panel. */
 const CATEGORY_LABELS: Record<string, string> = {
   workflow: 'Workflow',
@@ -139,7 +156,7 @@ export function NotificationCenter({
         return;
       }
       try {
-        await api(`/notifications/${notification.id}/read`);
+        await api(...markReadRequest(notification.id));
         setNotifications((current) =>
           current.map((n) => (n.id === notification.id ? { ...n, status: 'read' as const } : n)),
         );
@@ -154,7 +171,7 @@ export function NotificationCenter({
 
   const markAllRead = useCallback(async () => {
     try {
-      await api(`/notifications/read-all${scope}`);
+      await api(...markAllReadRequest(scope));
       setNotifications((current) => current.map((n) => ({ ...n, status: 'read' as const })));
       setUnread(0);
     } catch {

@@ -201,6 +201,122 @@ export interface ProjectDto {
   createdAt: string;
 }
 
+/**
+ * A calendar entry as seen by the client — mirrors
+ * `@nexora/application-calendar`'s `CalendarEventDto` exactly (`title`,
+ * `startsAt`, `endsAt`, `status`). There is no description, location,
+ * attendee, or recurrence field: the backend does not support them, so the
+ * client never fabricates them.
+ */
+export interface CalendarEventDto {
+  id: string;
+  organizationId: string;
+  workspaceId: string;
+  createdBy: string;
+  title: string;
+  /** ISO-8601 UTC start instant. */
+  startsAt: string;
+  /** ISO-8601 UTC end instant. */
+  endsAt: string;
+  /** The lifecycle status (`scheduled` | `cancelled`). */
+  status: string;
+  createdAt: string;
+}
+
+/**
+ * A budget as seen by the client — mirrors `@nexora/application-finance`'s
+ * `BudgetDto` exactly. Money is an integer count of minor units (never a
+ * float) plus a currency code; the client formats, never recomputes.
+ */
+export interface BudgetDto {
+  id: string;
+  organizationId: string;
+  workspaceId: string;
+  createdBy: string;
+  name: string;
+  allocatedMinorUnits: number;
+  currency: string;
+  /** ISO-8601 UTC period start instant. */
+  periodStart: string;
+  /** ISO-8601 UTC period end instant. */
+  periodEnd: string;
+  /** The lifecycle status (`active` | `under_review` | `closed`). */
+  status: string;
+  createdAt: string;
+}
+
+/**
+ * A budget's computed utilization — mirrors `@nexora/application-finance`'s
+ * `BudgetUtilizationDto` exactly. `spentMinorUnits` is the sum of APPROVED
+ * expenses claimed against the budget (never pending/rejected ones).
+ */
+export interface BudgetUtilizationDto {
+  budgetId: string;
+  name: string;
+  currency: string;
+  allocatedMinorUnits: number;
+  spentMinorUnits: number;
+  utilizationPercent: number;
+  status: string;
+}
+
+/**
+ * An expense claim as seen by the client — mirrors
+ * `@nexora/application-finance`'s `ExpenseDto` exactly.
+ */
+export interface ExpenseDto {
+  id: string;
+  organizationId: string;
+  workspaceId: string;
+  budgetId: string;
+  submittedBy: string;
+  description: string;
+  amountMinorUnits: number;
+  currency: string;
+  /** The lifecycle status (`pending` | `approved` | `rejected`). */
+  status: string;
+  decidedBy?: string;
+  decidedAt?: string;
+  createdAt: string;
+}
+
+/** One of the four journals a unified audit event can come from. */
+export type AuditEventSource = 'agent_execution' | 'approval' | 'workflow_step' | 'activity';
+
+/**
+ * A unified audit event — mirrors `apps/api/src/audit/audit-query-service.ts`'s
+ * `AuditEventDto` exactly. Fields the source data doesn't have are absent,
+ * never a fabricated placeholder (e.g. `roleName` only exists for
+ * agent-execution events, the one journal that persists a role).
+ */
+export interface AuditEventDto {
+  id: string;
+  source: AuditEventSource;
+  /** ISO-8601 UTC. */
+  occurredAt: string;
+  actorId?: string;
+  actorName: string;
+  roleId?: string;
+  roleName?: string;
+  module: string;
+  action: string;
+  object?: string;
+  status: string;
+  statusLabel: string;
+  workspaceId?: string;
+  workspaceName?: string;
+  approvalRequired: boolean;
+  approvalOutcome?: {
+    status: string;
+    statusLabel: string;
+    decidedByName?: string;
+    decisionReason?: string;
+  };
+  detail?: string;
+  error?: string;
+  references?: Record<string, string>;
+}
+
 /** The `/dashboard` response. */
 export interface DashboardResponse {
   user: UserDto;

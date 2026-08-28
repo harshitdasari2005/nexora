@@ -12,7 +12,9 @@ import { loadConfig } from '../src/config.js';
 import { buildApp } from '../src/app.js';
 import {
   FakeActivityRepository,
+  FakeBudgetRepository,
   FakeCalendarEntryRepository,
+  FakeExpenseRepository,
   FakeDocumentRepository,
   FakeDocumentTemplateRepository,
   FakeDocumentVersionRepository,
@@ -96,6 +98,8 @@ async function onboard(): Promise<OnboardingClient> {
     knowledgeArticles: new FakeKnowledgeArticleRepository(),
     knowledgeCategories: new FakeKnowledgeCategoryRepository(),
     calendarEvents: new FakeCalendarEntryRepository(),
+    budgets: new FakeBudgetRepository(),
+    expenses: new FakeExpenseRepository(),
     webhookEndpoints: new FakeWebhookEndpointRepository(),
     webhookDeliveries: new FakeWebhookDeliveryRepository(),
     emailOutbox: new FakeEmailOutboxRepository(),
@@ -257,6 +261,8 @@ describe('Nexora onboarding slice (E2E via inject)', () => {
       knowledgeArticles: new FakeKnowledgeArticleRepository(),
       knowledgeCategories: new FakeKnowledgeCategoryRepository(),
       calendarEvents: new FakeCalendarEntryRepository(),
+      budgets: new FakeBudgetRepository(),
+      expenses: new FakeExpenseRepository(),
       webhookEndpoints: new FakeWebhookEndpointRepository(),
       webhookDeliveries: new FakeWebhookDeliveryRepository(),
       emailOutbox: new FakeEmailOutboxRepository(),

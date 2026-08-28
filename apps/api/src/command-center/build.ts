@@ -19,6 +19,10 @@ import type { ListEmployeesHandler } from '@nexora/application-hr';
 import type { ListDocumentsHandler } from '@nexora/application-documents';
 import type { ListArticlesHandler } from '@nexora/application-knowledge';
 import type { ListActivityHandler, ListNotificationsHandler } from '@nexora/module-notifications';
+import type {
+  ListBudgetUtilizationHandler,
+  ListExpensesHandler,
+} from '@nexora/application-finance';
 import { createInitialCatalog } from '@nexora/module-domains';
 import {
   CommandCenterApplicationService,
@@ -52,6 +56,10 @@ export interface BuildCommandCenterOptions {
   listActivity: ListActivityHandler;
   /** Recipient-scoped notification inbox handler. */
   listNotifications: ListNotificationsHandler;
+  /** Workspace-scoped budget-utilization handler (finance section, S35). */
+  listBudgetUtilization: ListBudgetUtilizationHandler;
+  /** Workspace-scoped expense listing handler (finance section, S35). */
+  listExpenses: ListExpensesHandler;
 }
 
 /** Builds the command-center handler (generic engine + API implementations). */
@@ -79,6 +87,8 @@ export function buildCommandCenter(options: BuildCommandCenterOptions): GetComma
       listArticles: options.listArticles,
       listActivity: options.listActivity,
       listNotifications: options.listNotifications,
+      listBudgetUtilization: options.listBudgetUtilization,
+      listExpenses: options.listExpenses,
     }),
   });
   return new GetCommandCenterHandler(service);

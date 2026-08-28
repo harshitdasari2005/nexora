@@ -63,6 +63,10 @@ export const DEFAULT_APPROVAL_ROUTING: readonly ApprovalRoutingEntry[] = [
   { capabilityPrefix: 'hr.', approverRoleId: 'executive.ceo' },
   { capabilityPrefix: 'notifications.', approverRoleId: 'delivery.manager' },
   { capabilityPrefix: 'connector.', approverRoleId: 'executive.ceo' },
+  // S35 Finance vertical: the CFO approves consequential actions within
+  // their own domain (money movements, BR-19) — the same "domain owner
+  // approves" pattern already used for `projects.` → `delivery.manager`.
+  { capabilityPrefix: 'finance.', approverRoleId: 'finance.cfo' },
 ];
 
 /** The default {@link ApprovalRoutingPolicy} (deterministic, config-driven). */

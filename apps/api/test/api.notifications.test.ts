@@ -14,6 +14,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { chatClient, currentUserId, onboardOrgAndWorkspace } from './helpers.js';
+import {
+  isActivityInScope,
+  isNotificationForRecipient,
+} from '../src/routes/notifications.js';
 
 /** The notification payload returned by GET /api/notifications. */
 interface NotificationListResponse {
@@ -244,5 +248,28 @@ describe('Notification security (E2E)', () => {
 
     const anon = await client.app.inject({ method: 'GET', url: '/api/notifications' });
     expect(anon.statusCode).toBe(401);
+  });
+});
+
+describe('SSE stream filter predicates (GET /api/notifications/stream)', () => {
+  it('forwards a notification only to its own recipient', () => {
+    expect(isNotificationForRecipient('usr_alice', 'usr_alice')).toBe(true);
+    expect(isNotificationForRecipient('usr_alice', 'usr_bob')).toBe(false);
+  });
+
+  it('forwards an activity event only when the item tenant matches the connection tenant', () => {
+    expect(isActivityInScope('tnt_acme', 'tnt_acme')).toBe(true);
+    expect(isActivityInScope('tnt_acme', 'tnt_other')).toBe(false);
+  });
+
+  it('never forwards activity against the identity bootstrap tenant (the regression)', () => {
+    // `request.auth.tenantId` is always `tnt_platform` for OIDC users; real
+    // activity items carry a real org id. Comparing the two must be false —
+    // the connection tenant has to be RESOLVED from membership first.
+    expect(isActivityInScope('tnt_acme', 'tnt_platform')).toBe(false);
+  });
+
+  it('forwards nothing when the connection tenant could not be resolved (fail closed)', () => {
+    expect(isActivityInScope('tnt_acme', undefined)).toBe(false);
   });
 });

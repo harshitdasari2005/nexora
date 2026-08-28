@@ -6,7 +6,7 @@
  * the application root (DESIGN_SYSTEM.md §3).
  */
 
-import { darkThemeCss, lightThemeCss } from './tokens.js';
+import { darkThemeCss, elevation, lightThemeCss } from './tokens.js';
 
 const resetCss = `
 * { box-sizing: border-box; }
@@ -46,7 +46,23 @@ a:hover { text-decoration: underline; }
 export function GlobalStyles(): JSX.Element {
   return (
     <style id="nexora-global-styles">
-      {`:root { ${lightThemeCss} }
+      {`:root {
+  ${lightThemeCss}
+  /* App-shell structural tones (light): a very subtle depth ladder —
+     sidebar reads as a hair darker than the page, the topbar as a
+     translucent wash, elevated cards as pure white — enough to separate
+     regions without the shell looking like stacked panels. */
+  --nexora-shellSidebar: #f6f5f3;
+  --nexora-shellTopbar: rgba(255, 255, 255, 0.86);
+  --nexora-shellCardElevated: #ffffff;
+  /* Card surface (light): a plain opaque card — no glass, nothing behind
+     it to blur. See the [data-theme="dark"] block below for why this
+     differs there (Login/the pre-S44 cinematic surfaces still float over
+     a 3D scene and need real glass; the authenticated app, S44, does not). */
+  --nexora-cardBg: var(--nexora-surface);
+  --nexora-cardBackdropFilter: none;
+  --nexora-cardInsetHighlight: inset 0 1px 0 rgba(255, 255, 255, 0);
+}
 [data-theme="dark"] {
   ${darkThemeCss}
   /* App-shell structural tones (dark only): a visible depth ladder from
@@ -55,6 +71,15 @@ export function GlobalStyles(): JSX.Element {
   --nexora-shellSidebar: #05070d;
   --nexora-shellTopbar: rgba(9, 12, 20, 0.72);
   --nexora-shellCardElevated: #182036;
+  /* Card surface (dark): translucent glass over the 3D scene (Login only
+     as of S44 — the authenticated shell no longer runs this theme). */
+  --nexora-cardBg: var(--nexora-surfaceGlass);
+  --nexora-cardBackdropFilter: blur(20px) saturate(150%);
+  --nexora-cardInsetHighlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.nexora-card-interactive { cursor: pointer; outline-offset: 2px; }
+.nexora-card-interactive:hover {
+  box-shadow: ${elevation.md}, var(--nexora-cardInsetHighlight);
 }
 ${resetCss}`}
     </style>

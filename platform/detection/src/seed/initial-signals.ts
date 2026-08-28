@@ -34,6 +34,18 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** Audit completeness: a tenant with executions but a traceable share < 100%. */
 const AUDIT_COMPLETENESS_MIN_SHARE = 100;
 
+/**
+ * Budget overrun (high): utilization at or above this threshold. MUST stay
+ * numerically identical to `BUDGET_HIGH_UTILIZATION_THRESHOLD_PERCENT` in
+ * `@nexora/application-finance` (the `FlagOverBudgetItems` remediation
+ * action re-checks the SAME threshold at execution time) — declared
+ * independently here because detection signals never depend on a domain
+ * module (the same decoupling every other signal in this file follows).
+ */
+const FINANCE_BUDGET_HIGH_UTILIZATION = 90;
+/** Budget overrun (medium): utilization at or above this threshold, below high. */
+const FINANCE_BUDGET_MEDIUM_UTILIZATION = 75;
+
 /** The initial business-signal definitions (S27 registrations). */
 export const INITIAL_SIGNALS: readonly BusinessSignalDefinition[] = [
   {
@@ -205,6 +217,48 @@ export const INITIAL_SIGNALS: readonly BusinessSignalDefinition[] = [
           correlationSuffix: 'audit',
         },
       ];
+    },
+  },
+  {
+    id: 'finance_budget_overrun',
+    signalType: 'finance_budget_overrun',
+    name: 'Budget overrun risk',
+    description:
+      "An active budget's approved spend has crossed the deterministic utilization threshold.",
+    // `finance.flag_over_budget_items` is parameterless (same reasoning as
+    // `notifications.mark_all_read` above): it re-scans EVERY active budget
+    // in scope and flags the ones over threshold — the remediation engine
+    // never supplies a specific budget id.
+    remediationCapabilities: [
+      'finance.flag_over_budget_items',
+      'notifications.what_needs_attention',
+    ],
+    evaluate: (snapshot) => {
+      const detections: SignalDetection[] = [];
+      for (const budget of snapshot.budgets ?? []) {
+        // Only `active` budgets are re-flagged — a budget already under
+        // review or closed doesn't need a second detection.
+        if (budget.status !== 'active' || budget.allocatedMinorUnits <= 0) {
+          continue;
+        }
+        const utilization = Math.round((budget.spentMinorUnits / budget.allocatedMinorUnits) * 100);
+        const high = utilization >= FINANCE_BUDGET_HIGH_UTILIZATION;
+        const medium = !high && utilization >= FINANCE_BUDGET_MEDIUM_UTILIZATION;
+        if (!high && !medium) {
+          continue;
+        }
+        detections.push({
+          affectedEntity: { type: 'budget', id: budget.budgetId, title: budget.name },
+          severity: high ? 'high' : 'medium',
+          title: `${budget.name} is ${high ? 'over' : 'near'} budget`,
+          description: `${budget.name} has used ${utilization}% of its allocated ${budget.currency} budget (${budget.spentMinorUnits}/${budget.allocatedMinorUnits} minor units).`,
+          facts: [
+            `${budget.name} utilization is ${utilization}% (threshold ${high ? FINANCE_BUDGET_HIGH_UTILIZATION : FINANCE_BUDGET_MEDIUM_UTILIZATION}%).`,
+          ],
+          correlationSuffix: budget.budgetId,
+        });
+      }
+      return detections;
     },
   },
 ];

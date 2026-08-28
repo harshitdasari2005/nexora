@@ -19,9 +19,12 @@
  * scoped through the existing application services. No unrestricted
  * autonomy exists.
  *
- * These are INITIAL REGISTRATIONS ONLY — other roles (finance.cfo, etc.)
- * have no agent yet and fail safely. A future domain (e.g. Legal) registers
- * its own agent without touching this engine.
+ * S35 added a fourth definition: Finance (finance.cfo) — same engine, same
+ * rules, registered the identical way.
+ *
+ * These are INITIAL REGISTRATIONS ONLY — other roles have no agent yet and
+ * fail safely. A future domain (e.g. Legal) registers its own agent without
+ * touching this engine.
  */
 
 import type { BusinessAgentDefinition } from '@nexora/contracts/agent';
@@ -174,6 +177,55 @@ export const INITIAL_AGENTS: readonly BusinessAgentDefinition[] = [
         id: 'no.slack',
         statement:
           'The Developer agent has no Slack surface (outside its capability set); it never reads or sends Slack messages.',
+      },
+    ],
+  },
+  {
+    id: 'finance',
+    name: 'Finance Agent',
+    domainId: 'finance',
+    roleId: 'finance.cfo',
+    description:
+      'Financial oversight: identifies budget and expense signals needing attention from real persisted data and proposes governed financial actions.',
+    autonomyLevel: 'governed_execution',
+    capabilityIds: [
+      'notifications.what_needs_attention',
+      'finance.submit_expense',
+      'finance.flag_over_budget_items',
+    ],
+    goals: [
+      {
+        id: 'finance.attention',
+        name: 'Identify budget and expense signals needing attention',
+        description:
+          'Surfaces pending expense approvals and budget-utilization risk so the CFO can act on real, persisted financial signals.',
+        capabilityIds: ['notifications.what_needs_attention'],
+      },
+      {
+        id: 'finance.expenses',
+        name: 'Submit expense claims',
+        description:
+          'Submits an expense claim against a budget on the CFO’s behalf — always gated by approval (BR-19 money movement).',
+        capabilityIds: ['finance.submit_expense'],
+      },
+      {
+        id: 'finance.remediation',
+        name: 'Flag over-budget items for review',
+        description:
+          'Re-scans active budgets and flags the ones over the deterministic utilization threshold — the remediation action behind the finance_budget_overrun signal.',
+        capabilityIds: ['finance.flag_over_budget_items'],
+      },
+    ],
+    policies: [
+      {
+        id: 'writes.require_approval',
+        statement:
+          'Every write action (expense submission, budget review flagging) executes only through the existing approval engine — never autonomously.',
+      },
+      {
+        id: 'money.consequential',
+        statement:
+          'Money-movement and budget-review actions are Consequential (BR-13/BR-19) and always require human approval — the agent never decides a threshold or grants itself an approval.',
       },
     ],
   },

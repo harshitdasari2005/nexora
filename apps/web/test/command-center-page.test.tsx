@@ -123,7 +123,11 @@ describe('CommandCenterView (S24 Phase 2)', () => {
     // resolves the safe default theme, not a fabricated CEO-specific string.
     expect(html).toContain('Business Intelligence');
     expect(html).toContain('CEO');
-    expect(html).toContain('Executive');
+    // S36: the role badge shows the curated persona label (from the
+    // center's own `roleId`, resolved independent of the role-context
+    // fetch) — "CEO · Business & Strategy" — not the raw domain name.
+    // (renderToString HTML-encodes "&" as "&amp;".)
+    expect(html).toContain('Business &amp; Strategy');
     // Real measurement KPI value flows into the shared KPI renderer.
     expect(html).toContain('7');
     // Workflow health list renders real data with status badges.

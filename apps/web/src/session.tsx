@@ -50,11 +50,16 @@ export function RequireAuth({ children }: { children: ReactNode }): JSX.Element 
   const { data, loading, error, reload } = useSession();
   const navigate = useNavigate();
 
+  // Redirect to login when the session resolves to "not authenticated" —
+  // either an explicit 401 OR a completed load that produced no session and
+  // no error (a resolved-but-empty state must never hang on a spinner).
+  const unauthenticated =
+    !loading && ((error?.isUnauthorized ?? false) || (error === null && data === null));
   useEffect(() => {
-    if (!loading && error?.isUnauthorized) {
+    if (unauthenticated) {
       navigate('/login', { replace: true });
     }
-  }, [loading, error, navigate]);
+  }, [unauthenticated, navigate]);
 
   if (loading) {
     return <LoadingScreen />;
@@ -65,6 +70,8 @@ export function RequireAuth({ children }: { children: ReactNode }): JSX.Element 
     return <ErrorState message={error.message} onRetry={() => void reload()} />;
   }
   if (data === null) {
+    // Unauthenticated (or resolved-empty): the effect above is navigating to
+    // /login — render nothing rather than an indefinite spinner.
     return <LoadingScreen />;
   }
   return <>{children}</>;

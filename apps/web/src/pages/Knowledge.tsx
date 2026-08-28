@@ -628,7 +628,13 @@ function ArticleRow({
   return (
     <Card style={{ padding: '14px 16px' }}>
       <Stack gap={3}>
-        <Stack direction="row" gap={4} align="center" justify="space-between">
+        <Stack
+          direction="row"
+          gap={3}
+          align="center"
+          justify="space-between"
+          style={{ flexWrap: 'wrap' }}
+        >
           <Stack gap={0.5} style={{ minWidth: 0 }}>
             <div style={{ fontWeight: typography.weights.semibold }}>{article.title}</div>
             <Stack direction="row" gap={3} align="center">

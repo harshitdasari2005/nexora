@@ -41,7 +41,7 @@ async function uploadDocument(
 describe('document routes (Documents + Knowledge vertical slice)', () => {
   it('uploads a document, processes it to available, and indexes it into knowledge', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     const response = await uploadDocument(
       client,
@@ -82,7 +82,7 @@ describe('document routes (Documents + Knowledge vertical slice)', () => {
 
   it('reports an honest failed state when extraction yields no text and never indexes', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     // application/pdf with no extractable text → failed (never fake success).
     const response = await client.post('/api/documents', {
@@ -110,7 +110,7 @@ describe('document routes (Documents + Knowledge vertical slice)', () => {
 
   it('rejects a document upload from a workspace the caller is not a member of', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     // A workspace in the same organization where the caller has NO
     // membership → the upload is forbidden (workspace scope).
@@ -136,7 +136,7 @@ describe('document routes (Documents + Knowledge vertical slice)', () => {
 
   it('rejects reading documents from a foreign workspace (403) and a foreign tenant (403)', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     const foreignWorkspace = await client.get(
       `/api/documents?organizationId=${scope.organizationId}&workspaceId=wsp_alien`,
@@ -153,7 +153,7 @@ describe('document routes (Documents + Knowledge vertical slice)', () => {
 
   it('never leaks a foreign document id (resolves to NOT FOUND)', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     // Seed a document into a DIFFERENT workspace of the same organization.
     const userId = currentUserId(client);
@@ -195,7 +195,7 @@ describe('document routes (Documents + Knowledge vertical slice)', () => {
 
   it('archives a document and removes it from the knowledge index', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     const created = await uploadDocument(
       client,

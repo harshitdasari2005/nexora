@@ -40,7 +40,18 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
 /** Default status for unknown codes. */
 const DEFAULT_STATUS = 500;
 
-/** Maps an unknown error to `{ statusCode, body }`. */
+/** The generic message returned for every 5xx (never the raw error text). */
+const SERVER_ERROR_MESSAGE = 'The server could not complete the request.';
+
+/**
+ * Maps an unknown error to `{ statusCode, body }`.
+ *
+ * For 5xx responses the client sees only a fixed generic message and no
+ * `details` — the real error (which may carry a DB driver string, a
+ * connection target, a constraint name, or a stack-adjacent detail) is left
+ * for the server log. 4xx responses keep their specific, caller-actionable
+ * message and details.
+ */
 export function toHttpError(
   error: unknown,
   requestId?: string,
@@ -51,14 +62,15 @@ export function toHttpError(
   const nexora: NexoraError | undefined = isNexoraError(error) ? error : undefined;
   const code = nexora?.code ?? 'INTERNAL_ERROR';
   const statusCode = STATUS_BY_CODE[code] ?? DEFAULT_STATUS;
+  const isServerError = statusCode >= 500;
   return {
     statusCode,
     body: {
       error: {
         code,
-        message: nexora?.message ?? 'Internal error',
+        message: isServerError ? SERVER_ERROR_MESSAGE : (nexora?.message ?? 'Internal error'),
         requestId,
-        details: nexora?.details,
+        details: isServerError ? undefined : nexora?.details,
       },
     },
   };

@@ -13,12 +13,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Badge, Card, EmptyState, Stack, typography } from '@nexora/design-system';
+import { Badge, Button, Card, EmptyState, Stack, typography } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
+import { humanizeIdentifier } from '../lib/humanize.js';
 import type {
   AuditCompletenessMetricDto,
   DashboardResponse,
@@ -122,9 +123,9 @@ export function Insights(): JSX.Element {
             title="Create a workspace first"
             description="Insights are computed per workspace. Set one up to see your pilot metrics."
             action={
-              <button onClick={() => void load()} type="button">
+              <Button variant="secondary" onClick={() => void load()}>
                 Reload
-              </button>
+              </Button>
             }
           />
         </Card>
@@ -288,8 +289,11 @@ function WorkflowHealthCard({
                 style={{ border: '1px solid var(--nexora-border)', borderRadius: 10, padding: 12 }}
               >
                 <Stack direction="row" gap={3} align="center" justify="space-between">
-                  <div style={{ fontWeight: typography.weights.semibold }}>
-                    {metric.definitionKey}
+                  <div
+                    style={{ fontWeight: typography.weights.semibold }}
+                    title={metric.definitionKey}
+                  >
+                    {humanizeIdentifier(metric.definitionKey)}
                   </div>
                   <Stack direction="row" gap={2} align="center">
                     <Badge tone={successMet ? 'success' : 'warning'}>
@@ -403,9 +407,9 @@ function AuditCompletenessCard({ audit }: { audit: AuditCompletenessMetricDto })
             </div>
             <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
               {audit.untracedTypes.map((type) => (
-                <Badge key={type} tone="warning">
-                  {type}
-                </Badge>
+                <span key={type} title={type}>
+                  <Badge tone="warning">{humanizeIdentifier(type)}</Badge>
+                </span>
               ))}
             </Stack>
           </Stack>

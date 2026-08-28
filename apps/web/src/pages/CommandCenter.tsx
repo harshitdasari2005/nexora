@@ -32,13 +32,17 @@ import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { SectionLabel, severityAccent, severityTone } from '../components/ProblemInvestigation.js';
 import { api, ApiError } from '../lib/api.js';
+import {
+  humanizeProblemText,
+  humanizeProblemTitle,
+  humanizeRecommendationSummary,
+} from '../lib/humanize.js';
 import { fetchProblems } from '../lib/problems.js';
+import { resolvePersonaForRole } from '../lib/rolePersonas.js';
 import { useRoleTheme } from '../lib/RoleThemeContext.js';
-import type { RoleTheme } from '../lib/roleThemes.js';
 import type {
   BusinessProblemDto,
   CommandCenterDto,
-  CommandCenterWidgetDto,
   DashboardResponse,
   RoleContextResponse,
 } from '../lib/types.js';
@@ -268,12 +272,15 @@ export function CommandCenterView({
 
   const firstName = userDisplayName?.split(' ')[0];
   const currentRole = roleContext?.current;
+  const persona = resolvePersonaForRole(currentRole?.roleId ?? center?.roleId);
   const roleLabel =
-    currentRole !== undefined && currentRole !== null
-      ? `${currentRole.domainName} · ${currentRole.roleName}`
-      : center !== null
-        ? `${center.domainName} · ${center.roleName}`
-        : undefined;
+    persona !== undefined
+      ? `${persona.displayRole} · ${persona.focusLabel}`
+      : currentRole !== undefined && currentRole !== null
+        ? `${currentRole.domainName} · ${currentRole.roleName}`
+        : center !== null
+          ? `${center.domainName} · ${center.roleName}`
+          : undefined;
 
   // Resolved problems have already been dealt with — they belong in history,
   // not in "needs your attention" or the open-issue counts.
@@ -285,12 +292,21 @@ export function CommandCenterView({
           .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
           .slice(0, 3);
 
+  // Fixed visual hierarchy (S44): PRIMARY health → ATTENTION → ACTIVITY →
+  // SECONDARY, the same order for every role. Each role still feels
+  // meaningfully different through theme.sections' labels and whichever
+  // widgets the backend actually composed for it — never through a
+  // per-role reshuffle of this hierarchy, which would undermine the "where
+  // am I, what matters right now" consistency a first-time user needs.
+  const kpiWidgets = center?.widgets.filter((w) => w.type === 'kpi') ?? [];
+  const heroWidget = kpiWidgets[0];
+  const secondaryKpis = kpiWidgets.slice(1);
+  const signalWidgets =
+    center?.widgets.filter((w) => w.type === 'list' || w.type === 'attention') ?? [];
+  const activityWidgets = center?.widgets.filter((w) => w.type === 'activity') ?? [];
+
   return (
     <div style={{ position: 'relative' }}>
-      {/* The ambient intelligence-network background is now owned by AppShell
-          (one shared canvas for the whole authenticated app, tinted per
-          page) — rendering a second one here would double the animation
-          cost and the visual density for no benefit. */}
       <Stack gap={6} style={{ maxWidth: 1080, margin: '0 auto', position: 'relative', zIndex: 1 }}>
         {/* Greeting header */}
         <Stack gap={2}>
@@ -366,75 +382,78 @@ export function CommandCenterView({
             }}
           >
             <Stack gap={6}>
-              {/* Nexora Brief — tinted to the role's accent, not a fixed
-                  indigo/violet gradient, so the same card reads as visibly
-                  different across roles. */}
-              <Card
-                style={{
-                  background: `linear-gradient(135deg, ${theme.accentSoft}, var(--nexora-primarySoft))`,
-                  border: '1px solid var(--nexora-border)',
-                }}
-              >
-                <Stack direction="row" gap={4} align="flex-start" style={{ flexWrap: 'wrap' }}>
-                  <span
-                    aria-hidden
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 10,
-                      background: `linear-gradient(135deg, ${theme.accent}, var(--nexora-primary))`,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 16,
-                      flexShrink: 0,
-                      color: '#0b0e16',
-                    }}
-                  >
-                    ✦
-                  </span>
-                  <Stack gap={2} style={{ flex: 1, minWidth: 240 }}>
-                    <div
+              {/* PRIMARY BUSINESS HEALTH — the Brief (a plain, readable
+                  summary card, not a decorative gradient) plus the single
+                  most important number, given real visual weight. This is
+                  the first thing after the header on every role. */}
+              <Stack gap={3}>
+                <SectionLabel>{theme.sections.health}</SectionLabel>
+                <Card>
+                  <Stack direction="row" gap={4} align="flex-start" style={{ flexWrap: 'wrap' }}>
+                    <span
+                      aria-hidden
                       style={{
-                        fontSize: typography.sizes.xs,
-                        fontWeight: typography.weights.semibold,
+                        width: 34,
+                        height: 34,
+                        borderRadius: 8,
+                        background: theme.accentSoft,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 15,
+                        flexShrink: 0,
                         color: theme.accent,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
                       }}
                     >
-                      {theme.briefLabel}
-                    </div>
-                    <p
-                      style={{
-                        fontSize: typography.sizes.base,
-                        lineHeight: typography.lineHeights.relaxed,
-                      }}
-                    >
-                      {composeBrief(organizationName, center, openProblems)}
-                    </p>
-                    {sortedProblems !== null && sortedProblems.length > 0 ? (
-                      <Link to="/app/problems" style={{ textDecoration: 'none' }}>
-                        <Button variant="secondary" size="sm">
-                          Review issues →
-                        </Button>
-                      </Link>
-                    ) : null}
+                      ✦
+                    </span>
+                    <Stack gap={2} style={{ flex: 1, minWidth: 240 }}>
+                      <div
+                        style={{
+                          fontSize: typography.sizes.xs,
+                          fontWeight: typography.weights.semibold,
+                          color: 'var(--nexora-textMuted)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.06em',
+                        }}
+                      >
+                        {theme.briefLabel}
+                      </div>
+                      <p
+                        style={{
+                          fontSize: typography.sizes.base,
+                          lineHeight: typography.lineHeights.relaxed,
+                        }}
+                      >
+                        {composeBrief(organizationName, center, openProblems)}
+                      </p>
+                      {sortedProblems !== null && sortedProblems.length > 0 ? (
+                        <Link to="/app/problems" style={{ textDecoration: 'none' }}>
+                          <Button variant="secondary" size="sm">
+                            Review issues →
+                          </Button>
+                        </Link>
+                      ) : null}
+                    </Stack>
                   </Stack>
-                </Stack>
-              </Card>
+                </Card>
+                {heroWidget !== undefined ? (
+                  <CommandCenterWidget widget={heroWidget} data={center.data[heroWidget.id]} hero />
+                ) : kpiWidgets.length === 0 && persona !== undefined ? (
+                  <Card>
+                    <EmptyState
+                      icon="◎"
+                      title={persona.emptyState.title}
+                      description={persona.emptyState.description}
+                    />
+                  </Card>
+                ) : null}
+              </Stack>
 
-              {/* Needs your attention — real detected problems, ranked by severity */}
+              {/* ATTENTION REQUIRED — real detected problems, ranked by severity */}
               {sortedProblems !== null && sortedProblems.length > 0 ? (
                 <Stack gap={3}>
-                  <h2
-                    style={{
-                      fontSize: typography.sizes.lg,
-                      fontWeight: typography.weights.semibold,
-                    }}
-                  >
-                    {theme.sections.attention}
-                  </h2>
+                  <SectionLabel>{theme.sections.attention}</SectionLabel>
                   <Stack gap={3}>
                     {sortedProblems.map((problem) => (
                       <ProblemAttentionCard key={problem.id} problem={problem} />
@@ -443,95 +462,182 @@ export function CommandCenterView({
                 </Stack>
               ) : null}
 
-              {/* AI entry + quick actions */}
-              <Stack direction="row" gap={4} style={{ flexWrap: 'wrap' }}>
-                <Card style={{ flex: '2 1 320px', minWidth: 280 }}>
+              {/* BUSINESS ACTIVITY — the timeline/activity stream */}
+              {activityWidgets.length > 0 ? (
+                <Stack gap={3}>
+                  <SectionLabel>{theme.sections.activity}</SectionLabel>
                   <Stack gap={3}>
-                    <div
-                      style={{
-                        fontSize: typography.sizes.xs,
-                        fontWeight: typography.weights.semibold,
-                        color: 'var(--nexora-textMuted)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                      }}
-                    >
-                      Ask Nexora
-                    </div>
-                    <p
-                      style={{
-                        fontSize: typography.sizes.base,
-                        fontWeight: typography.weights.medium,
-                      }}
-                    >
-                      &ldquo;{theme.briefQuestion}&rdquo;
-                    </p>
-                    <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
-                      <Link to="/app/assistant" style={{ textDecoration: 'none' }}>
-                        <Button size="sm">Ask Nexora</Button>
-                      </Link>
-                      <Link to="/app/problems" style={{ textDecoration: 'none' }}>
-                        <Button variant="secondary" size="sm">
-                          Which projects are at risk?
-                        </Button>
-                      </Link>
-                    </Stack>
+                    {activityWidgets.map((widget) => (
+                      <CommandCenterWidget
+                        key={widget.id}
+                        widget={widget}
+                        data={center.data[widget.id]}
+                      />
+                    ))}
                   </Stack>
-                </Card>
-
-                <Card style={{ flex: '1 1 240px', minWidth: 240 }}>
-                  <Stack gap={3}>
-                    <div
-                      style={{
-                        fontSize: typography.sizes.xs,
-                        fontWeight: typography.weights.semibold,
-                        color: 'var(--nexora-textMuted)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                      }}
-                    >
-                      Quick actions
-                    </div>
-                    <Stack gap={2}>
-                      <Link to="/app/problems" style={{ textDecoration: 'none', color: 'inherit' }}>
-                        <QuickAction icon="⚠" label="Investigate problems" />
-                      </Link>
-                      <Link
-                        to="/app/assistant"
-                        style={{ textDecoration: 'none', color: 'inherit' }}
-                      >
-                        <QuickAction icon="✦" label="Ask Nexora" />
-                      </Link>
-                      <Link
-                        to="/app/workflows"
-                        style={{ textDecoration: 'none', color: 'inherit' }}
-                      >
-                        <QuickAction icon="⧉" label="Review workflows" />
-                      </Link>
-                    </Stack>
-                  </Stack>
-                </Card>
-              </Stack>
-
-              {/* Actions (read/navigation only in Phase 2) */}
-              {center.actions.length > 0 ? (
-                <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
-                  {center.actions.map((action) => (
-                    <Link key={action.id} to={action.href} style={{ textDecoration: 'none' }}>
-                      <Button variant="secondary" size="sm">
-                        {action.icon !== undefined ? `${action.icon} ` : ''}
-                        {action.label}
-                      </Button>
-                    </Link>
-                  ))}
+                </Stack>
+              ) : persona !== undefined ? (
+                <Stack gap={3}>
+                  <SectionLabel>{theme.sections.activity}</SectionLabel>
+                  <Card>
+                    <EmptyState
+                      icon="◎"
+                      title={persona.emptyState.title}
+                      description={persona.emptyState.description}
+                    />
+                  </Card>
                 </Stack>
               ) : null}
 
-              {/* Widget grid: role-composed, one renderer per widget type. The
-                  first KPI widget gets hero visual weight — the most
-                  important number should dominate, not blend into a grid of
-                  identical cards. */}
-              <WidgetGrid center={center} theme={theme} />
+              {/* SECONDARY — supporting KPIs, signals (projects/approvals/
+                  risks/workflows), the AI entry point, and quick actions.
+                  Deliberately last and visually quieter than the sections
+                  above: real information, not the first thing a first-time
+                  user needs to read.
+
+                  The two blocks below (kpiBlock, signalsBlock) render in an
+                  order set by the persona's `secondaryEmphasis` — the ONE
+                  place a role varies this page's STRUCTURE, not just its
+                  labels/data. Decision-and-risk personas (CEO, CFO, HR,
+                  Legal) see the numeric snapshot first; execution personas
+                  (Operations, Technology) see the actionable signal list —
+                  workflow failures, blocked items — first instead. Roles
+                  outside the six curated personas keep the prior kpi-first
+                  behavior. */}
+              <Stack gap={5}>
+                <SectionLabel>Secondary information</SectionLabel>
+
+                {(() => {
+                  const kpiBlock =
+                    secondaryKpis.length > 0 ? (
+                      <div key="kpi" className="nexora-kpi-row">
+                        {secondaryKpis.map((widget) => (
+                          <CommandCenterWidget
+                            key={widget.id}
+                            widget={widget}
+                            data={center.data[widget.id]}
+                          />
+                        ))}
+                      </div>
+                    ) : null;
+
+                  const signalsBlock =
+                    signalWidgets.length > 0 ? (
+                      <Stack key="signals" gap={3}>
+                        <SectionLabel>{theme.sections.signals}</SectionLabel>
+                        <div className="nexora-signals-grid">
+                          {signalWidgets.map((widget) => (
+                            <CommandCenterWidget
+                              key={widget.id}
+                              widget={widget}
+                              data={center.data[widget.id]}
+                            />
+                          ))}
+                        </div>
+                      </Stack>
+                    ) : persona !== undefined ? (
+                      <Stack key="signals" gap={3}>
+                        <SectionLabel>{theme.sections.signals}</SectionLabel>
+                        <Card>
+                          <EmptyState
+                            icon="◎"
+                            title={persona.emptyState.title}
+                            description={persona.emptyState.description}
+                          />
+                        </Card>
+                      </Stack>
+                    ) : null;
+
+                  return persona?.secondaryEmphasis === 'signals-first'
+                    ? [signalsBlock, kpiBlock]
+                    : [kpiBlock, signalsBlock];
+                })()}
+
+                <Stack direction="row" gap={4} style={{ flexWrap: 'wrap' }}>
+                  <Card style={{ flex: '2 1 320px', minWidth: 280 }}>
+                    <Stack gap={3}>
+                      <div
+                        style={{
+                          fontSize: typography.sizes.xs,
+                          fontWeight: typography.weights.semibold,
+                          color: 'var(--nexora-textMuted)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.06em',
+                        }}
+                      >
+                        Ask Nexora
+                      </div>
+                      <p
+                        style={{
+                          fontSize: typography.sizes.base,
+                          fontWeight: typography.weights.medium,
+                        }}
+                      >
+                        &ldquo;{theme.briefQuestion}&rdquo;
+                      </p>
+                      <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
+                        <Link to="/app/assistant" style={{ textDecoration: 'none' }}>
+                          <Button size="sm">Ask Nexora</Button>
+                        </Link>
+                        <Link to="/app/problems" style={{ textDecoration: 'none' }}>
+                          <Button variant="secondary" size="sm">
+                            Which projects are at risk?
+                          </Button>
+                        </Link>
+                      </Stack>
+                    </Stack>
+                  </Card>
+
+                  <Card style={{ flex: '1 1 240px', minWidth: 240 }}>
+                    <Stack gap={3}>
+                      <div
+                        style={{
+                          fontSize: typography.sizes.xs,
+                          fontWeight: typography.weights.semibold,
+                          color: 'var(--nexora-textMuted)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.06em',
+                        }}
+                      >
+                        Quick actions
+                      </div>
+                      <Stack gap={2}>
+                        <Link
+                          to="/app/problems"
+                          style={{ textDecoration: 'none', color: 'inherit' }}
+                        >
+                          <QuickAction icon="⚠" label="Investigate problems" />
+                        </Link>
+                        <Link
+                          to="/app/assistant"
+                          style={{ textDecoration: 'none', color: 'inherit' }}
+                        >
+                          <QuickAction icon="✦" label="Ask Nexora" />
+                        </Link>
+                        <Link
+                          to="/app/workflows"
+                          style={{ textDecoration: 'none', color: 'inherit' }}
+                        >
+                          <QuickAction icon="⧉" label="Review workflows" />
+                        </Link>
+                      </Stack>
+                    </Stack>
+                  </Card>
+                </Stack>
+
+                {center.actions.length > 0 ? (
+                  <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
+                    {center.actions.map((action) => (
+                      <Link key={action.id} to={action.href} style={{ textDecoration: 'none' }}>
+                        <Button variant="secondary" size="sm">
+                          {action.icon !== undefined ? `${action.icon} ` : ''}
+                          {action.label}
+                        </Button>
+                      </Link>
+                    ))}
+                  </Stack>
+                ) : null}
+              </Stack>
             </Stack>
           </div>
         )}
@@ -539,6 +645,24 @@ export function CommandCenterView({
 
       <style>{`
         .nexora-quick-action:hover { background: var(--nexora-surfaceMuted); }
+        .nexora-kpi-row {
+          display: grid;
+          /* auto-fill (not auto-fit): a single secondary KPI stays a compact
+             card in its own track rather than stretching wide. */
+          grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+          gap: 12px;
+        }
+        .nexora-signals-grid {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 16px;
+        }
+        @media (max-width: 900px) {
+          .nexora-signals-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 560px) {
+          .nexora-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
       `}</style>
     </div>
   );
@@ -591,15 +715,16 @@ function ProblemAttentionCard({ problem }: { problem: BusinessProblemDto }): JSX
           <span
             style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.base }}
           >
-            {problem.title}
+            {humanizeProblemTitle(problem.title)}
           </span>
         </Stack>
         <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
-          {problem.description}
+          {humanizeProblemText(problem.description)}
         </p>
         {problem.recommendation !== undefined ? (
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-text)' }}>
-            <strong>Nexora recommends:</strong> {problem.recommendation.summary}
+            <strong>Nexora recommends:</strong>{' '}
+            {humanizeRecommendationSummary(problem.recommendation.summary)}
           </p>
         ) : null}
         <div>
@@ -611,55 +736,5 @@ function ProblemAttentionCard({ problem }: { problem: BusinessProblemDto }): JSX
         </div>
       </Stack>
     </Card>
-  );
-}
-
-/**
- * The widget grid — grouped into labeled sections (role-specific terminology,
- * e.g. "Engineering Health" for a CTO vs "Financial Health" for a CFO)
- * instead of one undifferentiated wall of identical cards, composed in the
- * ROLE's own order (a Developer sees signals before health; everyone else
- * sees health first). The grouping is purely presentational: it sorts the
- * SAME role-composed widgets by their existing `type`, fabricating nothing.
- * The first KPI widget keeps hero visual weight.
- */
-function WidgetGrid({
-  center,
-  theme,
-}: {
-  center: CommandCenterDto;
-  theme: RoleTheme;
-}): JSX.Element {
-  const heroId = center.widgets.find((w) => w.type === 'kpi')?.id;
-  const groups: Record<'health' | 'signals' | 'activity', CommandCenterWidgetDto[]> = {
-    health: center.widgets.filter((w) => w.type === 'kpi'),
-    signals: center.widgets.filter((w) => w.type === 'list' || w.type === 'attention'),
-    activity: center.widgets.filter((w) => w.type === 'activity'),
-  };
-
-  const renderGroup = (widgets: readonly CommandCenterWidgetDto[]): JSX.Element => (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16 }}>
-      {widgets.map((widget) => (
-        <CommandCenterWidget
-          key={widget.id}
-          widget={widget}
-          data={center.data[widget.id]}
-          hero={widget.id === heroId}
-        />
-      ))}
-    </div>
-  );
-
-  return (
-    <Stack gap={6}>
-      {theme.order.map((key) =>
-        groups[key].length > 0 ? (
-          <Stack gap={3} key={key}>
-            <SectionLabel>{theme.sections[key]}</SectionLabel>
-            {renderGroup(groups[key])}
-          </Stack>
-        ) : null,
-      )}
-    </Stack>
   );
 }

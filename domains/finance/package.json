@@ -4,19 +4,23 @@
   "private": true,
   "type": "module",
   "description": "Nexora backend module: finance (bounded context per DOMAIN_MODEL.md).",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@nexora/contracts": "workspace:*",
+    "@nexora/shared": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^2.1.0"

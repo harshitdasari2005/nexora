@@ -23,7 +23,9 @@ import type { RepositorySet } from '../src/container.js';
 import { FakeOidcGateway } from './fakes.js';
 import {
   FakeActivityRepository,
+  FakeBudgetRepository,
   FakeCalendarEntryRepository,
+  FakeExpenseRepository,
   FakeDocumentRepository,
   FakeDocumentTemplateRepository,
   FakeDocumentVersionRepository,
@@ -108,6 +110,8 @@ async function clientWithFailingIndex(): Promise<ChatClient> {
     knowledgeArticles: new FakeKnowledgeArticleRepository(),
     knowledgeCategories: new FakeKnowledgeCategoryRepository(),
     calendarEvents: new FakeCalendarEntryRepository(),
+    budgets: new FakeBudgetRepository(),
+    expenses: new FakeExpenseRepository(),
     webhookEndpoints: new FakeWebhookEndpointRepository(),
     webhookDeliveries: new FakeWebhookDeliveryRepository(),
     emailOutbox: new FakeEmailOutboxRepository(),
@@ -641,7 +645,7 @@ describe('S18 knowledge categories (API)', () => {
 describe('S18 combined retrieval (documents + articles)', () => {
   it('returns document and article citations in one query with correct kind', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     // Document indexed via the documents upload path.
     const doc = await client.post('/api/documents', {

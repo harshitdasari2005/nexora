@@ -40,6 +40,12 @@ import {
 export interface ChatRequestBody {
   /** The user message. */
   message: string;
+  /**
+   * The organization scope. Optional — when omitted the caller's first
+   * membership is used (dashboard convention). When present it MUST be an
+   * organization the caller belongs to, else 403.
+   */
+  organizationId?: string;
   /** The workspace scope (validated against the caller's organization). */
   workspaceId?: string;
   /** Continue an existing conversation. */
@@ -54,6 +60,7 @@ const chatSchema: FastifySchema = {
     additionalProperties: false,
     properties: {
       message: { type: 'string', minLength: 1, maxLength: 4000 },
+      organizationId: { type: 'string', minLength: 1 },
       workspaceId: { type: 'string', minLength: 1 },
       conversationId: { type: 'string', minLength: 1 },
     },
@@ -126,8 +133,10 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
     const body = request.body as ChatRequestBody;
 
     // Tenant scope: the session tenant is the platform bootstrap tenant, so
-    // the caller's organization is resolved through memberships — mirroring
-    // the dashboard selection (first membership = current organization).
+    // the caller's organization is resolved through memberships. When the
+    // client passes `organizationId` it must be one the caller belongs to
+    // (same rule as /dashboard, /notifications, /finance); otherwise the
+    // first membership is the default (dashboard convention).
     const organizations = await dependencies.listOrganizations.handle({ userId: auth.userId });
     if (!organizations.ok) {
       return reply.code(500).send({
@@ -138,7 +147,22 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
         },
       });
     }
-    const organizationId = organizations.value[0]?.id as TenantId | undefined;
+    let organizationId: TenantId | undefined;
+    if (body.organizationId !== undefined) {
+      const belongs = organizations.value.some((org) => org.id === body.organizationId);
+      if (!belongs) {
+        return reply.code(403).send({
+          error: {
+            code: 'AUTHORIZATION_ERROR',
+            message: 'You are not a member of this organization',
+            requestId: request.id,
+          },
+        });
+      }
+      organizationId = body.organizationId as TenantId;
+    } else {
+      organizationId = organizations.value[0]?.id as TenantId | undefined;
+    }
     if (organizationId === undefined) {
       return reply.code(400).send({
         error: {
@@ -410,13 +434,27 @@ async function streamChatResponse(
 ): Promise<void> {
   reply.hijack();
   const raw = reply.raw;
+
+  /** Write an SSE frame, swallowing a write after the client disconnected. */
+  const safeWrite = (frame: string): boolean => {
+    if (raw.writableEnded || raw.destroyed) {
+      return false;
+    }
+    try {
+      raw.write(frame);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   raw.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-cache, no-transform',
     connection: 'keep-alive',
     'x-accel-buffering': 'no',
   });
-  raw.write(
+  safeWrite(
     formatSse('meta', {
       runId: response.runId,
       conversationId: response.conversationId,
@@ -424,7 +462,11 @@ async function streamChatResponse(
     }),
   );
   for (const chunk of chunkText(response.response)) {
-    raw.write(formatSse('delta', { text: chunk }));
+    // Stop pacing the moment the client goes away — the run already
+    // executed; there is nothing left to compute, only bytes to send.
+    if (!safeWrite(formatSse('delta', { text: chunk }))) {
+      return;
+    }
     // Pace the stream so the panel renders progressively.
     await delay(16);
   }
@@ -460,8 +502,10 @@ async function streamChatResponse(
       input: approval.input,
     })),
   };
-  raw.write(formatSse('done', done));
-  raw.end();
+  safeWrite(formatSse('done', done));
+  if (!raw.writableEnded) {
+    raw.end();
+  }
 }
 
 /** Appends a system turn to a conversation the caller owns (audit trail). */

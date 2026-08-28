@@ -15,5 +15,6 @@ export * from './knowledge.js';
 export * from './knowledge-articles.js';
 export * from './notifications.js';
 export * from './calendar.js';
+export * from './finance.js';
 export * from './integrations.js';
 export * from './measurements.js';

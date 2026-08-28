@@ -359,7 +359,13 @@ function AppCard({
   return (
     <Card style={{ padding: '16px 18px' }}>
       <Stack gap={3}>
-        <Stack direction="row" gap={4} align="center" justify="space-between">
+        <Stack
+          direction="row"
+          gap={3}
+          align="center"
+          justify="space-between"
+          style={{ flexWrap: 'wrap' }}
+        >
           <Stack gap={0.5} style={{ minWidth: 0 }}>
             <Stack direction="row" gap={3} align="center">
               <div style={{ fontWeight: typography.weights.semibold }}>{app.name}</div>

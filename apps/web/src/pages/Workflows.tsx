@@ -23,6 +23,7 @@ import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
+import { humanizeIdentifier } from '../lib/humanize.js';
 import type {
   DashboardResponse,
   WorkflowExecutionRecordDto,
@@ -258,9 +259,17 @@ export function WorkflowRow({
 }): JSX.Element {
   return (
     <Card style={{ padding: '14px 16px' }}>
-      <Stack direction="row" gap={4} align="center" justify="space-between">
+      <Stack
+        direction="row"
+        gap={3}
+        align="center"
+        justify="space-between"
+        style={{ flexWrap: 'wrap' }}
+      >
         <Stack gap={0.5} style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: typography.weights.semibold }}>{workflow.definitionKey}</div>
+          <div style={{ fontWeight: typography.weights.semibold }} title={workflow.definitionKey}>
+            {humanizeIdentifier(workflow.definitionKey)}
+          </div>
           <div
             style={{
               fontSize: typography.sizes.xs,
@@ -270,8 +279,9 @@ export function WorkflowRow({
               textOverflow: 'ellipsis',
               maxWidth: 480,
             }}
+            title={workflow.id}
           >
-            {workflow.id} · started{' '}
+            Started{' '}
             {new Date(workflow.startedAt).toLocaleString('en-US', {
               month: 'short',
               day: 'numeric',
@@ -280,7 +290,7 @@ export function WorkflowRow({
             })}
           </div>
         </Stack>
-        <Stack direction="row" gap={3} align="center">
+        <Stack direction="row" gap={3} align="center" style={{ flexShrink: 0 }}>
           <WorkflowStatusBadge status={workflow.status} />
           <Button size="sm" variant={selected ? 'primary' : 'secondary'} onClick={onOpen}>
             {selected ? 'Viewing' : 'View'}
@@ -311,8 +321,11 @@ export function StepTimeline({
             <div style={{ fontSize: typography.sizes.sm, fontWeight: typography.weights.medium }}>
               {step.name}
             </div>
-            <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
-              {step.capabilityId}
+            <div
+              style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}
+              title={step.capabilityId}
+            >
+              {humanizeIdentifier(step.capabilityId)}
               {step.attempt > 1 ? ` · attempt ${step.attempt}` : ''}
               {step.error !== undefined ? ` · ${step.error}` : ''}
             </div>
@@ -358,7 +371,9 @@ export function WorkflowStatusBadge({ status }: { status: string }): JSX.Element
     return <Badge tone="danger">Failed</Badge>;
   }
   if (status === 'cancelled') {
-    return <Badge>Cancelled</Badge>;
+    // Matches the "Cancelled" tone used everywhere else in the app
+    // (projects, employees, remediation plans) — danger, not neutral.
+    return <Badge tone="danger">Cancelled</Badge>;
   }
   if (status === 'awaiting_approval') {
     return <Badge tone="warning">Awaiting approval</Badge>;

@@ -39,6 +39,7 @@
     "@nexora/domain-projects": "workspace:*",
     "@nexora/domain-workspaces": "workspace:*",
     "@nexora/module-calendar": "workspace:*",
+    "@nexora/module-finance": "workspace:*",
     "@nexora/module-integrations": "workspace:*",
     "@nexora/module-measurements": "workspace:*",
     "@nexora/module-notifications": "workspace:*",

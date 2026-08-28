@@ -3,9 +3,9 @@
  *
  * The HR read/write surface for the cross-domain assignment slice: create an
  * employee record in an organization and list the organization's employees.
- * The authenticated user must be a member of the target organization
- * (membership gating — the same authorization rule the AI tool uses, so the
- * REST and AI surfaces share ONE business execution path).
+ * Every endpoint verifies organization membership (tenant scope) AND the
+ * caller's effective RBAC capability (P0 security hardening):
+ * `employees.manage` to create, `employees.read` to list.
  */
 
 import type { FastifyInstance, FastifySchema } from 'fastify';
@@ -15,7 +15,12 @@ import type { CreateEmployeeHandler, ListEmployeesHandler } from '@nexora/applic
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
 import { toHttpError } from '../http/errors.js';
+import { sendForbidden } from './permission-response.js';
 
 /** Request body schema for POST /api/employees. */
 const createEmployeeSchema: FastifySchema = {
@@ -35,6 +40,8 @@ export interface EmployeeRoutesDependencies {
   createEmployee: CreateEmployeeHandler;
   listEmployees: ListEmployeesHandler;
   listOrganizations: ListOrganizationsHandler;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
 }
 
 /** Registers the employee routes. */
@@ -60,6 +67,14 @@ export function registerEmployeeRoutes(
           requestId: request.id,
         },
       });
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: body.organizationId },
+      'employees.manage',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'create an employee record');
     }
 
     const result = await dependencies.createEmployee.handle({
@@ -99,6 +114,14 @@ export function registerEmployeeRoutes(
           requestId: request.id,
         },
       });
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: organizationId },
+      'employees.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view employees');
     }
 
     const result = await dependencies.listEmployees.handle({

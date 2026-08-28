@@ -194,38 +194,27 @@ export function EmployeesView({
 export function EmployeeRow({ employee }: { employee: EmployeeDto }): JSX.Element {
   return (
     <Card style={{ padding: '14px 16px' }}>
-      <Stack direction="row" gap={4} align="center" justify="space-between">
+      <Stack
+        direction="row"
+        gap={3}
+        align="center"
+        justify="space-between"
+        style={{ flexWrap: 'wrap' }}
+      >
         <Stack gap={0.5} style={{ minWidth: 0 }}>
           <div style={{ fontWeight: typography.weights.semibold }}>{employee.name}</div>
-          <div
-            style={{
-              fontSize: typography.sizes.xs,
-              color: 'var(--nexora-textMuted)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: 480,
-            }}
-          >
-            ID {employee.id}
-          </div>
-        </Stack>
-        <Stack direction="row" gap={3} align="center">
-          <EmployeeStatusBadge status={employee.status} />
-          <span
-            style={{
-              fontSize: typography.sizes.xs,
-              color: 'var(--nexora-textMuted)',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+            Joined{' '}
             {new Date(employee.createdAt).toLocaleDateString('en-US', {
               month: 'short',
               day: 'numeric',
               year: 'numeric',
             })}
-          </span>
+          </div>
         </Stack>
+        <div style={{ flexShrink: 0 }}>
+          <EmployeeStatusBadge status={employee.status} />
+        </div>
       </Stack>
     </Card>
   );

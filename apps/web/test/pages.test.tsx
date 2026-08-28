@@ -9,8 +9,10 @@ import { renderToString } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 
 import { Landing } from '../src/pages/Landing.js';
+import { Login } from '../src/pages/Login.js';
 import { DashboardView } from '../src/pages/Dashboard.js';
 import { OrganizationWizard } from '../src/pages/onboarding/OrganizationWizard.js';
+import { SessionProvider } from '../src/session.js';
 import type { DashboardResponse } from '../src/lib/types.js';
 
 function dashboardData(): DashboardResponse {
@@ -55,6 +57,39 @@ describe('Landing', () => {
     expect(html).toContain('Orchestrated');
     expect(html).toContain('Get started');
     expect(html).toContain('Nexora');
+  });
+
+  // S38 regression guard: every entry point into the sign-in flow must
+  // still target the actual `/login` route registered in App.tsx — this is
+  // exactly the class of defect ("route renamed/removed during a visual
+  // pass") the reported regression described. S43 rebuilt Landing around a
+  // header "Sign in" + header "Get started" (the primary action, always
+  // reachable without scrolling the cinematic corridor) + the fallback
+  // pane's own "Get started" — this test renders with no `window` (this
+  // suite's Node environment), so `Landing` falls back to its single
+  // static pane: 3 entry points total.
+  it('every sign-in entry point links to /login', () => {
+    const html = renderToString(
+      <MemoryRouter>
+        <Landing />
+      </MemoryRouter>,
+    );
+    const hrefCount = (html.match(/href="\/login"/g) ?? []).length;
+    expect(hrefCount).toBe(3);
+  });
+});
+
+describe('Login', () => {
+  it('renders the SSO entry point', () => {
+    const html = renderToString(
+      <MemoryRouter>
+        <SessionProvider>
+          <Login />
+        </SessionProvider>
+      </MemoryRouter>,
+    );
+    expect(html).toContain('Welcome to Nexora');
+    expect(html).toContain('Continue with SSO');
   });
 });
 

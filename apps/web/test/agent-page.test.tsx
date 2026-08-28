@@ -206,7 +206,9 @@ describe('AgentView (S26 Phase 8)', () => {
   it('renders a detected problem with its grounded investigation (S27)', () => {
     const html = renderView(agent({ problems: [problem()] }));
     expect(html).toContain('Detected problems');
-    expect(html).toContain('employee-onboarding requires attention');
+    // S36: the display humanization layer normalizes "requires attention"
+    // to "needs attention" — same underlying problem, humanized copy.
+    expect(html).toContain('employee-onboarding needs attention');
     expect(html).toContain('high');
     expect(html).toContain('DETECTED');
     // Evidence (What happened), root-cause candidates (FACT vs INFERENCE,

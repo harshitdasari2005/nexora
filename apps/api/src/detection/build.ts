@@ -27,6 +27,7 @@ import type { RetrieveKnowledgeHandler } from '@nexora/application-knowledge';
 import type { GetTenantMeasurementsHandler } from '@nexora/module-measurements';
 import type { ListProjectsHandler } from '@nexora/application-projects';
 import type { ListActivityHandler, ListNotificationsHandler } from '@nexora/module-notifications';
+import type { ListBudgetUtilizationHandler } from '@nexora/application-finance';
 import type { AgentExecutionRecorder } from '@nexora/module-agents';
 import {
   BusinessSignalRegistry,
@@ -62,6 +63,8 @@ export interface BuildDetectionOptions {
   listActivity: ListActivityHandler;
   /** Recipient-scoped notification inbox handler. */
   listNotifications: ListNotificationsHandler;
+  /** Workspace-scoped budget-utilization handler (finance section, S35). */
+  listBudgetUtilization?: ListBudgetUtilizationHandler;
   /** The permission-filtered knowledge retrieval handler (existing search seam). */
   retrieveKnowledge: RetrieveKnowledgeHandler;
   /** The S26 execution journal (agent-execution evidence + precedents). */
@@ -113,6 +116,7 @@ export function buildDetection(options: BuildDetectionOptions): DetectionSurface
     listProjects: options.listProjects,
     listActivity: options.listActivity,
     listNotifications: options.listNotifications,
+    listBudgetUtilization: options.listBudgetUtilization,
     executionRecorder: options.executionRecorder,
   });
   const service = new DetectionApplicationService({
@@ -217,6 +221,7 @@ interface SnapshotLoaderDependencies {
   listProjects: ListProjectsHandler;
   listActivity: ListActivityHandler;
   listNotifications: ListNotificationsHandler;
+  listBudgetUtilization?: ListBudgetUtilizationHandler;
   executionRecorder?: AgentExecutionRecorder;
 }
 
@@ -238,57 +243,73 @@ class ApiDetectionSnapshotLoader implements DetectionSnapshotLoader {
     workspaceId?: string;
     userId: string;
   }): Promise<DetectionSnapshot> {
-    const [measurements, projects, notifications, activity, executions] = await Promise.all([
-      this.#safe(() =>
-        this.#deps.getTenantMeasurements.handle({ tenantId: context.tenantId as never }),
-      ),
-      this.#safe(async () => {
-        const result = await this.#deps.listProjects.handle({
-          organizationId: context.tenantId as never,
-        });
-        return result.ok ? result.value.slice(0, SNAPSHOT_SECTION_LIMIT) : [];
-      }),
-      this.#safe(async () => {
-        const result = await this.#deps.listNotifications.handle({
-          userId: context.userId as never,
-          tenantId: context.tenantId as never,
-          ...(context.workspaceId === undefined
-            ? {}
-            : { workspaceId: context.workspaceId as never }),
-          limit: SNAPSHOT_SECTION_LIMIT,
-        });
-        return result.ok
-          ? result.value.notifications
-              .filter((notification) => notification.status === 'unread')
-              .slice(0, SNAPSHOT_SECTION_LIMIT)
-          : [];
-      }),
-      this.#safe(async () => {
-        const result = await this.#deps.listActivity.handle({
-          tenantId: context.tenantId as never,
-          ...(context.workspaceId === undefined
-            ? {}
-            : { workspaceId: context.workspaceId as never }),
-          limit: SNAPSHOT_SECTION_LIMIT,
-        });
-        return result.ok ? result.value.activity.slice(0, SNAPSHOT_SECTION_LIMIT) : [];
-      }),
-      this.#deps.executionRecorder === undefined
-        ? Promise.resolve([])
-        : this.#safe(async () => {
-            if (this.#deps.executionRecorder === undefined) {
-              return [];
-            }
-            return this.#deps.executionRecorder.listRecent(
-              {
-                userId: context.userId,
-                tenantId: context.tenantId,
-                workspaceId: context.workspaceId,
-              },
-              SNAPSHOT_SECTION_LIMIT,
-            );
-          }),
-    ]);
+    const [measurements, projects, notifications, activity, budgetUtilization, executions] =
+      await Promise.all([
+        this.#safe(() =>
+          this.#deps.getTenantMeasurements.handle({ tenantId: context.tenantId as never }),
+        ),
+        this.#safe(async () => {
+          const result = await this.#deps.listProjects.handle({
+            organizationId: context.tenantId as never,
+          });
+          return result.ok ? result.value.slice(0, SNAPSHOT_SECTION_LIMIT) : [];
+        }),
+        this.#safe(async () => {
+          const result = await this.#deps.listNotifications.handle({
+            userId: context.userId as never,
+            tenantId: context.tenantId as never,
+            ...(context.workspaceId === undefined
+              ? {}
+              : { workspaceId: context.workspaceId as never }),
+            limit: SNAPSHOT_SECTION_LIMIT,
+          });
+          return result.ok
+            ? result.value.notifications
+                .filter((notification) => notification.status === 'unread')
+                .slice(0, SNAPSHOT_SECTION_LIMIT)
+            : [];
+        }),
+        this.#safe(async () => {
+          const result = await this.#deps.listActivity.handle({
+            tenantId: context.tenantId as never,
+            ...(context.workspaceId === undefined
+              ? {}
+              : { workspaceId: context.workspaceId as never }),
+            limit: SNAPSHOT_SECTION_LIMIT,
+          });
+          return result.ok ? result.value.activity.slice(0, SNAPSHOT_SECTION_LIMIT) : [];
+        }),
+        this.#deps.listBudgetUtilization === undefined || context.workspaceId === undefined
+          ? Promise.resolve([])
+          : this.#safe(async () => {
+              if (
+                this.#deps.listBudgetUtilization === undefined ||
+                context.workspaceId === undefined
+              ) {
+                return [];
+              }
+              const result = await this.#deps.listBudgetUtilization.handle({
+                organizationId: context.tenantId as never,
+                workspaceId: context.workspaceId as never,
+              });
+              return result.ok ? result.value.slice(0, SNAPSHOT_SECTION_LIMIT) : [];
+            }),
+        this.#deps.executionRecorder === undefined
+          ? Promise.resolve([])
+          : this.#safe(async () => {
+              if (this.#deps.executionRecorder === undefined) {
+                return [];
+              }
+              return this.#deps.executionRecorder.listRecent(
+                {
+                  userId: context.userId,
+                  tenantId: context.tenantId,
+                  workspaceId: context.workspaceId,
+                },
+                SNAPSHOT_SECTION_LIMIT,
+              );
+            }),
+      ]);
 
     return {
       tenantId: context.tenantId,
@@ -315,6 +336,14 @@ class ApiDetectionSnapshotLoader implements DetectionSnapshotLoader {
         createdAt: run.createdAt,
       })),
       documentCount: measurements?.overview.documents,
+      budgets: (budgetUtilization ?? []).map((entry) => ({
+        budgetId: entry.budgetId,
+        name: entry.name,
+        currency: entry.currency,
+        allocatedMinorUnits: entry.allocatedMinorUnits,
+        spentMinorUnits: entry.spentMinorUnits,
+        status: entry.status,
+      })),
     };
   }
 

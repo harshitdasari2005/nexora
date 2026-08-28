@@ -51,6 +51,13 @@ export interface ThemeColors {
   dangerSoft: string;
   /** Overlay (modals, command palette scrim). */
   overlay: string;
+  /**
+   * A translucent variant of {@link surface} for glass panels that sit over
+   * the spatial 3D environment (Command Center cards, auth surfaces,
+   * floating information panels) — paired with `backdrop-filter: blur(...)`
+   * at each call site so content behind genuinely shows through.
+   */
+  surfaceGlass: string;
 }
 
 /** The light theme (default). */
@@ -76,23 +83,26 @@ export const lightColors: ThemeColors = {
   danger: '#dc2626',
   dangerSoft: '#fef2f2',
   overlay: 'rgba(28, 25, 23, 0.45)',
+  surfaceGlass: 'rgba(255, 255, 255, 0.72)',
 };
 
 /**
- * The dark theme — a deep navy/slate palette (not warm black), the same
- * intelligence environment as the landing/login experience, quieted down
- * for sustained work. Every authenticated surface (AppShell, Command
- * Center, Problems, Agent, ...) runs on this theme.
+ * The dark theme (S41 digital-headquarters palette) — deep warm graphite,
+ * not the cool navy-black of earlier passes: architectural concrete and
+ * glass rather than a "void." Every authenticated surface (AppShell,
+ * Command Center, Problems, Agent, ...) and the Landing/Login environment
+ * run on this theme. Persona accent colors (role themes, zone tints) are
+ * unchanged — this only shifts the neutral base they sit on top of.
  */
 export const darkColors: ThemeColors = {
-  bg: '#090c14',
-  surface: '#131829',
-  surfaceMuted: '#1a2036',
-  border: '#232a44',
-  borderStrong: '#333e60',
-  text: '#f1f5f9',
-  textSecondary: '#c7d0e0',
-  textMuted: '#7c88a6',
+  bg: '#0c0c0f',
+  surface: '#17171c',
+  surfaceMuted: '#1e1e25',
+  border: '#2a2a33',
+  borderStrong: '#3b3b47',
+  text: '#f4f3f1',
+  textSecondary: '#c9c7c2',
+  textMuted: '#8b8a86',
   primary: '#6366f1',
   primaryHover: '#818cf8',
   primaryForeground: '#ffffff',
@@ -105,7 +115,8 @@ export const darkColors: ThemeColors = {
   warningSoft: 'rgba(251, 191, 36, 0.14)',
   danger: '#f87171',
   dangerSoft: 'rgba(248, 113, 113, 0.16)',
-  overlay: 'rgba(4, 6, 14, 0.65)',
+  overlay: 'rgba(8, 8, 10, 0.68)',
+  surfaceGlass: 'rgba(23, 23, 28, 0.66)',
 };
 
 /** The 4px-based spacing scale (rem). */

@@ -54,11 +54,13 @@ describe('GET /api/domains', () => {
       body.domains.find((domain) => domain.id === 'people')?.roles.map((role) => role.id),
     ).toEqual(['people.hr']);
 
-    // The 32 initial capabilities (S24 Phase 3 added the executable
+    // The 38 initial capabilities (S24 Phase 3 added the executable
     // vocabulary: workspaces.list/create, projects.assign, calendar.create;
     // S25 Phase 7 added the external connector vocabulary: github.* / slack.*;
     // S34 added the RBAC permission vocabulary needed to gate problems/
-    // insights/agent/approvals-decide/activity/calendar-read).
+    // insights/agent/approvals-decide/activity/calendar-read; the Audit
+    // Center added audit.read; S35 (Finance vertical) added budgets.read/
+    // .manage, expenses.read/.create/.decide).
     expect(body.capabilities.map((capability) => capability.id)).toEqual([
       'projects.read',
       'projects.create',
@@ -92,6 +94,12 @@ describe('GET /api/domains', () => {
       'approvals.decide',
       'activity.read',
       'calendar.read',
+      'audit.read',
+      'budgets.read',
+      'budgets.manage',
+      'expenses.read',
+      'expenses.create',
+      'expenses.decide',
     ]);
   });
 

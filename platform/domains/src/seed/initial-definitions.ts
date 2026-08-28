@@ -150,6 +150,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'activity.read',
       'calendar.read',
       'calendar.create',
+      'audit.read',
       'github.repositories.read',
       'github.issues.read',
       'github.issues.create',
@@ -165,16 +166,36 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     domainId: 'finance',
     // Financial/organizational focus (S34): visibility + approval authority
     // over projects, problems, and insights — no employee-management or
-    // workflow-execution reach (that stays with People/Delivery).
+    // workflow-execution reach (that stays with People/Delivery). S35
+    // (Finance vertical): `problems.investigate` (financial risk detail is
+    // core to the role) plus the CFO's own domain data — budgets and
+    // expenses — plus deciding expenses (a real money-movement approval,
+    // BR-19), scoped to this role only (no other role reads/manages Finance
+    // data). `agent.execute` closes the detection → problem → remediation →
+    // approval → execution loop for the CFO's OWN domain: the Finance agent
+    // registered in platform/agents' INITIAL_AGENTS carries only
+    // `finance.submit_expense` / `finance.flag_over_budget_items` (plus the
+    // universal `notifications.what_needs_attention`) as ITS capability set
+    // — granting the CFO the ceiling to execute at all never widens WHAT
+    // they can execute (the agent-definition intersection still fails
+    // closed on anything outside that set), and every consequential step
+    // stays approval-gated (BR-13).
     capabilityIds: [
       'projects.read',
       'problems.read',
+      'problems.investigate',
       'insights.read',
       'approvals.read',
       'approvals.decide',
       'documents.read',
       'agent.use',
+      'agent.execute',
       'activity.read',
+      'budgets.read',
+      'budgets.manage',
+      'expenses.read',
+      'expenses.create',
+      'expenses.decide',
     ],
   },
   {
@@ -394,6 +415,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     domainId: 'legal',
     // Governance/document/approval access (S34) — General Counsel reviews
     // and decides, but has no project/technical/financial reach.
+    // `audit.read` added for the Audit Center: governance/compliance
+    // oversight over consequential activity is core to this role.
     capabilityIds: [
       'documents.read',
       'documents.upload',
@@ -402,6 +425,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'approvals.decide',
       'agent.use',
       'activity.read',
+      'audit.read',
     ],
   },
   {
@@ -409,7 +433,11 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'Compliance Manager',
     description: 'Leads regulatory compliance',
     domainId: 'legal',
-    capabilityIds: [],
+    // `audit.read` only: this role's first populated capability — the
+    // Legal workspace's admin/member tier still needs audit visibility
+    // (the Audit Center's Legal persona requirement) even though no other
+    // executable surface has been built for this role yet.
+    capabilityIds: ['audit.read'],
   },
   {
     id: 'operations.head',
@@ -669,5 +697,45 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     id: 'calendar.read',
     name: 'Read Calendar',
     description: 'Read calendar events (existing surface: calendar listing)',
+  },
+  {
+    id: 'audit.read',
+    name: 'Read Audit Trail',
+    description:
+      "Read the unified cross-module audit trail — agent executions, approval decisions, workflow step outcomes, and business activity (existing surface: the Audit Center). Governance/oversight scope, distinct from any single module's own read capability.",
+  },
+  // S35 Finance vertical: budgets and expenses (existing surface: the
+  // Finance REST routes + the CFO workspace). Deliberately scoped to
+  // finance.cfo only — Finance is a real, single-owner vertical, not a
+  // company-wide read like calendar/audit.
+  {
+    id: 'budgets.read',
+    name: 'Read Budgets',
+    description:
+      'List and read budgets in a workspace (existing surface: the Finance budget routes)',
+  },
+  {
+    id: 'budgets.manage',
+    name: 'Manage Budgets',
+    description:
+      'Create, revise, close, and clear the review flag of a budget (existing surface: the Finance budget routes)',
+  },
+  {
+    id: 'expenses.read',
+    name: 'Read Expenses',
+    description:
+      'List and read expenses in a workspace (existing surface: the Finance expense routes)',
+  },
+  {
+    id: 'expenses.create',
+    name: 'Submit Expenses',
+    description:
+      'Submit an expense claim against a budget (existing surface: the Finance expense routes + AI submit-expense tool)',
+  },
+  {
+    id: 'expenses.decide',
+    name: 'Decide Expenses',
+    description:
+      'Approve or reject a pending expense (existing surface: the Finance expense decision route) — a real money movement (BR-19), distinct from expenses.read/expenses.create.',
   },
 ];

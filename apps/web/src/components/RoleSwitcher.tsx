@@ -1,6 +1,6 @@
 /**
  * @nexora/app-web — RoleSwitcher (S27 Phase 6; S33 domain-grouped premium
- * pass).
+ * pass; S35 curated to six business personas).
  *
  * The role/context switcher: lets the user change their business lens
  * (organization + workspace, which resolves to a business role) WITHOUT
@@ -12,18 +12,27 @@
  * query params (`organizationId` / `workspaceId`), which every page already
  * re-validates against the caller's real membership server-side.
  *
- * S33: options are grouped by business DOMAIN (Executive, Technology,
- * Finance, ...) rather than by organization — the grouping a user actually
- * thinks in when picking a business lens — and each option shows a small
- * dot in that role's own theme accent, so the list itself previews the
- * environment switching to it will feel like.
+ * S35: the backend catalog has 20 granular roles across 11 domains — right
+ * for RBAC, overwhelming as a first-time switcher. This component now shows
+ * only the caller's real memberships that map to one of the six curated
+ * user-facing personas (`../lib/rolePersonas.js`) — CEO, CFO, Operations
+ * Manager, CTO / Developer, HR, Legal — never more than six rows, never a
+ * persona the caller has no genuine membership for. A caller whose ONLY
+ * memberships fall outside the six (e.g. only a Sales or Product workspace)
+ * still sees those real options, grouped by domain exactly as before, so no
+ * access is ever hidden — only the common case is simplified.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Badge, Spinner, Stack, typography } from '@nexora/design-system';
+import { Badge, elevation, Spinner, Stack, typography } from '@nexora/design-system';
 
 import { api } from '../lib/api.js';
+import {
+  buildPersonaOptions,
+  resolvePersonaForRole,
+  type PersonaOption,
+} from '../lib/rolePersonas.js';
 import { themeForRole } from '../lib/roleThemes.js';
 import type { RoleContextOption, RoleContextResponse } from '../lib/types.js';
 
@@ -103,6 +112,7 @@ export function RoleSwitcher({
 
   const current = context?.current ?? null;
   const currentTheme = themeForRole(current?.roleId);
+  const currentPersona = resolvePersonaForRole(current?.roleId);
   const canSwitch = (context?.options.length ?? 0) > 1;
 
   function selectOption(option: RoleContextOption): void {
@@ -113,7 +123,12 @@ export function RoleSwitcher({
     );
   }
 
-  const groups = context === null ? [] : groupByDomain(context.options);
+  const personaOptions = context === null ? [] : buildPersonaOptions(context.options);
+  // Falls back to the full domain-grouped list only when NONE of the
+  // caller's real memberships map to one of the six curated personas —
+  // never hides genuine access, only simplifies the common case.
+  const groups =
+    personaOptions.length > 0 || context === null ? [] : groupByDomain(context.options);
 
   return (
     <div ref={panelRef} style={{ position: 'relative' }}>
@@ -142,7 +157,6 @@ export function RoleSwitcher({
                 borderRadius: '50%',
                 background: currentTheme.accent,
                 flexShrink: 0,
-                boxShadow: `0 0 8px ${currentTheme.accent}`,
               }}
             />
             <Stack gap={0.5} style={{ minWidth: 0 }}>
@@ -171,7 +185,9 @@ export function RoleSwitcher({
                 <Spinner size={12} />
               ) : current !== undefined && current !== null ? (
                 <Badge dotColor={currentTheme.accent} dot style={{ color: currentTheme.accent }}>
-                  {current.domainName} · {current.roleName}
+                  {currentPersona !== undefined
+                    ? `${currentPersona.displayRole} · ${currentPersona.focusLabel}`
+                    : `${current.domainName} · ${current.roleName}`}
                 </Badge>
               ) : null}
             </Stack>
@@ -197,9 +213,9 @@ export function RoleSwitcher({
             maxHeight: '60vh',
             overflowY: 'auto',
             background: 'var(--nexora-shellCardElevated, var(--nexora-surface))',
-            border: '1px solid var(--nexora-borderStrong)',
+            border: '1px solid var(--nexora-border)',
             borderRadius: 14,
-            boxShadow: '0 20px 48px rgba(2, 4, 10, 0.55)',
+            boxShadow: elevation.lg,
             zIndex: 50,
           }}
         >
@@ -216,92 +232,175 @@ export function RoleSwitcher({
           >
             Switch business lens
           </div>
-          {groups.map((group) => (
-            <div key={group.domainId}>
-              <div
-                style={{
-                  padding: '10px 14px 4px',
-                  fontSize: typography.sizes.xs,
-                  fontWeight: typography.weights.semibold,
-                  color: 'var(--nexora-textMuted)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                }}
-              >
-                {group.domainName}
-              </div>
-              {group.options.map((option) => {
-                const isCurrent = option.workspaceId === current?.workspaceId;
-                const optionTheme = themeForRole(option.roleId);
-                return (
-                  <button
-                    key={option.workspaceId}
-                    type="button"
-                    role="option"
-                    aria-selected={isCurrent}
-                    onClick={() => selectOption(option)}
+          {personaOptions.length > 0
+            ? personaOptions.map(({ persona, option }) => (
+                <PersonaOptionRow
+                  key={persona.id}
+                  persona={persona}
+                  option={option}
+                  isCurrent={option.workspaceId === current?.workspaceId}
+                  onSelect={() => selectOption(option)}
+                />
+              ))
+            : groups.map((group) => (
+                <div key={group.domainId}>
+                  <div
                     style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '10px 14px',
-                      border: 'none',
-                      background: isCurrent ? optionTheme.accentSoft : 'transparent',
-                      cursor: 'pointer',
+                      padding: '10px 14px 4px',
+                      fontSize: typography.sizes.xs,
+                      fontWeight: typography.weights.semibold,
+                      color: 'var(--nexora-textMuted)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
                     }}
                   >
-                    <Stack direction="row" gap={2} align="center">
-                      <span
-                        aria-hidden
+                    {group.domainName}
+                  </div>
+                  {group.options.map((option) => {
+                    const isCurrent = option.workspaceId === current?.workspaceId;
+                    const optionTheme = themeForRole(option.roleId);
+                    return (
+                      <button
+                        key={option.workspaceId}
+                        type="button"
+                        role="option"
+                        aria-selected={isCurrent}
+                        onClick={() => selectOption(option)}
                         style={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: '50%',
-                          background: optionTheme.accent,
-                          flexShrink: 0,
+                          display: 'block',
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '10px 14px',
+                          border: 'none',
+                          background: isCurrent ? optionTheme.accentSoft : 'transparent',
+                          cursor: 'pointer',
                         }}
-                      />
-                      <Stack gap={0.5} style={{ minWidth: 0, flex: 1 }}>
+                      >
                         <Stack direction="row" gap={2} align="center">
                           <span
+                            aria-hidden
                             style={{
-                              fontSize: typography.sizes.sm,
-                              fontWeight: isCurrent
-                                ? typography.weights.semibold
-                                : typography.weights.medium,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
+                              width: 7,
+                              height: 7,
+                              borderRadius: '50%',
+                              background: optionTheme.accent,
+                              flexShrink: 0,
                             }}
-                          >
-                            {option.workspaceName}
-                          </span>
-                          {isCurrent ? (
+                          />
+                          <Stack gap={0.5} style={{ minWidth: 0, flex: 1 }}>
+                            <Stack direction="row" gap={2} align="center">
+                              <span
+                                style={{
+                                  fontSize: typography.sizes.sm,
+                                  fontWeight: isCurrent
+                                    ? typography.weights.semibold
+                                    : typography.weights.medium,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {option.workspaceName}
+                              </span>
+                              {isCurrent ? (
+                                <span
+                                  aria-hidden
+                                  style={{ marginLeft: 'auto', color: optionTheme.accent }}
+                                >
+                                  ✓
+                                </span>
+                              ) : null}
+                            </Stack>
                             <span
-                              aria-hidden
-                              style={{ marginLeft: 'auto', color: optionTheme.accent }}
+                              style={{
+                                fontSize: typography.sizes.xs,
+                                color: 'var(--nexora-textSecondary)',
+                              }}
                             >
-                              ✓
+                              {option.roleName} · {optionTheme.identity}
                             </span>
-                          ) : null}
+                          </Stack>
                         </Stack>
-                        <span
-                          style={{
-                            fontSize: typography.sizes.xs,
-                            color: 'var(--nexora-textSecondary)',
-                          }}
-                        >
-                          {option.roleName} · {optionTheme.identity}
-                        </span>
-                      </Stack>
-                    </Stack>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** One curated persona row in the switcher dropdown (S35). */
+function PersonaOptionRow({
+  persona,
+  option,
+  isCurrent,
+  onSelect,
+}: {
+  persona: PersonaOption['persona'];
+  option: RoleContextOption;
+  isCurrent: boolean;
+  onSelect: () => void;
+}): JSX.Element {
+  const optionTheme = themeForRole(option.roleId);
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={isCurrent}
+      onClick={onSelect}
+      style={{
+        display: 'block',
+        width: '100%',
+        textAlign: 'left',
+        padding: '10px 14px',
+        border: 'none',
+        background: isCurrent ? optionTheme.accentSoft : 'transparent',
+        cursor: 'pointer',
+      }}
+    >
+      <Stack direction="row" gap={2} align="center">
+        <span
+          aria-hidden
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: optionTheme.accent,
+            flexShrink: 0,
+          }}
+        />
+        <Stack gap={0.5} style={{ minWidth: 0, flex: 1 }}>
+          <Stack direction="row" gap={2} align="center">
+            <span
+              style={{
+                fontSize: typography.sizes.sm,
+                fontWeight: isCurrent ? typography.weights.semibold : typography.weights.medium,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {persona.displayRole}
+            </span>
+            {isCurrent ? (
+              <span aria-hidden style={{ marginLeft: 'auto', color: optionTheme.accent }}>
+                ✓
+              </span>
+            ) : null}
+          </Stack>
+          <span
+            style={{
+              fontSize: typography.sizes.xs,
+              color: 'var(--nexora-textSecondary)',
+            }}
+          >
+            {persona.focusLabel}
+          </span>
+        </Stack>
+      </Stack>
+    </button>
   );
 }

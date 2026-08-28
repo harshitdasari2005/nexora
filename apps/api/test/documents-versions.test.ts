@@ -47,7 +47,7 @@ async function uploadDocument(
 describe('S17 document versions (API)', () => {
   it('uploads a new version: monotonic revision, current content replaced, index refreshed', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     const created = await uploadDocument(
       client,
@@ -103,7 +103,7 @@ describe('S17 document versions (API)', () => {
 
   it('restores a historical version as a NEW revision and refreshes retrieval', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     const created = await uploadDocument(client, scope, 'plan.txt', 'Deadline June 30.');
     const documentId = (created.json() as { document: { id: string } }).document.id;
@@ -152,7 +152,7 @@ describe('S17 document versions (API)', () => {
 
   it('rejects forged/foreign document version access (isolation)', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     // A document in a DIFFERENT workspace of the same org, where the caller
     // IS a member — reading its history through the OTHER workspace 404s.
@@ -208,7 +208,7 @@ describe('S17 document versions (API)', () => {
 
   it('rejects a version upload and a restore from a foreign workspace', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     const created = await uploadDocument(client, scope, 'plan.txt', 'Content.');
     const documentId = (created.json() as { document: { id: string } }).document.id;
@@ -240,7 +240,7 @@ describe('S17 document versions (API)', () => {
 describe('S17 document templates (API)', () => {
   it('creates, lists, uses, and archives templates within the workspace', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
 
     const created = await client.post('/api/documents/templates', {
       organizationId: scope.organizationId,
@@ -295,7 +295,7 @@ describe('S17 document templates (API)', () => {
 
   it('enforces template scope isolation (foreign workspace and tenant)', async () => {
     const client = await chatClient();
-    const scope = await onboardOrgAndWorkspace(client);
+    const scope = await onboardOrgAndWorkspace(client, { workspaceType: 'legal' });
     const userId = currentUserId(client);
 
     // Seed a template into a workspace the caller is NOT a member of.

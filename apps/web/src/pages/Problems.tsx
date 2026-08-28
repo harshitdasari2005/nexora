@@ -34,6 +34,12 @@ import {
 } from '../components/ProblemInvestigation.js';
 import { api, ApiError } from '../lib/api.js';
 import { decideApproval } from '../lib/chat.js';
+import {
+  humanizeIdentifier,
+  humanizeIdentifiersInText,
+  humanizeProblemText,
+  humanizeProblemTitle,
+} from '../lib/humanize.js';
 import { fetchProblems, scanProblems } from '../lib/problems.js';
 import { useRoleTheme } from '../lib/RoleThemeContext.js';
 import {
@@ -402,15 +408,16 @@ function ProblemCard({
               <span
                 style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.md }}
               >
-                {problem.title}
+                {humanizeProblemTitle(problem.title)}
               </span>
-              <Badge tone={severityTone(problem.severity)}>{problem.severity}</Badge>
+              <Badge tone={severityTone(problem.severity)}>{problem.severity.toUpperCase()}</Badge>
               <Badge tone={statusTone(problem.status)}>{problem.status.replace(/_/g, ' ')}</Badge>
             </Stack>
             <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textSecondary)' }}>
-              {problem.signalName} ·{' '}
-              {problem.affectedEntities.map((entity) => entity.title).join(', ') ||
-                problem.description}
+              {humanizeIdentifiersInText(problem.signalName)} ·{' '}
+              {problem.affectedEntities
+                .map((entity) => humanizeIdentifiersInText(entity.title))
+                .join(', ') || humanizeProblemText(problem.description)}
             </div>
           </Stack>
           <Button
@@ -428,7 +435,7 @@ function ProblemCard({
         {expanded ? (
           <Stack gap={5} style={{ borderTop: '1px solid var(--nexora-border)', paddingTop: 16 }}>
             <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
-              {problem.description}
+              {humanizeProblemText(problem.description)}
             </div>
 
             <ProblemInvestigation problem={problem} />
@@ -701,7 +708,10 @@ function PlanSection({
                   fontFamily: typography.fontMono,
                 }}
               >
-                {userDisplayName} · {organizationName} · {pendingStep.capabilityId}
+                {userDisplayName} · {organizationName} ·{' '}
+                <span title={pendingStep.capabilityId}>
+                  {humanizeIdentifier(pendingStep.capabilityId)}
+                </span>
               </div>
               {canDecide ? (
                 <Stack direction="row" gap={2}>
@@ -882,13 +892,14 @@ function StepRow({ step }: { step: PlanStepDto }): JSX.Element {
       </div>
       <Stack direction="row" gap={2} align="center" style={{ flexWrap: 'wrap', paddingLeft: 34 }}>
         <span
+          title={step.capabilityId}
           style={{
             fontSize: typography.sizes.xs,
             fontFamily: typography.fontMono,
             color: 'var(--nexora-textMuted)',
           }}
         >
-          {step.capabilityId}
+          {humanizeIdentifier(step.capabilityId)}
         </span>
         <Badge tone={step.approvalRequirement === 'REQUIRED' ? 'warning' : 'neutral'}>
           {step.approvalRequirement === 'REQUIRED' ? 'Approval required' : 'No approval needed'}

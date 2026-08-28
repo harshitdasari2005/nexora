@@ -35,7 +35,9 @@ import {
 } from './helpers.js';
 import {
   FakeActivityRepository,
+  FakeBudgetRepository,
   FakeCalendarEntryRepository,
+  FakeExpenseRepository,
   FakeDocumentRepository,
   FakeDocumentTemplateRepository,
   FakeDocumentVersionRepository,
@@ -109,6 +111,8 @@ async function buildMcpFixture(options: {
     knowledgeArticles: new FakeKnowledgeArticleRepository(),
     knowledgeCategories: new FakeKnowledgeCategoryRepository(),
     calendarEvents: new FakeCalendarEntryRepository(),
+    budgets: new FakeBudgetRepository(),
+    expenses: new FakeExpenseRepository(),
     webhookEndpoints: new FakeWebhookEndpointRepository(),
     webhookDeliveries: new FakeWebhookDeliveryRepository(),
     emailOutbox: new FakeEmailOutboxRepository(),

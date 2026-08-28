@@ -25,6 +25,9 @@ import { Problems } from './pages/Problems.js';
 import { CommandCenter } from './pages/CommandCenter.js';
 import { Projects } from './pages/Projects.js';
 import { Workflows } from './pages/Workflows.js';
+import { Calendar } from './pages/Calendar.js';
+import { Finance } from './pages/Finance.js';
+import { Audit } from './pages/Audit.js';
 import { RequireAuth, SessionProvider } from './session.js';
 
 /** The application root. */
@@ -128,6 +131,30 @@ export function App(): JSX.Element {
             element={
               <RequireAuth>
                 <Workflows />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app/calendar"
+            element={
+              <RequireAuth>
+                <Calendar />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app/finance"
+            element={
+              <RequireAuth>
+                <Finance />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/app/audit"
+            element={
+              <RequireAuth>
+                <Audit />
               </RequireAuth>
             }
           />

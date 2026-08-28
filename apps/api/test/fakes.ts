@@ -33,6 +33,7 @@ import type {
 import type { AssignmentId } from '@nexora/domain-projects';
 import type { Employee, EmployeeRepository } from '@nexora/domain-hr';
 import type { CalendarEntry, CalendarEntryRepository } from '@nexora/module-calendar';
+import type { Budget, BudgetRepository, Expense, ExpenseRepository } from '@nexora/module-finance';
 import type {
   Document,
   DocumentRepository,
@@ -581,6 +582,66 @@ export class FakeCalendarEntryRepository implements CalendarEntryRepository {
   }
 }
 
+/** An in-memory {@link BudgetRepository}. */
+export class FakeBudgetRepository implements BudgetRepository {
+  readonly budgets = new Map<string, Budget>();
+
+  async findById(id: Budget['id']): Promise<Budget | undefined> {
+    return this.budgets.get(id);
+  }
+
+  async listByWorkspace(organizationId: TenantId, workspaceId: string): Promise<readonly Budget[]> {
+    return [...this.budgets.values()]
+      .filter(
+        (budget) => budget.organizationId === organizationId && budget.workspaceId === workspaceId,
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async save(budget: Budget): Promise<void> {
+    this.budgets.set(budget.id, budget);
+  }
+}
+
+/** An in-memory {@link ExpenseRepository}. */
+export class FakeExpenseRepository implements ExpenseRepository {
+  readonly expenses = new Map<string, Expense>();
+
+  async findById(id: Expense['id']): Promise<Expense | undefined> {
+    return this.expenses.get(id);
+  }
+
+  async listByWorkspace(
+    organizationId: TenantId,
+    workspaceId: string,
+  ): Promise<readonly Expense[]> {
+    return [...this.expenses.values()]
+      .filter(
+        (expense) =>
+          expense.organizationId === organizationId && expense.workspaceId === workspaceId,
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async listApprovedByBudget(
+    organizationId: TenantId,
+    budgetId: Budget['id'],
+  ): Promise<readonly Expense[]> {
+    return [...this.expenses.values()]
+      .filter(
+        (expense) =>
+          expense.organizationId === organizationId &&
+          expense.budgetId === budgetId &&
+          expense.status.value === 'approved',
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async save(expense: Expense): Promise<void> {
+    this.expenses.set(expense.id, expense);
+  }
+}
+
 /** An in-memory {@link WorkflowInstanceRepository}. */
 export class FakeWorkflowInstanceRepository implements WorkflowInstanceRepository {
   readonly instances = new Map<string, WorkflowInstance>();
@@ -1098,6 +1159,34 @@ export class FakeOidcGateway implements OidcGateway {
   }
 }
 
+/**
+ * A {@link FakeOidcGateway} that issues a different identity on each
+ * `exchangeCode` call (cycling through the list), so one app instance can
+ * hold several distinct users — needed for cross-user authorization tests
+ * and segregation-of-duties (a submitter that cannot approve its own work).
+ */
+export class MultiIdentityGateway extends FakeOidcGateway {
+  readonly #identities: readonly OidcIdentity[];
+  #index = 0;
+
+  constructor(identities: readonly OidcIdentity[]) {
+    super(identities[0]);
+    this.#identities = identities;
+  }
+
+  override async exchangeCode(
+    params: OidcCallbackParams,
+    expectedState: string,
+    codeVerifier: string,
+  ): Promise<OidcIdentity> {
+    this.exchangedStates.push(expectedState);
+    this.exchangedVerifiers.push(codeVerifier);
+    const identity = this.#identities[this.#index % this.#identities.length]!;
+    this.#index += 1;
+    return identity;
+  }
+}
+
 /** An in-memory {@link MeasurementRepository} (returns a zeroed snapshot). */
 /**
  * An in-memory {@link AgentExecutionRecorder} (S26 Phase 8): journals
@@ -1120,6 +1209,20 @@ export class FakeAgentExecutionRecorder implements AgentExecutionRecorder {
       .filter((record) => record.tenantId === context.tenantId && record.userId === context.userId)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, limit);
+  }
+
+  async listByTenant(
+    tenantId: string,
+    options: { workspaceId?: string; limit: number },
+  ): Promise<readonly AgentExecutionRecord[]> {
+    return this.records
+      .filter(
+        (record) =>
+          record.tenantId === tenantId &&
+          (options.workspaceId === undefined || record.workspaceId === options.workspaceId),
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, options.limit);
   }
 }
 

@@ -35,9 +35,9 @@ export type SectionOrder = readonly ('health' | 'signals' | 'activity')[];
 export interface RoleTheme {
   /** The trusted roleId this theme is keyed by (e.g. `executive.ceo`). */
   roleId: string;
-  /** Short identity used as the page eyebrow (e.g. "Executive Intelligence"). */
+  /** Short identity used as the page eyebrow (e.g. "Executive Command Center"). */
   identity: string;
-  /** The full "workspace" name (e.g. "Executive Intelligence Center"). */
+  /** The full "workspace" name (e.g. "Executive Command Center"). */
   centerName: string;
   /** One-line description of what this lens is for. */
   tagline: string;
@@ -73,7 +73,7 @@ export const DEFAULT_THEME: RoleTheme = {
   briefQuestion: 'What needs my attention?',
   assistantPrompt: 'What needs my attention?',
   tint: 'indigo',
-  accent: '#818cf8',
+  accent: '#4f46e5',
   accentSoft: 'rgba(129, 140, 248, 0.16)',
   sections: {
     health: 'Business Health',
@@ -89,14 +89,14 @@ export const DEFAULT_THEME: RoleTheme = {
 export const ROLE_THEMES: Record<string, RoleTheme> = {
   'executive.ceo': {
     roleId: 'executive.ceo',
-    identity: 'Executive Intelligence',
-    centerName: 'Executive Intelligence Center',
-    tagline: 'Organization-wide visibility — health, risk, and what needs a decision.',
+    identity: 'Executive Command Center',
+    centerName: 'Executive Command Center',
+    tagline: "Your organization's health, priorities and decisions in one place.",
     briefLabel: 'Executive Brief',
     briefQuestion: 'What matters across the organization today?',
     assistantPrompt: 'What should I know about the organization today?',
     tint: 'gold',
-    accent: '#e0b86e',
+    accent: '#b45309',
     accentSoft: 'rgba(224, 184, 110, 0.16)',
     sections: {
       health: 'Organization Health',
@@ -111,6 +111,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
       'Insights',
       'Agent',
       'Projects',
+      'Calendar',
+      'Audit',
       'AI Assistant',
       'Search',
       'Settings',
@@ -118,14 +120,14 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
   },
   'finance.cfo': {
     roleId: 'finance.cfo',
-    identity: 'Financial Intelligence',
-    centerName: 'Financial Intelligence Center',
-    tagline: 'Financial health, exceptions, and approvals awaiting a decision.',
+    identity: 'Finance Command Center',
+    centerName: 'Finance Command Center',
+    tagline: 'Your financial picture, risks and decisions in one place.',
     briefLabel: 'Financial Brief',
     briefQuestion: 'What financial issues require action?',
     assistantPrompt: 'What financial issues need my attention?',
     tint: 'emerald',
-    accent: '#34d399',
+    accent: '#059669',
     accentSoft: 'rgba(52, 211, 153, 0.16)',
     sections: {
       health: 'Financial Health',
@@ -136,6 +138,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     order: DEFAULT_ORDER,
     navPriority: [
       'Command Center',
+      'Finance',
       'Problems',
       'Insights',
       'Documents',
@@ -147,14 +150,14 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
   },
   'technology.cto': {
     roleId: 'technology.cto',
-    identity: 'Technology Intelligence',
+    identity: 'Technology Command Center',
     centerName: 'Technology Command Center',
-    tagline: 'Engineering health, technical risk, and system signals across the stack.',
+    tagline: 'What needs to be built, fixed or shipped.',
     briefLabel: 'Engineering Brief',
     briefQuestion: 'What technology signals require attention?',
     assistantPrompt: 'What technical risks need attention?',
     tint: 'cyan',
-    accent: '#22d3ee',
+    accent: '#0891b2',
     accentSoft: 'rgba(34, 211, 238, 0.16)',
     sections: {
       health: 'Engineering Health',
@@ -177,14 +180,14 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
   },
   'technology.engineering_manager': {
     roleId: 'technology.engineering_manager',
-    identity: 'Engineering Operations',
-    centerName: 'Engineering Operations Center',
-    tagline: 'Team delivery, workflow health, and what your engineers need from you.',
+    identity: 'Technology Command Center',
+    centerName: 'Technology Command Center',
+    tagline: 'What needs to be built, fixed or shipped.',
     briefLabel: 'Team Delivery Brief',
     briefQuestion: 'What does the team need from me today?',
     assistantPrompt: 'What does my team need attention on?',
     tint: 'steel',
-    accent: '#4f8fd1',
+    accent: '#2563eb',
     accentSoft: 'rgba(79, 143, 209, 0.16)',
     sections: {
       health: 'Engineering Health',
@@ -207,14 +210,14 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
   },
   'technology.developer': {
     roleId: 'technology.developer',
-    identity: 'Technical Execution',
-    centerName: 'Technical Execution Workspace',
-    tagline: 'What to work on next, grounded in real signals and evidence.',
+    identity: 'Technology Command Center',
+    centerName: 'Technology Command Center',
+    tagline: 'What needs to be built, fixed or shipped.',
     briefLabel: 'My Work',
     briefQuestion: 'What should I work on next?',
     assistantPrompt: 'What should I work on next?',
     tint: 'cyan',
-    accent: '#67e8f9',
+    accent: '#0e7490',
     accentSoft: 'rgba(103, 232, 249, 0.16)',
     sections: {
       health: 'Workflow Health',
@@ -236,14 +239,14 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
   },
   'people.hr': {
     roleId: 'people.hr',
-    identity: 'People Intelligence',
-    centerName: 'People Intelligence Center',
-    tagline: 'Workforce health, hiring, and people signals that need attention.',
+    identity: 'People Command Center',
+    centerName: 'People Command Center',
+    tagline: 'What needs attention across your workforce.',
     briefLabel: 'People Brief',
     briefQuestion: 'What people signals need attention?',
     assistantPrompt: 'What people signals need my attention today?',
     tint: 'rose',
-    accent: '#f0a8bb',
+    accent: '#e11d48',
     accentSoft: 'rgba(240, 168, 187, 0.16)',
     sections: {
       health: 'Workforce Health',
@@ -272,7 +275,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What growth signals require action?',
     assistantPrompt: 'What growth signals need my attention?',
     tint: 'jade',
-    accent: '#22c55e',
+    accent: '#16a34a',
     accentSoft: 'rgba(34, 197, 94, 0.16)',
     sections: {
       health: 'Pipeline Health',
@@ -301,7 +304,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What market signals need my attention?',
     assistantPrompt: 'What marketing signals should I know about?',
     tint: 'magenta',
-    accent: '#d891c6',
+    accent: '#a3216f',
     accentSoft: 'rgba(216, 145, 198, 0.16)',
     sections: {
       health: 'Campaign Health',
@@ -330,7 +333,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What product risks should I know about?',
     assistantPrompt: 'Which product risks need attention?',
     tint: 'violet',
-    accent: '#a78bfa',
+    accent: '#7c3aed',
     accentSoft: 'rgba(167, 139, 250, 0.16)',
     sections: {
       health: 'Product Health',
@@ -360,7 +363,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What product priorities need my attention?',
     assistantPrompt: 'Which product priorities need my attention?',
     tint: 'violet',
-    accent: '#8b5cf6',
+    accent: '#6d28d9',
     accentSoft: 'rgba(139, 92, 246, 0.16)',
     sections: {
       health: 'Product Health',
@@ -383,14 +386,14 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
   },
   'legal.general_counsel': {
     roleId: 'legal.general_counsel',
-    identity: 'Governance Intelligence',
-    centerName: 'Governance Intelligence Center',
-    tagline: 'Compliance signals, governance risk, and policy issues.',
+    identity: 'Legal Command Center',
+    centerName: 'Legal Command Center',
+    tagline: 'Legal, compliance and governance matters requiring attention.',
     briefLabel: 'Legal Brief',
     briefQuestion: 'What governance signals need my attention?',
     assistantPrompt: 'What compliance or governance risks need my attention?',
     tint: 'amber',
-    accent: '#d9a35a',
+    accent: '#8a6a1f',
     accentSoft: 'rgba(217, 163, 90, 0.16)',
     sections: {
       health: 'Governance Health',
@@ -401,6 +404,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     order: DEFAULT_ORDER,
     navPriority: [
       'Command Center',
+      'Audit',
       'Documents',
       'Knowledge',
       'Problems',
@@ -412,14 +416,14 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
   },
   'legal.compliance_manager': {
     roleId: 'legal.compliance_manager',
-    identity: 'Governance Intelligence',
-    centerName: 'Governance Intelligence Center',
-    tagline: 'Compliance signals and policy issues requiring review.',
+    identity: 'Legal Command Center',
+    centerName: 'Legal Command Center',
+    tagline: 'Legal, compliance and governance matters requiring attention.',
     briefLabel: 'Legal Brief',
     briefQuestion: 'What compliance signals need my attention?',
     assistantPrompt: 'What compliance issues need my attention?',
     tint: 'amber',
-    accent: '#c99653',
+    accent: '#7a5c22',
     accentSoft: 'rgba(201, 150, 83, 0.16)',
     sections: {
       health: 'Governance Health',
@@ -430,6 +434,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     order: DEFAULT_ORDER,
     navPriority: [
       'Command Center',
+      'Audit',
       'Documents',
       'Knowledge',
       'Problems',
@@ -441,14 +446,14 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
   },
   'operations.manager': {
     roleId: 'operations.manager',
-    identity: 'Operational Intelligence',
+    identity: 'Operations Command Center',
     centerName: 'Operations Command Center',
-    tagline: 'Process health, exceptions, and what needs operational attention.',
+    tagline: 'Everything blocking delivery and execution.',
     briefLabel: 'Operations Brief',
     briefQuestion: 'What operational signals need my attention?',
     assistantPrompt: 'What operational signals need attention?',
     tint: 'orange',
-    accent: '#e6923f',
+    accent: '#c2410c',
     accentSoft: 'rgba(230, 146, 63, 0.16)',
     sections: {
       health: 'Operational Health',
@@ -470,14 +475,14 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
   },
   'operations.head': {
     roleId: 'operations.head',
-    identity: 'Operational Leadership',
-    centerName: 'Operations Leadership Center',
-    tagline: 'Cross-functional operational health and exceptions worth escalating.',
+    identity: 'Operations Command Center',
+    centerName: 'Operations Command Center',
+    tagline: 'Everything blocking delivery and execution.',
     briefLabel: 'Operations Brief',
     briefQuestion: 'What operational risks need my attention?',
     assistantPrompt: 'What operational risks need my attention?',
     tint: 'orange',
-    accent: '#d97706',
+    accent: '#9a3412',
     accentSoft: 'rgba(217, 119, 6, 0.16)',
     sections: {
       health: 'Operational Health',
@@ -506,7 +511,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What customer signals need my attention?',
     assistantPrompt: 'Which customers need my attention?',
     tint: 'teal',
-    accent: '#2dd4bf',
+    accent: '#0d9488',
     accentSoft: 'rgba(45, 212, 191, 0.16)',
     sections: {
       health: 'Customer Health',
@@ -534,7 +539,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What customer signals need my attention?',
     assistantPrompt: 'Which customers need my attention?',
     tint: 'teal',
-    accent: '#14b8a6',
+    accent: '#0f766e',
     accentSoft: 'rgba(20, 184, 166, 0.16)',
     sections: {
       health: 'Customer Health',
@@ -562,7 +567,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What procurement signals need my attention?',
     assistantPrompt: 'What procurement risks need my attention?',
     tint: 'olive',
-    accent: '#b7a24a',
+    accent: '#6b5d1f',
     accentSoft: 'rgba(183, 162, 74, 0.16)',
     sections: {
       health: 'Procurement Health',
@@ -590,7 +595,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What supplier signals need my attention?',
     assistantPrompt: 'What supplier risks need my attention?',
     tint: 'olive',
-    accent: '#a08f3f',
+    accent: '#5c501f',
     accentSoft: 'rgba(160, 143, 63, 0.16)',
     sections: {
       health: 'Procurement Health',
@@ -618,7 +623,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What does my team need from me today?',
     assistantPrompt: 'What does my team need from me today?',
     tint: 'steel',
-    accent: '#4f8fd1',
+    accent: '#2563eb',
     accentSoft: 'rgba(79, 143, 209, 0.16)',
     sections: {
       health: 'Team Health',

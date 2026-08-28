@@ -6,9 +6,9 @@
  * never the access control itself: every route behind it re-checks the SAME
  * permission server-side via `authorizePermission` (apps/api/src/business-
  * context/permissions.ts), so a forged client state can never reveal or
- * reach anything real. A module with no `requiredPermission` (Overview,
- * Command Center, Apps, Integrations, AI Assistant, Search, Settings) is
- * universal — every authenticated role can see it.
+ * reach anything real. A module with no `requiredPermission` (Command
+ * Center, Apps, Integrations, AI Assistant, Search, Settings) is universal
+ * — every authenticated role can see it.
  *
  * Fail-closed, matching the backend's `hasPermission` semantics exactly: a
  * role with an EMPTY permission set (not yet RBAC-configured) sees only the
@@ -25,7 +25,6 @@ export interface ModuleDefinition {
 
 /** The nav → permission mapping (S34). */
 export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
-  { navLabel: 'Overview' },
   { navLabel: 'Command Center' },
   { navLabel: 'Agent', requiredPermission: 'agent.use' },
   { navLabel: 'Problems', requiredPermission: 'problems.read' },
@@ -34,6 +33,9 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   { navLabel: 'Documents', requiredPermission: 'documents.read' },
   { navLabel: 'Knowledge', requiredPermission: 'knowledge.read' },
   { navLabel: 'Workflows', requiredPermission: 'workflows.read' },
+  { navLabel: 'Calendar', requiredPermission: 'calendar.read' },
+  { navLabel: 'Finance', requiredPermission: 'budgets.read' },
+  { navLabel: 'Audit', requiredPermission: 'audit.read' },
   { navLabel: 'Apps' },
   { navLabel: 'Integrations' },
   { navLabel: 'Insights', requiredPermission: 'insights.read' },

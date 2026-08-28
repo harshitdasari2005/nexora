@@ -192,6 +192,16 @@ export interface ApprovalEngine {
     tenantId: string,
     resumeKey: string,
   ): ApprovalRequestRecord | undefined | Promise<ApprovalRequestRecord | undefined>;
+  /**
+   * Lists the most recent approval requests across the WHOLE tenant, newest
+   * first — the read side for cross-conversation governance views (e.g. an
+   * Audit Center). Purely additive to the engine's read surface; never
+   * touches how a request is opened, decided, claimed, or resolved.
+   */
+  listByTenant(
+    tenantId: string,
+    options: { workspaceId?: string; limit: number },
+  ): readonly ApprovalRequestRecord[] | Promise<readonly ApprovalRequestRecord[]>;
 }
 
 /**
@@ -301,5 +311,19 @@ export class InMemoryApprovalEngine implements ApprovalEngine {
     return [...this.#requests.values()].filter(
       (request) => request.conversationId === conversationId,
     );
+  }
+
+  listByTenant(
+    tenantId: string,
+    options: { workspaceId?: string; limit: number },
+  ): readonly ApprovalRequestRecord[] {
+    return [...this.#requests.values()]
+      .filter(
+        (request) =>
+          request.tenantId === tenantId &&
+          (options.workspaceId === undefined || request.workspaceId === options.workspaceId),
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, options.limit);
   }
 }

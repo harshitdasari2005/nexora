@@ -834,6 +834,70 @@ export const calendarEvents = pgTable(
 );
 
 /**
+ * budgets — the {@link @nexora/module-finance!Budget} aggregate. One row per
+ * budget; the organization id is the tenant scope and the workspace id is
+ * the workspace scope — every read is scoped (a foreign or cross-workspace
+ * budget id resolves to NOT FOUND, never to another workspace's budget).
+ * Money is stored as an integer count of minor units (never floating point,
+ * PERSISTENCE.md §6) alongside its currency code.
+ */
+export const budgets = pgTable(
+  'budgets',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    createdBy: varchar('created_by', { length: 64 }).notNull(),
+    name: varchar('name', { length: 120 }).notNull(),
+    allocatedMinorUnits: integer('allocated_minor_units').notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+    periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('budgets_org_idx').on(table.organizationId),
+    index('budgets_workspace_idx').on(table.workspaceId, table.status),
+  ],
+);
+
+/**
+ * expenses — the {@link @nexora/module-finance!Expense} aggregate. One row
+ * per expense claim; scoped the same way as `budgets`. `budgetId` is a
+ * plain column (no DB-level foreign key — PERSISTENCE.md: one table per
+ * aggregate root, cross-aggregate integrity is an application-layer
+ * concern, the same convention every other table here follows), indexed so
+ * the utilization projection can list a budget's approved expenses cheaply.
+ */
+export const expenses = pgTable(
+  'expenses',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    budgetId: varchar('budget_id', { length: 64 }).notNull(),
+    submittedBy: varchar('submitted_by', { length: 64 }).notNull(),
+    description: varchar('description', { length: 120 }).notNull(),
+    amountMinorUnits: integer('amount_minor_units').notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    decidedBy: varchar('decided_by', { length: 64 }),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('expenses_org_idx').on(table.organizationId),
+    index('expenses_workspace_idx').on(table.workspaceId, table.createdAt),
+    index('expenses_budget_idx').on(table.budgetId, table.status),
+  ],
+);
+
+/**
  * agent_executions — the durable journal of governed business-agent runs
  * (S26 Phase 8 measurements). One row per execution recorded by the agent
  * engine through the API-layer recorder; the tenant id is the isolation

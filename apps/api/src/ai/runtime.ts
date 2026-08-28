@@ -64,6 +64,11 @@ import type {
   CreateCalendarEventHandler,
   ListCalendarEventsHandler,
 } from '@nexora/application-calendar';
+import type {
+  FlagOverBudgetItemsHandler,
+  ListExpensesHandler,
+  SubmitExpenseHandler,
+} from '@nexora/application-finance';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 import type {
   ListActivityHandler,
@@ -88,6 +93,8 @@ import { WorkflowToolStepExecutor } from './workflow-executor.js';
 import { AssignEmployeeToProjectTool } from './tools/assign-employee-tool.js';
 import { CreateProjectAndAssignWorkflowTool } from './tools/create-project-and-assign-tool.js';
 import { CreateCalendarEventTool } from './tools/create-calendar-event-tool.js';
+import { SubmitExpenseTool } from './tools/submit-expense-tool.js';
+import { FlagOverBudgetItemsTool } from './tools/flag-over-budget-items-tool.js';
 import { CreateEmployeeTool } from './tools/create-employee-tool.js';
 import { CreateProjectTool } from './tools/create-project-tool.js';
 import { HireAndAssignWorkflowTool } from './tools/hire-and-assign-tool.js';
@@ -213,6 +220,13 @@ export const CALENDAR_AGENT: AgentIdentity = {
   id: 'agt_calendar',
   name: 'calendar',
   displayName: 'Calendar Agent',
+};
+
+/** The finance agent identity (the owning bounded context, S35). */
+export const FINANCE_AGENT: AgentIdentity = {
+  id: 'agt_finance',
+  name: 'finance',
+  displayName: 'Finance Agent',
 };
 
 /** The skill that runs the deterministic business workflows (one plan unit). */
@@ -490,6 +504,80 @@ export const CALENDAR_CREATE_TOOL: ToolContract = {
   },
 };
 
+/** The skill that implements the submit-expense capability (write, S35). */
+export const FINANCE_SUBMIT_EXPENSE_SKILL: AgentSkill = {
+  id: 'finance.submit_expense',
+  description: 'Submits an expense claim against a budget in the current workspace',
+  toolIds: ['finance.submit_expense'],
+  autonomyTier: 'supervised',
+  requiresApproval: true,
+};
+
+/** The capability the AI discovers for expense-submission intents (write, S35). */
+export const FINANCE_SUBMIT_EXPENSE_CAPABILITY: CapabilityDeclaration = {
+  id: 'finance.submit_expense',
+  name: 'Submit Expense',
+  description: 'Submits an expense claim against a budget in the current workspace',
+  skillId: 'finance.submit_expense',
+  sideEffectClass: 'consequential',
+};
+
+/** The canonical tool contract for the SubmitExpenseTool (S35). */
+export const FINANCE_SUBMIT_EXPENSE_TOOL: ToolContract = {
+  id: 'finance.submit_expense',
+  description: 'Submits an expense claim against a budget in the current workspace',
+  sideEffectClass: 'consequential',
+  idempotent: false,
+  timeoutMs: 15_000,
+  inputSchema: {
+    type: 'object',
+    properties: {
+      budgetId: { type: 'string', minLength: 1 },
+      description: { type: 'string', minLength: 1, maxLength: 120 },
+      amountMinorUnits: { type: 'integer', minimum: 1 },
+      currency: { type: 'string', minLength: 3, maxLength: 3 },
+    },
+    required: ['budgetId', 'description', 'amountMinorUnits', 'currency'],
+    additionalProperties: false,
+  },
+};
+
+/**
+ * The skill behind the deterministic remediation action (S35): re-scans
+ * over-threshold budgets and flags them for review. Parameterless — the
+ * remediation engine can only execute capabilities that take no arguments
+ * (PlanBuilder never supplies a target id).
+ */
+export const FINANCE_FLAG_OVER_BUDGET_SKILL: AgentSkill = {
+  id: 'finance.flag_over_budget_items',
+  description:
+    'Re-scans active budgets in the current workspace and flags the ones over the deterministic utilization threshold for review',
+  toolIds: ['finance.flag_over_budget_items'],
+  autonomyTier: 'supervised',
+  requiresApproval: true,
+};
+
+/** The capability the `finance_budget_overrun` detection signal's remediation resolves to (S35). */
+export const FINANCE_FLAG_OVER_BUDGET_CAPABILITY: CapabilityDeclaration = {
+  id: 'finance.flag_over_budget_items',
+  name: 'Flag Over-Budget Items',
+  description:
+    'Re-scans active budgets in the current workspace and flags the ones over the deterministic utilization threshold for review',
+  skillId: 'finance.flag_over_budget_items',
+  sideEffectClass: 'consequential',
+};
+
+/** The canonical tool contract for the FlagOverBudgetItemsTool (S35, parameterless). */
+export const FINANCE_FLAG_OVER_BUDGET_TOOL: ToolContract = {
+  id: 'finance.flag_over_budget_items',
+  description:
+    'Re-scans active budgets in the current workspace and flags the ones over the deterministic utilization threshold for review',
+  sideEffectClass: 'consequential',
+  idempotent: true,
+  timeoutMs: 15_000,
+  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+};
+
 /** The skill that implements the create-project capability (write). */
 export const PROJECTS_CREATE_SKILL: AgentSkill = {
   id: 'projects.create',
@@ -629,6 +717,12 @@ export interface AiRuntimeDependencies {
   createCalendarEvent: CreateCalendarEventHandler;
   /** The workspace-scoped calendar read-back handler (Calendar write tool verification). */
   listCalendarEvents: ListCalendarEventsHandler;
+  /** The application-layer submit-expense handler (Finance write tool). */
+  submitExpense: SubmitExpenseHandler;
+  /** The workspace-scoped expense read-back handler (Finance write tool verification). */
+  listExpenses: ListExpensesHandler;
+  /** The deterministic remediation handler (Finance flag-over-budget-items tool). */
+  flagOverBudgetItems: FlagOverBudgetItemsHandler;
   /** The permission-filtered knowledge retrieval handler (Knowledge read tool). */
   retrieveKnowledge: RetrieveKnowledgeHandler;
   /** Resolves organization memberships (the write tools' authorization rule). */
@@ -938,6 +1032,50 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
   );
   skills.index(CALENDAR_CREATE_SKILL, CALENDAR_AGENT.id, 'calendar');
 
+  // Capability surface (finance — expense submission + the deterministic
+  // budget-overrun remediation action, S35).
+  registry.register(
+    registryEntries.agent({
+      agent: FINANCE_AGENT,
+      manifest: financeAgentManifest(),
+      health: 'healthy',
+      owner: 'finance',
+      version: '1.0.0',
+    }),
+  );
+  registry.register(
+    registryEntries.tool({
+      tool: FINANCE_SUBMIT_EXPENSE_TOOL,
+      owner: 'finance',
+      version: '1.0.0',
+      ownedByAgents: [FINANCE_AGENT.id],
+    }),
+  );
+  registry.register(
+    registryEntries.capability({
+      capability: FINANCE_SUBMIT_EXPENSE_CAPABILITY,
+      owner: 'finance',
+      version: '1.0.0',
+    }),
+  );
+  skills.index(FINANCE_SUBMIT_EXPENSE_SKILL, FINANCE_AGENT.id, 'finance');
+  registry.register(
+    registryEntries.tool({
+      tool: FINANCE_FLAG_OVER_BUDGET_TOOL,
+      owner: 'finance',
+      version: '1.0.0',
+      ownedByAgents: [FINANCE_AGENT.id],
+    }),
+  );
+  registry.register(
+    registryEntries.capability({
+      capability: FINANCE_FLAG_OVER_BUDGET_CAPABILITY,
+      owner: 'finance',
+      version: '1.0.0',
+    }),
+  );
+  skills.index(FINANCE_FLAG_OVER_BUDGET_SKILL, FINANCE_AGENT.id, 'finance');
+
   // Workflow surface: the workflow agent + tool contract are visible in the
   // registry (discovery read-model), but the workflow CAPABILITY is not a
   // token-matched entry — workflow intents are planned by the deterministic
@@ -1032,6 +1170,22 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
       listMyWorkspaces: dependencies.listMyWorkspaces,
       // S24 Phase 4: read-back verification against persisted state.
       listCalendarEvents: dependencies.listCalendarEvents,
+    }),
+  );
+  tools.register(
+    new SubmitExpenseTool({
+      submitExpense: dependencies.submitExpense,
+      listOrganizations: dependencies.listOrganizations,
+      listMyWorkspaces: dependencies.listMyWorkspaces,
+      // Read-back verification against persisted state (S35).
+      listExpenses: dependencies.listExpenses,
+    }),
+  );
+  tools.register(
+    new FlagOverBudgetItemsTool({
+      flagOverBudgetItems: dependencies.flagOverBudgetItems,
+      listOrganizations: dependencies.listOrganizations,
+      listMyWorkspaces: dependencies.listMyWorkspaces,
     }),
   );
 
@@ -1196,6 +1350,30 @@ function calendarAgentManifest(): AgentManifest {
       'calendar.event.created',
       'calendar.event.updated',
       'calendar.event.cancelled',
+    ],
+    subscribedEventTypes: [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/** Builds the minimal finance agent manifest for the registry (S35). */
+function financeAgentManifest(): AgentManifest {
+  return {
+    identity: FINANCE_AGENT,
+    version: '1.0.0',
+    skills: [FINANCE_SUBMIT_EXPENSE_SKILL, FINANCE_FLAG_OVER_BUDGET_SKILL],
+    tools: [FINANCE_SUBMIT_EXPENSE_TOOL, FINANCE_FLAG_OVER_BUDGET_TOOL],
+    knowledgeScopes: [],
+    policyIds: [],
+    emittedEventTypes: [
+      'finance.budget.created',
+      'finance.budget.revised',
+      'finance.budget.flagged_for_review',
+      'finance.budget.review_cleared',
+      'finance.budget.closed',
+      'finance.expense.submitted',
+      'finance.expense.approved',
+      'finance.expense.rejected',
     ],
     subscribedEventTypes: [],
     updatedAt: new Date().toISOString(),

@@ -54,6 +54,12 @@ const BUSINESS_CAPABILITY_TO_AI_CAPABILITIES: Readonly<Record<string, readonly s
     'notifications.mark_all_read',
   ],
   'calendar.create': ['calendar.create_event'],
+  // S35 Finance vertical: a role with the budget-management affinity can
+  // also run the deterministic over-threshold remediation action (the same
+  // "sees it, can act on it" affinity already used for approvals.read →
+  // notifications.mark_all_read above); expense submission maps 1:1.
+  'budgets.manage': ['finance.flag_over_budget_items'],
+  'expenses.create': ['finance.submit_expense'],
   // S24 Phase 4: `workflows.execute` maps to the workflow-orchestrating
   // capabilities, so a role WITH the affinity (CEO/Manager) can plan
   // workflow intents and a role WITHOUT it (Developer) cannot — workflow

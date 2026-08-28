@@ -45,7 +45,8 @@ export type BusinessSignalType =
   | 'workflow_degradation'
   | 'project_attention'
   | 'onboarding_delay'
-  | 'audit_completeness';
+  | 'audit_completeness'
+  | 'finance_budget_overrun';
 
 /** The explicit severity of a detected problem (controlled vocabulary). */
 export type ProblemSeverity = 'low' | 'medium' | 'high';

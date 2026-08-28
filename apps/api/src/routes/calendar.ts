@@ -19,6 +19,14 @@
  * (resource scope) but are verified against the trusted membership read
  * models; a forged or foreign scope resolves to 403, and a foreign entry id
  * resolves to 404 (never another workspace's record).
+ *
+ * A SECOND boundary (P0 security hardening) sits on top of scope: the
+ * caller's effective RBAC capability — `calendar.read` for every read
+ * endpoint, `calendar.create` for every endpoint that writes (create,
+ * update, cancel — the catalog has no separate "calendar.update"/
+ * "calendar.cancel" capability, so mutations reuse the closest existing
+ * write capability) — via the SAME `authorizePermission` every other
+ * surface uses, never a second permission model.
  */
 
 import type { FastifyInstance, FastifySchema } from 'fastify';
@@ -35,7 +43,12 @@ import type { ListOrganizationsHandler } from '@nexora/application-organizations
 import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
 import { toHttpError } from '../http/errors.js';
+import { sendForbidden } from './permission-response.js';
 
 /** Request body schema for POST /api/calendar/events. */
 const createCalendarEventSchema: FastifySchema = {
@@ -84,6 +97,8 @@ export interface CalendarRoutesDependencies {
   getCalendarEvent: GetCalendarEventHandler;
   listOrganizations: ListOrganizationsHandler;
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
 }
 
 /**
@@ -142,6 +157,14 @@ export function registerCalendarRoutes(
           error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
         });
       }
+      const authz = await authorizePermission(
+        dependencies.permissions,
+        { userId: auth.userId, tenantId: body.organizationId, workspaceId: body.workspaceId },
+        'calendar.create',
+      );
+      if (!authz.ok) {
+        return sendForbidden(reply, request.id, 'create a calendar event');
+      }
 
       const result = await dependencies.createCalendarEvent.handle({
         organizationId: body.organizationId as TenantId,
@@ -186,6 +209,15 @@ export function registerCalendarRoutes(
       });
     }
 
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: query.organizationId, workspaceId: query.workspaceId },
+      'calendar.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view calendar events');
+    }
+
     const result = await dependencies.listCalendarEvents.handle({
       organizationId: query.organizationId as TenantId,
       workspaceId: query.workspaceId as WorkspaceId,
@@ -221,6 +253,15 @@ export function registerCalendarRoutes(
       return reply.code(403).send({
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
+    }
+
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: query.organizationId, workspaceId: query.workspaceId },
+      'calendar.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view this calendar event');
     }
 
     const result = await dependencies.getCalendarEvent.handle({
@@ -259,6 +300,15 @@ export function registerCalendarRoutes(
         return reply.code(403).send({
           error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
         });
+      }
+
+      const authz = await authorizePermission(
+        dependencies.permissions,
+        { userId: auth.userId, tenantId: body.organizationId, workspaceId: body.workspaceId },
+        'calendar.create',
+      );
+      if (!authz.ok) {
+        return sendForbidden(reply, request.id, 'update a calendar event');
       }
 
       const result = await dependencies.updateCalendarEvent.handle({
@@ -300,6 +350,15 @@ export function registerCalendarRoutes(
       return reply.code(403).send({
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
+    }
+
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: organizationId, workspaceId },
+      'calendar.create',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'cancel a calendar event');
     }
 
     const result = await dependencies.cancelCalendarEvent.handle({

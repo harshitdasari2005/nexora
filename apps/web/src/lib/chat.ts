@@ -13,6 +13,12 @@ import { ApiError } from './api.js';
 export interface ChatRequest {
   /** The user message. */
   message: string;
+  /**
+   * Organization scope (validated server-side). Send it whenever the caller
+   * may belong to more than one organization — without it the API defaults
+   * to the first membership, which may not own `workspaceId` (→ 403).
+   */
+  organizationId?: string;
   /** Workspace scope (validated server-side). */
   workspaceId?: string;
   /** Continue an existing conversation. */

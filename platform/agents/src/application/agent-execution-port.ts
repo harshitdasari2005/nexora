@@ -56,4 +56,14 @@ export interface AgentExecutionRecorder {
     context: BusinessAgentContext,
     limit: number,
   ): Promise<readonly AgentExecutionRecord[]>;
+  /**
+   * Lists the most recent executions across the WHOLE tenant (not just one
+   * user), newest first — the read side for cross-user governance views
+   * (e.g. an Audit Center). Purely additive to the recorder's read surface;
+   * never touches how an execution is decided or run.
+   */
+  listByTenant(
+    tenantId: string,
+    options: { workspaceId?: string; limit: number },
+  ): Promise<readonly AgentExecutionRecord[]>;
 }

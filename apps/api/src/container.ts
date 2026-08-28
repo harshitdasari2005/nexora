@@ -23,6 +23,7 @@ import type {
   KnowledgeSourceRepository,
 } from '@nexora/domain-knowledge';
 import type { CalendarEntryRepository } from '@nexora/module-calendar';
+import type { BudgetRepository, ExpenseRepository } from '@nexora/module-finance';
 import type {
   EmailOutboxRepository,
   InboundMessageRepository,
@@ -52,6 +53,7 @@ import { ProjectDomainService, ResourceAssignmentDomainService } from '@nexora/d
 import { EmployeeDomainService } from '@nexora/domain-hr';
 import { DocumentDomainService } from '@nexora/domain-documents';
 import { CalendarEntryDomainService } from '@nexora/module-calendar';
+import { BudgetDomainService, ExpenseDomainService } from '@nexora/module-finance';
 import { KnowledgeDomainService } from '@nexora/domain-knowledge';
 import {
   WorkspaceDomainService,
@@ -121,6 +123,21 @@ import {
   UpdateCalendarEventHandler,
 } from '@nexora/application-calendar';
 import {
+  ClearBudgetReviewHandler,
+  CloseBudgetHandler,
+  CreateBudgetHandler,
+  DecideExpenseHandler,
+  FinanceApplicationService,
+  FlagOverBudgetItemsHandler,
+  GetBudgetHandler,
+  GetExpenseHandler,
+  ListBudgetUtilizationHandler,
+  ListBudgetsHandler,
+  ListExpensesHandler,
+  ReviseBudgetHandler,
+  SubmitExpenseHandler,
+} from '@nexora/application-finance';
+import {
   ArchiveArticleHandler,
   CreateArticleHandler,
   CreateCategoryHandler,
@@ -179,6 +196,8 @@ export interface RepositorySet {
   knowledgeArticles: KnowledgeArticleRepository;
   knowledgeCategories: KnowledgeCategoryRepository;
   calendarEvents: CalendarEntryRepository;
+  budgets: BudgetRepository;
+  expenses: ExpenseRepository;
   webhookEndpoints: WebhookEndpointRepository;
   webhookDeliveries: WebhookDeliveryRepository;
   emailOutbox: EmailOutboxRepository;
@@ -276,6 +295,30 @@ export interface Container {
   listCalendarEvents: ListCalendarEventsHandler;
   /** Single calendar-entry read handler. */
   getCalendarEvent: GetCalendarEventHandler;
+  /** Budget creation handler (S35). */
+  createBudget: CreateBudgetHandler;
+  /** Budget revision handler (S35). */
+  reviseBudget: ReviseBudgetHandler;
+  /** Budget close handler (S35). */
+  closeBudget: CloseBudgetHandler;
+  /** Budget review-flag clear handler (S35). */
+  clearBudgetReview: ClearBudgetReviewHandler;
+  /** Deterministic over-threshold budget flagging handler (S35 remediation). */
+  flagOverBudgetItems: FlagOverBudgetItemsHandler;
+  /** Workspace-scoped budget listing handler (S35). */
+  listBudgets: ListBudgetsHandler;
+  /** Single-budget read handler (S35). */
+  getBudget: GetBudgetHandler;
+  /** Workspace-scoped budget-utilization handler (S35). */
+  listBudgetUtilization: ListBudgetUtilizationHandler;
+  /** Expense submission handler (S35). */
+  submitExpense: SubmitExpenseHandler;
+  /** Expense decision (approve/reject) handler (S35). */
+  decideExpense: DecideExpenseHandler;
+  /** Workspace-scoped expense listing handler (S35). */
+  listExpenses: ListExpensesHandler;
+  /** Single-expense read handler (S35). */
+  getExpense: GetExpenseHandler;
   /** Knowledge retrieval handler (permission-filtered search). */
   retrieveKnowledge: RetrieveKnowledgeHandler;
   /** Knowledge indexing handler (document → knowledge ingest). */
@@ -398,6 +441,14 @@ export function buildContainer(options: BuildContainerOptions): Container {
     entries: repositories.calendarEvents,
   });
 
+  // Finance domain services (S35).
+  const budgetsDomainService = new BudgetDomainService({
+    budgets: repositories.budgets,
+  });
+  const expensesDomainService = new ExpenseDomainService({
+    expenses: repositories.expenses,
+  });
+
   // Application services.
   const identityService = new IdentityApplicationService({
     users: repositories.users,
@@ -435,6 +486,11 @@ export function buildContainer(options: BuildContainerOptions): Container {
   });
   const calendarService = new CalendarApplicationService({
     entriesService: calendarEntriesService,
+    publisher,
+  });
+  const financeService = new FinanceApplicationService({
+    budgetsService: budgetsDomainService,
+    expensesService: expensesDomainService,
     publisher,
   });
   const knowledgeDomainService = new KnowledgeDomainService({
@@ -501,6 +557,18 @@ export function buildContainer(options: BuildContainerOptions): Container {
     cancelCalendarEvent: new CancelCalendarEventHandler(calendarService),
     listCalendarEvents: new ListCalendarEventsHandler(calendarService),
     getCalendarEvent: new GetCalendarEventHandler(calendarService),
+    createBudget: new CreateBudgetHandler(financeService),
+    reviseBudget: new ReviseBudgetHandler(financeService),
+    closeBudget: new CloseBudgetHandler(financeService),
+    clearBudgetReview: new ClearBudgetReviewHandler(financeService),
+    flagOverBudgetItems: new FlagOverBudgetItemsHandler(financeService),
+    listBudgets: new ListBudgetsHandler(financeService),
+    getBudget: new GetBudgetHandler(financeService),
+    listBudgetUtilization: new ListBudgetUtilizationHandler(financeService),
+    submitExpense: new SubmitExpenseHandler(financeService),
+    decideExpense: new DecideExpenseHandler(financeService),
+    listExpenses: new ListExpensesHandler(financeService),
+    getExpense: new GetExpenseHandler(financeService),
     retrieveKnowledge: new RetrieveKnowledgeHandler(knowledgeService),
     indexDocument: new IndexDocumentHandler(knowledgeService),
     removeDocumentIndex: new RemoveDocumentIndexHandler(knowledgeService),

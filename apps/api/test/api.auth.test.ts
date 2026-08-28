@@ -11,7 +11,9 @@ import { loadConfig } from '../src/config.js';
 import { buildApp } from '../src/app.js';
 import {
   FakeActivityRepository,
+  FakeBudgetRepository,
   FakeCalendarEntryRepository,
+  FakeExpenseRepository,
   FakeDocumentRepository,
   FakeDocumentTemplateRepository,
   FakeDocumentVersionRepository,
@@ -89,6 +91,8 @@ async function makeApp(): Promise<TestApp> {
     knowledgeArticles: new FakeKnowledgeArticleRepository(),
     knowledgeCategories: new FakeKnowledgeCategoryRepository(),
     calendarEvents: new FakeCalendarEntryRepository(),
+    budgets: new FakeBudgetRepository(),
+    expenses: new FakeExpenseRepository(),
     webhookEndpoints: new FakeWebhookEndpointRepository(),
     webhookDeliveries: new FakeWebhookDeliveryRepository(),
     emailOutbox: new FakeEmailOutboxRepository(),

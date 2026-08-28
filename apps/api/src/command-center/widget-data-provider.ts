@@ -22,6 +22,10 @@ import type { ListDocumentsHandler } from '@nexora/application-documents';
 import type { ListArticlesHandler } from '@nexora/application-knowledge';
 import type { ListActivityHandler, ListNotificationsHandler } from '@nexora/module-notifications';
 import type {
+  ListBudgetUtilizationHandler,
+  ListExpensesHandler,
+} from '@nexora/application-finance';
+import type {
   CommandCenterContext,
   CommandCenterWidgetDataProvider,
 } from '@nexora/module-command-center';
@@ -47,6 +51,10 @@ export interface CommandCenterWidgetDataProviderDependencies {
   listActivity: ListActivityHandler;
   /** Recipient-scoped notification inbox. */
   listNotifications: ListNotificationsHandler;
+  /** Workspace-scoped budget-utilization projection (finance section, S35). */
+  listBudgetUtilization: ListBudgetUtilizationHandler;
+  /** Workspace-scoped expense listing (finance section, S35). */
+  listExpenses: ListExpensesHandler;
 }
 
 /** The maximum number of items rendered per feed widget. */
@@ -69,78 +77,106 @@ export class ApiCommandCenterWidgetDataProvider implements CommandCenterWidgetDa
       [...needed].some((source) => prefixes.includes(source));
 
     // Each source GROUP is fetched once, in parallel (dedup by group).
-    const [measurements, projects, employees, documents, articles, activity, notifications] =
-      await Promise.all([
-        needs([
-          'measurements.overview.users',
-          'measurements.overview.projects',
-          'measurements.overview.workspaces',
-          'workflows.health',
-        ])
-          ? this.#safe(() =>
-              this.#deps.getTenantMeasurements.handle({ tenantId: context.tenantId as never }),
-            )
-          : Promise.resolve(undefined),
-        needs(['projects.active', 'projects.list'])
-          ? this.#safe(async () => {
-              const result = await this.#deps.listProjects.handle({
-                organizationId: context.tenantId as never,
-              });
-              return result.ok ? result.value : [];
-            })
-          : Promise.resolve(undefined),
-        needs(['employees.active', 'employees.list'])
-          ? this.#safe(async () => {
-              const result = await this.#deps.listEmployees.handle({
-                organizationId: context.tenantId as never,
-              });
-              return result.ok ? result.value : [];
-            })
-          : Promise.resolve(undefined),
-        needs(['documents.list']) && context.workspaceId !== undefined
-          ? this.#safe(async () => {
-              const result = await this.#deps.listDocuments.handle({
-                organizationId: context.tenantId as never,
-                workspaceId: context.workspaceId as never,
-              });
-              return result.ok ? result.value : [];
-            })
-          : Promise.resolve(undefined),
-        needs(['knowledge.articles']) && context.workspaceId !== undefined
-          ? this.#safe(async () => {
-              const result = await this.#deps.listArticles.handle({
-                tenantId: context.tenantId as never,
-                workspaceId: context.workspaceId as never,
-              });
-              return result.ok ? result.value : [];
-            })
-          : Promise.resolve(undefined),
-        needs(['activity.recent'])
-          ? this.#safe(async () => {
-              const result = await this.#deps.listActivity.handle({
-                tenantId: context.tenantId as never,
-                ...(context.workspaceId === undefined
-                  ? {}
-                  : { workspaceId: context.workspaceId as never }),
-                limit: FEED_LIMIT,
-              });
-              return result.ok ? result.value.activity : [];
-            })
-          : Promise.resolve(undefined),
-        needs(['notifications.unread'])
-          ? this.#safe(async () => {
-              const result = await this.#deps.listNotifications.handle({
-                userId: context.userId as never,
-                tenantId: context.tenantId as never,
-                ...(context.workspaceId === undefined
-                  ? {}
-                  : { workspaceId: context.workspaceId as never }),
-                limit: FEED_LIMIT,
-              });
-              return result.ok ? result.value.notifications : [];
-            })
-          : Promise.resolve(undefined),
-      ]);
+    const [
+      measurements,
+      projects,
+      employees,
+      documents,
+      articles,
+      activity,
+      notifications,
+      budgetUtilization,
+      expenses,
+    ] = await Promise.all([
+      needs([
+        'measurements.overview.users',
+        'measurements.overview.projects',
+        'measurements.overview.workspaces',
+        'workflows.health',
+      ])
+        ? this.#safe(() =>
+            this.#deps.getTenantMeasurements.handle({ tenantId: context.tenantId as never }),
+          )
+        : Promise.resolve(undefined),
+      needs(['projects.active', 'projects.list'])
+        ? this.#safe(async () => {
+            const result = await this.#deps.listProjects.handle({
+              organizationId: context.tenantId as never,
+            });
+            return result.ok ? result.value : [];
+          })
+        : Promise.resolve(undefined),
+      needs(['employees.active', 'employees.list'])
+        ? this.#safe(async () => {
+            const result = await this.#deps.listEmployees.handle({
+              organizationId: context.tenantId as never,
+            });
+            return result.ok ? result.value : [];
+          })
+        : Promise.resolve(undefined),
+      needs(['documents.list']) && context.workspaceId !== undefined
+        ? this.#safe(async () => {
+            const result = await this.#deps.listDocuments.handle({
+              organizationId: context.tenantId as never,
+              workspaceId: context.workspaceId as never,
+            });
+            return result.ok ? result.value : [];
+          })
+        : Promise.resolve(undefined),
+      needs(['knowledge.articles']) && context.workspaceId !== undefined
+        ? this.#safe(async () => {
+            const result = await this.#deps.listArticles.handle({
+              tenantId: context.tenantId as never,
+              workspaceId: context.workspaceId as never,
+            });
+            return result.ok ? result.value : [];
+          })
+        : Promise.resolve(undefined),
+      needs(['activity.recent'])
+        ? this.#safe(async () => {
+            const result = await this.#deps.listActivity.handle({
+              tenantId: context.tenantId as never,
+              ...(context.workspaceId === undefined
+                ? {}
+                : { workspaceId: context.workspaceId as never }),
+              limit: FEED_LIMIT,
+            });
+            return result.ok ? result.value.activity : [];
+          })
+        : Promise.resolve(undefined),
+      needs(['notifications.unread'])
+        ? this.#safe(async () => {
+            const result = await this.#deps.listNotifications.handle({
+              userId: context.userId as never,
+              tenantId: context.tenantId as never,
+              ...(context.workspaceId === undefined
+                ? {}
+                : { workspaceId: context.workspaceId as never }),
+              limit: FEED_LIMIT,
+            });
+            return result.ok ? result.value.notifications : [];
+          })
+        : Promise.resolve(undefined),
+      needs(['budgets.active', 'budgets.utilization', 'budgets.health']) &&
+      context.workspaceId !== undefined
+        ? this.#safe(async () => {
+            const result = await this.#deps.listBudgetUtilization.handle({
+              organizationId: context.tenantId as never,
+              workspaceId: context.workspaceId as never,
+            });
+            return result.ok ? result.value : [];
+          })
+        : Promise.resolve(undefined),
+      needs(['expenses.pending']) && context.workspaceId !== undefined
+        ? this.#safe(async () => {
+            const result = await this.#deps.listExpenses.handle({
+              organizationId: context.tenantId as never,
+              workspaceId: context.workspaceId as never,
+            });
+            return result.ok ? result.value : [];
+          })
+        : Promise.resolve(undefined),
+    ]);
 
     const groups = {
       measurements,
@@ -150,6 +186,8 @@ export class ApiCommandCenterWidgetDataProvider implements CommandCenterWidgetDa
       articles,
       activity,
       notifications,
+      budgetUtilization,
+      expenses,
     };
     const data: Record<string, CommandCenterWidgetDataDto> = {};
     for (const widget of widgets) {
@@ -183,6 +221,22 @@ interface SourceGroups {
     status: string;
     priority: 'low' | 'normal' | 'high' | 'urgent';
     action?: { href?: string };
+  }[];
+  budgetUtilization?: readonly {
+    budgetId: string;
+    name: string;
+    currency: string;
+    allocatedMinorUnits: number;
+    spentMinorUnits: number;
+    utilizationPercent: number;
+    status: string;
+  }[];
+  expenses?: readonly {
+    id: string;
+    description: string;
+    amountMinorUnits: number;
+    currency: string;
+    status: string;
   }[];
 }
 
@@ -281,10 +335,59 @@ function toWidgetData(source: string, groups: SourceGroups): CommandCenterWidget
             href: notification.action?.href,
           })),
       };
+    case 'budgets.active':
+      return kpi(
+        (groups.budgetUtilization ?? []).filter((budget) => budget.status !== 'closed').length,
+        'Budgets currently open in the workspace',
+      );
+    case 'budgets.utilization': {
+      // This vertical slice does not aggregate across currencies (Money's
+      // doc comment) — non-closed budgets are summed as-is, which is exact
+      // for the single-currency workspaces this demo data models.
+      const open = (groups.budgetUtilization ?? []).filter((budget) => budget.status !== 'closed');
+      const allocated = open.reduce((sum, budget) => sum + budget.allocatedMinorUnits, 0);
+      const spent = open.reduce((sum, budget) => sum + budget.spentMinorUnits, 0);
+      const percent = allocated > 0 ? Math.round((spent / allocated) * 100) : 0;
+      return { kind: 'kpi', value: `${percent}%`, hint: 'Approved spend across open budgets' };
+    }
+    case 'budgets.health':
+      return {
+        kind: 'list',
+        items: (groups.budgetUtilization ?? []).map((budget): CommandCenterEntryDto => ({
+          id: budget.budgetId,
+          title: budget.name,
+          subtitle: `${formatMoney(budget.spentMinorUnits, budget.currency)} of ${formatMoney(budget.allocatedMinorUnits, budget.currency)}`,
+          status:
+            budget.status === 'under_review'
+              ? 'Under review'
+              : budget.status === 'closed'
+                ? 'Closed'
+                : `${budget.utilizationPercent}% used`,
+          href: '/app/finance',
+        })),
+      };
+    case 'expenses.pending':
+      return {
+        kind: 'attention',
+        items: (groups.expenses ?? [])
+          .filter((expense) => expense.status === 'pending')
+          .map((expense): CommandCenterEntryDto => ({
+            id: expense.id,
+            title: expense.description,
+            body: formatMoney(expense.amountMinorUnits, expense.currency),
+            priority: 'normal',
+            href: '/app/finance',
+          })),
+      };
     default:
       // Unreachable: registration validates the data-source vocabulary.
       return { kind: 'list', items: [] };
   }
+}
+
+/** Formats a minor-units amount for display (e.g. `INR 1250.00`). */
+function formatMoney(minorUnits: number, currency: string): string {
+  return `${currency} ${(minorUnits / 100).toFixed(2)}`;
 }
 
 /** Builds a kpi datum (fail-safe default when the source is unavailable). */

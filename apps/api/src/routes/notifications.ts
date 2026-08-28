@@ -15,6 +15,14 @@
  *   resolves to 403, never to another workspace's notifications.
  * - Notification id enumeration is scoped: a foreign or non-existent id
  *   returns 404, never data.
+ *
+ * RBAC capability gating (P0 security hardening) applies only to
+ * `GET /api/activity`: unlike the notification inbox/preferences/stream
+ * endpoints above (which are inherently self-scoped to the authenticated
+ * recipient and have no corresponding business capability in the catalog),
+ * the activity feed surfaces OTHER members' actions across the workspace —
+ * a real business resource, gated by the existing `activity.read`
+ * capability via the SAME `authorizePermission` every other surface uses.
  */
 
 import type { FastifyInstance, FastifySchema } from 'fastify';
@@ -37,6 +45,11 @@ import {
 
 import { formatSse } from '../ai/chat-stream.js';
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
+import { sendForbidden } from './permission-response.js';
 
 /** Request body schema for PUT /api/notifications/preferences. */
 const updatePreferencesSchema: FastifySchema = {
@@ -73,6 +86,34 @@ export interface NotificationRoutesDependencies {
   listMyWorkspaces: ListMyWorkspacesHandler;
   /** The real-time notification stream (SSE transport seam). */
   stream: NotificationStream;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
+}
+
+/**
+ * Whether a stream notification event belongs to this SSE connection — the
+ * recipient is always the authenticated user (never a client-supplied id).
+ */
+export function isNotificationForRecipient(
+  recipientId: string,
+  connectionUserId: string,
+): boolean {
+  return recipientId === connectionUserId;
+}
+
+/**
+ * Whether a stream activity event is in scope for this SSE connection.
+ *
+ * `connectionTenantId` MUST be the tenant resolved from trusted membership
+ * for this connection — never `request.auth.tenantId`, which is the identity
+ * bootstrap tenant (`tnt_platform`) and matches no real organization. An
+ * unresolved tenant (`undefined`) forwards nothing (fail closed).
+ */
+export function isActivityInScope(
+  itemTenantId: string,
+  connectionTenantId: string | undefined,
+): boolean {
+  return connectionTenantId !== undefined && itemTenantId === connectionTenantId;
 }
 
 /** Resolves the trusted tenant (first membership or verified query org). */
@@ -389,6 +430,19 @@ export function registerNotificationRoutes(
       });
     }
 
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      {
+        userId: auth.userId,
+        tenantId: tenantId,
+        workspaceId: query.workspaceId,
+      },
+      'activity.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view the activity feed');
+    }
+
     const limit = query.limit === undefined ? undefined : Number(query.limit);
     const result = await dependencies.listActivity.handle({
       tenantId: tenantId as TenantId,
@@ -412,6 +466,14 @@ export function registerNotificationRoutes(
   // seam; the consumer publishes onto it as notifications are created.
   app.get('/api/notifications/stream', async (request, reply) => {
     const auth = requireAuth(request);
+    const query = request.query as { organizationId?: string };
+    // `auth.tenantId` is the identity bootstrap tenant (`tnt_platform`), NOT
+    // the caller's organization — the real tenant is resolved from trusted
+    // membership, exactly like every other endpoint in this file. Without
+    // this, the activity filter below (`item.tenantId === <bootstrap>`) never
+    // matched and the live activity feed silently never streamed.
+    const tenantId = await resolveTenant(dependencies, auth.userId, query.organizationId);
+
     reply.hijack();
     const raw = reply.raw;
     raw.writeHead(200, {
@@ -422,14 +484,31 @@ export function registerNotificationRoutes(
     });
     raw.write(formatSse('ready', { status: 'connected' }));
 
+    /** Write an SSE frame, swallowing a write after the client disconnected. */
+    const safeWrite = (frame: string): void => {
+      if (raw.writableEnded || raw.destroyed) {
+        return;
+      }
+      try {
+        raw.write(frame);
+      } catch {
+        // The socket closed between the writable check and the write —
+        // `request.raw`'s `close` handler will unsubscribe.
+      }
+    };
+
     const unsubscribe = dependencies.stream.subscribe((event) => {
       // Server-side filtering: only the authenticated recipient's own
-      // notifications (and tenant-scoped activity) reach this connection.
-      if (event.kind === 'notification' && event.notification.recipientId === auth.userId) {
-        raw.write(formatSse('notification', Notification.snapshot(event.notification)));
+      // notifications, and activity scoped to the caller's RESOLVED tenant
+      // (never the identity bootstrap tenant — see `isActivityInScope`).
+      if (
+        event.kind === 'notification' &&
+        isNotificationForRecipient(event.notification.recipientId, auth.userId)
+      ) {
+        safeWrite(formatSse('notification', Notification.snapshot(event.notification)));
       }
-      if (event.kind === 'activity' && event.item.tenantId === auth.tenantId) {
-        raw.write(formatSse('activity', ActivityItem.snapshot(event.item)));
+      if (event.kind === 'activity' && isActivityInScope(event.item.tenantId, tenantId)) {
+        safeWrite(formatSse('activity', ActivityItem.snapshot(event.item)));
       }
     });
 

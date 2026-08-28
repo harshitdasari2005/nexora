@@ -416,7 +416,7 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     const noAgent = new BusinessAgentApplicationService({
       registry,
       catalog,
-      roleResolver: { resolve: async () => 'finance.cfo' },
+      roleResolver: { resolve: async () => 'people.hr' },
       proposalProvider: providerWith([]),
     });
     expect(await noAgent.resolveCapabilities(context)).toEqual({ ok: false, reason: 'no-agent' });
@@ -431,8 +431,8 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     const service = new BusinessAgentApplicationService({
       registry,
       catalog,
-      // finance.cfo has no agent — fails safe.
-      roleResolver: { resolve: async () => 'finance.cfo' },
+      // people.hr has no agent — fails safe.
+      roleResolver: { resolve: async () => 'people.hr' },
       proposalProvider: providerWith([inSetProposal]),
       execution: port,
     });

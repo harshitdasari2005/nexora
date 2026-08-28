@@ -11,6 +11,7 @@
 import { Link } from 'react-router-dom';
 import { Badge, Card, EmptyState, Stack, typography } from '@nexora/design-system';
 
+import { humanizeIdentifiersInText } from '../lib/humanize.js';
 import type {
   CommandCenterEntryDto,
   CommandCenterWidgetDataDto,
@@ -267,12 +268,13 @@ function EntryRow({
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}
+          title={entry.title}
         >
-          {entry.title}
+          {humanizeIdentifiersInText(entry.title)}
         </div>
         {entry.subtitle !== undefined ? (
           <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
-            {entry.subtitle}
+            {humanizeIdentifiersInText(entry.subtitle)}
           </div>
         ) : null}
         {entry.body !== undefined ? (

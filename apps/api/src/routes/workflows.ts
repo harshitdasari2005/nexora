@@ -22,6 +22,12 @@
  * existing consequential REST surfaces (`POST /api/projects`, `POST
  * /api/workspaces`). The workflow-unit gate is the AI path; both paths
  * execute steps through the exact same governed tool pipeline.
+ *
+ * A SECOND boundary (P0 security hardening) sits on top of membership: the
+ * caller's effective RBAC capability — `workflows.read` to list or read a
+ * workflow, `workflows.execute` to start or cancel one — via the SAME
+ * `authorizePermission` every other surface uses, never a second permission
+ * model.
  */
 
 import type { FastifyInstance, FastifySchema } from 'fastify';
@@ -35,6 +41,11 @@ import type {
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
+import { sendForbidden } from './permission-response.js';
 
 /** Request body schema for POST /api/workflows. */
 const createWorkflowSchema: FastifySchema = {
@@ -57,6 +68,8 @@ export interface WorkflowRoutesDependencies {
   getWorkflow: GetWorkflowHandler;
   listWorkflows: ListWorkflowsHandler;
   listOrganizations: ListOrganizationsHandler;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
 }
 
 /** Registers the workflow routes. */
@@ -83,6 +96,14 @@ export function registerWorkflowRoutes(
           requestId: request.id,
         },
       });
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: body.organizationId },
+      'workflows.execute',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'start a workflow');
     }
 
     const result = await dependencies.startWorkflow.handle({
@@ -131,6 +152,14 @@ export function registerWorkflowRoutes(
         },
       });
     }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: organizationId },
+      'workflows.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view workflows');
+    }
 
     const result = await dependencies.listWorkflows.handle({
       tenantId: organizationId as TenantId,
@@ -172,6 +201,14 @@ export function registerWorkflowRoutes(
           requestId: request.id,
         },
       });
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: organizationId },
+      'workflows.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view this workflow');
     }
 
     const result = await dependencies.getWorkflow.handle({
@@ -215,6 +252,14 @@ export function registerWorkflowRoutes(
           requestId: request.id,
         },
       });
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: organizationId },
+      'workflows.execute',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'cancel a workflow');
     }
 
     const result = await dependencies.cancelWorkflow.handle({

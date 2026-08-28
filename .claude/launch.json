@@ -5,7 +5,11 @@
       "name": "nexora-dev",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev:local"],
-      "port": 5173
+      "env": {
+        "NEXORA_WEB_PORT": "5180",
+        "NEXORA_API_PORT": "3010"
+      },
+      "port": 5180
     }
   ]
 }

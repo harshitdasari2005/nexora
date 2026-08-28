@@ -72,6 +72,27 @@ export interface SnapshotActivity {
   occurredAt: string;
 }
 
+/**
+ * A budget-utilization summary the evaluators read (finance section). The
+ * SAME projection the Finance application layer's `listBudgetUtilization`
+ * query computes (approved expenses summed per budget) — never recomputed
+ * here, only carried through.
+ */
+export interface SnapshotBudget {
+  /** The budget id. */
+  budgetId: string;
+  /** The budget name. */
+  name: string;
+  /** The three-letter currency code. */
+  currency: string;
+  /** The allocated amount, in minor units. */
+  allocatedMinorUnits: number;
+  /** Approved expenses claimed against this budget, in minor units. */
+  spentMinorUnits: number;
+  /** The budget's lifecycle status (`active` | `under_review` | `closed`). */
+  status: string;
+}
+
 /** A recent agent-execution summary the evaluators read (journal). */
 export interface SnapshotAgentExecution {
   /** The execution record id. */
@@ -117,6 +138,12 @@ export interface DetectionSnapshot {
     /** Total business executions (workflow instances). */
     totalEvents: number;
   };
+  /**
+   * Budget utilization in the workspace (finance section, S35). Optional —
+   * mirrors `auditCompleteness`: added after the other required sections,
+   * so existing snapshot construction sites keep compiling unchanged.
+   */
+  budgets?: readonly SnapshotBudget[];
 }
 
 /**

@@ -90,4 +90,21 @@ export class PgAgentExecutionRecorder implements AgentExecutionRecorder {
       .limit(limit);
     return rows.map(rowToRecord);
   }
+
+  async listByTenant(
+    tenantId: string,
+    options: { workspaceId?: string; limit: number },
+  ): Promise<readonly AgentExecutionRecord[]> {
+    const conditions = [eq(agentExecutions.tenantId, tenantId)];
+    if (options.workspaceId !== undefined) {
+      conditions.push(eq(agentExecutions.workspaceId, options.workspaceId));
+    }
+    const rows = await this.#db
+      .select()
+      .from(agentExecutions)
+      .where(and(...conditions))
+      .orderBy(desc(agentExecutions.createdAt))
+      .limit(options.limit);
+    return rows.map(rowToRecord);
+  }
 }

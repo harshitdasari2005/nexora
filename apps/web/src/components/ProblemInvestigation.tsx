@@ -12,6 +12,7 @@
 import type { ReactNode } from 'react';
 import { Badge, typography } from '@nexora/design-system';
 
+import { humanizeProblemText, humanizeRecommendationSummary } from '../lib/humanize.js';
 import type {
   BusinessProblemDto,
   ProblemRecommendation,
@@ -68,6 +69,7 @@ const SOURCE_LABELS: Record<string, string> = {
   agent_executions: 'Prior execution',
   knowledge: 'Knowledge base',
   documents: 'Document',
+  measurements: 'Measurement',
 };
 
 /** The "what Nexora recommends" banner: the deterministic recommendation. */
@@ -101,7 +103,7 @@ export function RecommendationBanner({
           Nexora recommends
         </div>
         <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-text)' }}>
-          {recommendation.summary}
+          {humanizeRecommendationSummary(recommendation.summary)}
         </div>
       </div>
     </div>
@@ -152,7 +154,7 @@ export function EvidenceList({
               ) : null}
             </div>
             <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
-              {item.fact}
+              {humanizeProblemText(item.fact)}
             </div>
           </div>
         ))}
@@ -187,7 +189,9 @@ export function RootCauseList({
                 {cause.confidence.toLowerCase()} confidence
               </span>
             </div>
-            <div style={{ fontSize: typography.sizes.sm, marginTop: 6 }}>{cause.explanation}</div>
+            <div style={{ fontSize: typography.sizes.sm, marginTop: 6 }}>
+              {humanizeProblemText(cause.explanation)}
+            </div>
             {cause.nextStep.length > 0 ? (
               <div
                 style={{
@@ -260,16 +264,15 @@ export function KnownSolutionsList({
                   title={solution.reference.id}
                   style={{
                     fontSize: typography.sizes.xs,
-                    fontFamily: typography.fontMono,
                     color: 'var(--nexora-textMuted)',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
-                    maxWidth: 180,
+                    maxWidth: 220,
                     flexShrink: 1,
                   }}
                 >
-                  {solution.reference.id}
+                  {solution.reference.title}
                 </span>
               ) : null}
             </div>

@@ -20,9 +20,17 @@
  * (resource scope) but are verified against the trusted membership read
  * models; a forged or foreign workspace resolves to 403/404, never to
  * another tenant's record.
+ *
+ * A THIRD boundary (P0 security hardening) sits on top of both: the
+ * caller's effective RBAC capability — `documents.read` for every read
+ * endpoint, `documents.upload` for every endpoint that writes (upload, new
+ * version, restore, archive, templates). Membership proves tenant
+ * isolation, not authorization; a member of the workspace without the
+ * capability is rejected with 403 via the SAME `authorizePermission` every
+ * other surface uses — never a second permission model.
  */
 
-import type { FastifyInstance, FastifySchema } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifySchema } from 'fastify';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import {
   toDocumentDto,
@@ -52,7 +60,12 @@ import type { ListOrganizationsHandler } from '@nexora/application-organizations
 import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
 import { toHttpError } from '../http/errors.js';
+import { sendForbidden } from './permission-response.js';
 import { authorizeScope, readScope } from './scope.js';
 
 /** Request body schema for POST /api/documents. */
@@ -91,6 +104,39 @@ export interface DocumentRoutesDependencies {
   retrieveKnowledge: RetrieveKnowledgeHandler;
   listOrganizations: ListOrganizationsHandler;
   listMyWorkspaces: ListMyWorkspacesHandler;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
+}
+
+/**
+ * The capability half of this file's authorization boundary — called right
+ * after `authorizeScope` passes at every endpoint. Returns `true` when the
+ * caller may proceed; otherwise sends the standard 403 and returns that
+ * reply — the call site's `if (result !== true) return result;` mirrors how
+ * every other route already returns `sendForbidden`'s own result directly.
+ * Local to this file only to avoid repeating the same lines at thirteen
+ * call sites — not a new authorization primitive, `authorizePermission`
+ * does the actual work.
+ */
+async function requireDocumentCapability(
+  dependencies: DocumentRoutesDependencies,
+  reply: FastifyReply,
+  requestId: string,
+  userId: string,
+  organizationId: string,
+  workspaceId: string,
+  capability: string,
+  action: string,
+): Promise<true | unknown> {
+  const authz = await authorizePermission(
+    dependencies.permissions,
+    { userId, tenantId: organizationId, workspaceId },
+    capability,
+  );
+  if (!authz.ok) {
+    return sendForbidden(reply, requestId, action);
+  }
+  return true;
 }
 
 /** Registers the document routes. */
@@ -119,6 +165,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      body.organizationId,
+      body.workspaceId,
+      'documents.upload',
+      'upload a document',
+    );
+    if (capable !== true) return capable;
 
     const uploaded = await dependencies.uploadDocument.handle({
       organizationId: body.organizationId as TenantId,
@@ -184,6 +241,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      query.organizationId,
+      query.workspaceId,
+      'documents.read',
+      'view documents',
+    );
+    if (capable !== true) return capable;
 
     const result = await dependencies.listDocuments.handle({
       organizationId: query.organizationId as TenantId,
@@ -221,6 +289,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      query.organizationId,
+      query.workspaceId,
+      'documents.read',
+      'view this document',
+    );
+    if (capable !== true) return capable;
 
     const result = await dependencies.getDocument.handle({
       organizationId: query.organizationId as TenantId,
@@ -259,6 +338,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      body.organizationId,
+      body.workspaceId,
+      'documents.upload',
+      'archive this document',
+    );
+    if (capable !== true) return capable;
 
     const result = await dependencies.archiveDocument.handle({
       organizationId: body.organizationId as TenantId,
@@ -328,6 +418,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'documents.read',
+      'view document versions',
+    );
+    if (capable !== true) return capable;
 
     const result = await dependencies.listDocumentVersions.handle({
       organizationId: scope.organizationId as TenantId,
@@ -377,6 +478,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'documents.upload',
+      'add a new document version',
+    );
+    if (capable !== true) return capable;
 
     const uploaded = await dependencies.uploadDocumentVersion.handle({
       organizationId: scope.organizationId as TenantId,
@@ -450,6 +562,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'documents.upload',
+      'restore a document version',
+    );
+    if (capable !== true) return capable;
 
     const restored = await dependencies.restoreDocumentVersion.handle({
       organizationId: scope.organizationId as TenantId,
@@ -522,6 +645,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'documents.read',
+      'view document version content',
+    );
+    if (capable !== true) return capable;
 
     const result = await dependencies.getDocumentVersionContent.handle({
       organizationId: scope.organizationId as TenantId,
@@ -581,6 +715,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'documents.upload',
+      'create a document template',
+    );
+    if (capable !== true) return capable;
 
     const created = await dependencies.createDocumentTemplate.handle({
       organizationId: scope.organizationId as TenantId,
@@ -623,6 +768,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'documents.read',
+      'view document templates',
+    );
+    if (capable !== true) return capable;
 
     const result = await dependencies.listDocumentTemplates.handle({
       organizationId: scope.organizationId as TenantId,
@@ -660,6 +816,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'documents.upload',
+      'archive a document template',
+    );
+    if (capable !== true) return capable;
 
     const archived = await dependencies.archiveDocumentTemplate.handle({
       organizationId: scope.organizationId as TenantId,
@@ -709,6 +876,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      scope.organizationId,
+      scope.workspaceId,
+      'documents.upload',
+      'create a document from a template',
+    );
+    if (capable !== true) return capable;
 
     const created = await dependencies.createDocumentFromTemplate.handle({
       organizationId: scope.organizationId as TenantId,
@@ -776,6 +954,17 @@ export function registerDocumentRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
+    const capable = await requireDocumentCapability(
+      dependencies,
+      reply,
+      request.id,
+      auth.userId,
+      query.organizationId,
+      query.workspaceId,
+      'knowledge.read',
+      'search knowledge',
+    );
+    if (capable !== true) return capable;
 
     const result = await dependencies.retrieveKnowledge.handle({
       tenantId: query.organizationId as TenantId,

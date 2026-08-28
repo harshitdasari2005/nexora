@@ -24,9 +24,24 @@ interface CallbackRecord {
 /** The calls captured by the mocked openid-client client. */
 const callbackCalls: CallbackRecord[] = [];
 
-/** Resets the captured calls between tests. */
+/** The default claims the mocked `client.callback` returns. */
+const DEFAULT_CLAIMS: Record<string, unknown> = {
+  sub: 'sub-alex-123',
+  email: 'alex@nexora.dev',
+  email_verified: true,
+  name: 'Alex Morgan',
+};
+
+/**
+ * Overridable claims for the mocked `client.callback`. Named `mock*` so the
+ * hoisted `vi.mock` factory below may close over it.
+ */
+let mockClaims: Record<string, unknown> = { ...DEFAULT_CLAIMS };
+
+/** Resets the captured calls and claims between tests. */
 function resetCalls(): void {
   callbackCalls.length = 0;
+  mockClaims = { ...DEFAULT_CLAIMS };
 }
 
 vi.mock('openid-client', () => {
@@ -41,14 +56,7 @@ vi.mock('openid-client', () => {
         checks: Record<string, unknown>,
       ) => {
         callbackCalls.push({ redirectUri, params, checks });
-        return {
-          claims: () => ({
-            sub: 'sub-alex-123',
-            email: 'alex@nexora.dev',
-            email_verified: true,
-            name: 'Alex Morgan',
-          }),
-        };
+        return { claims: () => mockClaims };
       },
     );
   return {
@@ -111,6 +119,15 @@ describe('KeycloakOidcGateway.exchangeCode (real Keycloak contract)', () => {
       emailVerified: true,
       displayName: 'Alex Morgan',
     });
+  });
+
+  it('rejects a token set with no email claim (never provisions an empty address)', async () => {
+    resetCalls();
+    mockClaims = { sub: 'sub-no-email', email_verified: false };
+    const gateway = buildGateway();
+    await expect(
+      gateway.exchangeCode({ code: 'c', state: 's', iss: 'i' }, 's', 'v'),
+    ).rejects.toThrow(/no email claim/);
   });
 
   it('builds the authorization URL with the PKCE challenge and state', async () => {

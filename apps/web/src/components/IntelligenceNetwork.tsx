@@ -1,12 +1,21 @@
 /**
- * @nexora/app-web — IntelligenceNetwork (visual wow pass).
+ * @nexora/app-web — IntelligenceNetwork (S40 digital-headquarters pass).
  *
  * The "Nexora Intelligence Network": a decorative Canvas 2D scene depicting
- * the product's real narrative — a central intelligence core, business
- * signal nodes across three depth planes, and sparse cinematic events
- * (SIGNAL → INTELLIGENCE → PLANNING → ACTION → VERIFICATION) — never a
- * constantly-looping animation. Pure Canvas + requestAnimationFrame: no new
- * dependency, no 3D library (none exists in this app).
+ * the product's real narrative as a stylized DIGITAL TWIN of an enterprise —
+ * a central intelligence core, six fixed spatial ZONES around it (Executive,
+ * Finance, Operations, Technology, People, Legal — one per curated persona,
+ * `../lib/rolePersonas.js`), soft architectural background structure, and
+ * sparse cinematic events (SIGNAL → INTELLIGENCE → PLANNING → ACTION →
+ * VERIFICATION) — never a constantly-looping animation. The zones are
+ * ABSTRACT (translucent glass panels tinted per domain, never literal desks/
+ * people/rooms) — "premium digital twin," not a video-game office. When an
+ * `activeZone` is set (the authenticated shell passes the caller's resolved
+ * persona), that zone reads as spatially prominent and every other zone
+ * recedes — the SAME headquarters, a different area emphasized, matching
+ * how role switching already recomposes the rest of the shell. Pure Canvas +
+ * requestAnimationFrame: no new dependency, no 3D library (none exists in
+ * this app, and this scene's abstraction level doesn't need one).
  *
  * Purely decorative (`aria-hidden`, `pointer-events: none`) — it carries no
  * information a screen reader needs and never intercepts input. Respects
@@ -54,11 +63,65 @@ export interface IntelligenceNetworkProps {
   converging?: boolean;
   /** A subtle contextual hue for the core/connections (default `indigo`). */
   tint?: IntelligenceNetworkTint;
+  /**
+   * The spatially prominent zone of the digital headquarters — set by the
+   * authenticated shell to the caller's resolved persona's domain. That
+   * zone panel reads as bright/foregrounded; the other five recede. `undefined`
+   * (Landing/Login, or a role outside the six curated personas) shows all
+   * six zones at equal, calm prominence — the whole headquarters, no area
+   * singled out yet.
+   */
+  activeZone?: EnterpriseZone;
 }
+
+/**
+ * The six spatial zones of the digital headquarters — one per curated
+ * persona (`../lib/rolePersonas.js`). Fixed layout (not randomized): the
+ * same six positions every render, only their EMPHASIS changes with
+ * `activeZone`, so switching roles reads as "a different area of the same
+ * building lighting up," never a different scene.
+ */
+export type EnterpriseZone =
+  'executive' | 'finance' | 'operations' | 'technology' | 'people' | 'legal';
+
+/** Each zone's tint reuses the SAME hue its persona's `RoleTheme` already
+ * uses elsewhere in the app (`../lib/roleThemes.js`) — one color language,
+ * not a second palette invented for this scene. */
+export const ZONE_TINT: Record<EnterpriseZone, IntelligenceNetworkTint> = {
+  executive: 'gold',
+  finance: 'emerald',
+  operations: 'orange',
+  technology: 'cyan',
+  people: 'rose',
+  legal: 'amber',
+};
+
+/** Zone panels sit at fixed angles around the core, in a stable "floor
+ * plan" order — always the same six positions regardless of which is
+ * active. */
+export const ZONE_ORDER: readonly EnterpriseZone[] = [
+  'executive',
+  'finance',
+  'operations',
+  'technology',
+  'people',
+  'legal',
+];
+
+/** Distant architectural facades — fixed, understated, framing not filling. */
+const FACADES: readonly { nx: number; w: number; h: number }[] = [
+  { nx: 0.1, w: 0.09, h: 0.62 },
+  { nx: 0.24, w: 0.05, h: 0.42 },
+  { nx: 0.78, w: 0.06, h: 0.5 },
+  { nx: 0.92, w: 0.08, h: 0.34 },
+];
 
 /** Core/connection hue per tint — intentionally close to the base indigo,
  * never a different theme, just a whisper of context. */
-const TINT_RGB: Record<IntelligenceNetworkTint, { core: string; core2: string; line: string }> = {
+export const TINT_RGB: Record<
+  IntelligenceNetworkTint,
+  { core: string; core2: string; line: string }
+> = {
   indigo: { core: '167, 139, 250', core2: '99, 102, 241', line: '129, 140, 248' },
   amber: { core: '252, 211, 77', core2: '245, 158, 11', line: '217, 160, 90' },
   violet: { core: '196, 165, 250', core2: '139, 92, 246', line: '167, 139, 250' },
@@ -177,12 +240,15 @@ export function IntelligenceNetwork({
   simplified = false,
   converging = false,
   tint = 'indigo',
+  activeZone,
 }: IntelligenceNetworkProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const convergingRef = useRef(converging);
   convergingRef.current = converging;
   const tintRef = useRef(TINT_RGB[tint]);
   tintRef.current = TINT_RGB[tint];
+  const activeZoneRef = useRef(activeZone);
+  activeZoneRef.current = activeZone;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -260,13 +326,19 @@ export function IntelligenceNetwork({
     const draw = (now: number): void => {
       const dt = Math.min(64, now - lastTime);
       lastTime = now;
+      const t = now / 1000;
       if (!staticFrame) advancePhase(now);
 
       // Damped camera follow (parallax) — frame-rate independent (~220ms
-      // settle time), never a hard snap.
+      // settle time), never a hard snap. A slow autonomous drift (independent
+      // of the cursor, ~50s period) is blended in underneath so the
+      // headquarters still breathes when the cursor is still — never a
+      // direct mouseX → cameraX mapping either way.
       const followRate = Math.min(1, dt / 220);
-      camera.x += (mouse.x - camera.x) * followRate;
-      camera.y += (mouse.y - camera.y) * followRate;
+      const driftX = staticFrame ? 0 : Math.sin(t * 0.125) * 0.05;
+      const driftY = staticFrame ? 0 : Math.cos(t * 0.09) * 0.035;
+      camera.x += (mouse.x + driftX - camera.x) * followRate;
+      camera.y += (mouse.y + driftY - camera.y) * followRate;
 
       const targetConverge = convergingRef.current ? 1 : 0;
       const convergeRate = staticFrame ? 1 : Math.min(1, dt / 260);
@@ -277,7 +349,6 @@ export function IntelligenceNetwork({
 
       const coreX = width * 0.5;
       const coreY = height * (quiet ? 0.4 : 0.46);
-      const t = now / 1000;
       const rgb = tintRef.current;
       const alphaScale = ambient ? 0.45 : 1;
 
@@ -289,6 +360,30 @@ export function IntelligenceNetwork({
       const coreOpacity = coreOpacityBase + breathe * 0.12 + pulse * 0.25 + convergeProgress * 0.3;
       const coreRadius =
         (quiet ? 90 : 130) * (1 + breathe * 0.06) * corePulseScale * (1 + convergeProgress * 0.5);
+
+      // --- Architectural background: distant glass facades (S40) ---
+      // A handful of tall, soft-edged translucent slabs suggesting distant
+      // office structures — never literal buildings, just enough structure
+      // to read as "architecture" rather than empty space. Furthest depth
+      // plane: minimal parallax, near-static.
+      for (const facade of FACADES) {
+        const fx = facade.nx * width + camera.x * 4;
+        const fw = facade.w * width;
+        const fh = facade.h * height;
+        const fy = height - fh;
+        const grad = ctx.createLinearGradient(0, fy, 0, height);
+        grad.addColorStop(0, `rgba(${rgb.line}, 0)`);
+        grad.addColorStop(1, `rgba(${rgb.line}, ${0.05 * alphaScale})`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        const cornerRadius = Math.min(fw / 2, 18);
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(fx - fw / 2, fy, fw, fh, [cornerRadius, cornerRadius, 0, 0]);
+        } else {
+          ctx.rect(fx - fw / 2, fy, fw, fh);
+        }
+        ctx.fill();
+      }
 
       // --- Background atmosphere (depth 2) ---
       for (const node of nodes) {
@@ -336,12 +431,90 @@ export function IntelligenceNetwork({
         ctx.stroke();
       }
 
+      // --- Zone panels: the six spatial areas of the digital headquarters
+      // (S40) — a fixed "floor plan" around the core; only EMPHASIS changes
+      // with `activeZone`, never the layout. Each panel is oriented to face
+      // the core and tinted with its persona's own theme color. ---
+      const zoneCount = ZONE_ORDER.length;
+      const zoneRadiusFrac = quiet ? 0.34 : 0.42;
+      const activeZone = activeZoneRef.current;
+      const zonePositions: { zone: EnterpriseZone; x: number; y: number }[] = [];
+      for (let i = 0; i < zoneCount; i += 1) {
+        const zone = ZONE_ORDER[i]!;
+        const isActive = zone === activeZone;
+        const angle = (i / zoneCount) * Math.PI * 2 - Math.PI / 2;
+        const baseNx = 0.5 + Math.cos(angle) * zoneRadiusFrac;
+        const baseNy = 0.46 + Math.sin(angle) * zoneRadiusFrac * 0.68;
+        const zonePhase = i * 1.7;
+        const drift = staticFrame ? 0 : Math.sin(t * 0.18 + zonePhase) * 5;
+        const parallax = 14;
+        const px =
+          baseNx * width +
+          camera.x * parallax +
+          drift +
+          (baseNx * width - coreX) * -convergeProgress * 0.5;
+        const py =
+          baseNy * height +
+          camera.y * parallax +
+          drift * 0.6 +
+          (baseNy * height - coreY) * -convergeProgress * 0.5;
+        zonePositions.push({ zone, x: px, y: py });
+
+        const zoneTintRgb = TINT_RGB[ZONE_TINT[zone]];
+        const emphasis = isActive ? 1 : activeZone === undefined ? 0.55 : 0.22;
+        const zoneBreathe = 0.5 + 0.5 * Math.sin(t * 0.4 + zonePhase);
+        const fade = 1 - convergeProgress * 0.5;
+
+        ctx.strokeStyle = `rgba(${zoneTintRgb.line}, ${(isActive ? 0.22 : 0.07) * alphaScale * fade})`;
+        ctx.lineWidth = isActive ? 1.4 : 1;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(coreX, coreY);
+        ctx.stroke();
+
+        const panelW = (isActive ? 30 : 20) * (quiet ? 0.75 : 1);
+        const panelH = panelW * 0.62;
+        const panelAlpha = (0.16 + zoneBreathe * 0.06) * emphasis * alphaScale * fade;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(angle + Math.PI / 2);
+        ctx.fillStyle = `rgba(${zoneTintRgb.core2}, ${panelAlpha})`;
+        ctx.beginPath();
+        if (typeof ctx.roundRect === 'function') {
+          ctx.roundRect(-panelW / 2, -panelH / 2, panelW, panelH, 4);
+        } else {
+          ctx.rect(-panelW / 2, -panelH / 2, panelW, panelH);
+        }
+        ctx.fill();
+        if (isActive) {
+          ctx.strokeStyle = `rgba(${zoneTintRgb.core}, ${0.35 * alphaScale * fade})`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // Where the sparse SIGNAL → ... → VERIFICATION cycle originates this
+      // time: the active zone's own panel when the shell has one resolved
+      // (an authenticated CFO literally sees signals travel from Finance to
+      // the core), otherwise a random connected midground node (Landing/
+      // Login — no persona resolved yet, no zone to single out).
+      const activeZonePosition =
+        activeZone !== undefined ? zonePositions.find((z) => z.zone === activeZone) : undefined;
+
       // --- Traveling signal (signal → core, or core → action) ---
-      if (!staticFrame && connectedNodes.length > 0) {
-        const active = connectedNodes[activeConnectionIndex % connectedNodes.length]!;
-        const parallax = 18;
-        const px = active.nx * width + camera.x * parallax;
-        const py = active.ny * height + camera.y * parallax;
+      if (!staticFrame && (activeZonePosition !== undefined || connectedNodes.length > 0)) {
+        let px: number;
+        let py: number;
+        if (activeZonePosition !== undefined) {
+          px = activeZonePosition.x;
+          py = activeZonePosition.y;
+        } else {
+          const active = connectedNodes[activeConnectionIndex % connectedNodes.length]!;
+          const parallax = 18;
+          px = active.nx * width + camera.x * parallax;
+          py = active.ny * height + camera.y * parallax;
+        }
         let travel: number | null = null;
         let fromX = px;
         let fromY = py;
@@ -371,11 +544,22 @@ export function IntelligenceNetwork({
       }
 
       // --- Verification confirmation ring ---
-      if (!staticFrame && phase === 'verification' && connectedNodes.length > 0) {
-        const active = connectedNodes[activeConnectionIndex % connectedNodes.length]!;
-        const parallax = 18;
-        const px = active.nx * width + camera.x * parallax;
-        const py = active.ny * height + camera.y * parallax;
+      if (
+        !staticFrame &&
+        phase === 'verification' &&
+        (activeZonePosition !== undefined || connectedNodes.length > 0)
+      ) {
+        let px: number;
+        let py: number;
+        if (activeZonePosition !== undefined) {
+          px = activeZonePosition.x;
+          py = activeZonePosition.y;
+        } else {
+          const active = connectedNodes[activeConnectionIndex % connectedNodes.length]!;
+          const parallax = 18;
+          px = active.nx * width + camera.x * parallax;
+          py = active.ny * height + camera.y * parallax;
+        }
         const p = Math.min(1, phaseElapsed / PHASE_DURATIONS.verification);
         const ringRadius = 4 + p * 14;
         ctx.strokeStyle = `rgba(52, 211, 153, ${0.5 * (1 - p)})`;
@@ -385,15 +569,39 @@ export function IntelligenceNetwork({
         ctx.stroke();
       }
 
-      // --- Core (intelligence) ---
+      // --- Core (intelligence): layered translucent geometry, not a single
+      // glowing blob. A restrained ambient glow sits underneath; concentric
+      // rings (each breathing on its own slow phase) and one faint rotating
+      // highlight arc read as "glass depth" and "intelligent light
+      // movement" rather than a sci-fi orb.
       const coreGrad = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, coreRadius);
-      coreGrad.addColorStop(0, `rgba(${rgb.core}, ${coreOpacity})`);
-      coreGrad.addColorStop(0.4, `rgba(${rgb.core2}, ${coreOpacity * 0.55})`);
+      coreGrad.addColorStop(0, `rgba(${rgb.core}, ${coreOpacity * 0.72})`);
+      coreGrad.addColorStop(0.4, `rgba(${rgb.core2}, ${coreOpacity * 0.4})`);
       coreGrad.addColorStop(1, `rgba(${rgb.core2}, 0)`);
       ctx.fillStyle = coreGrad;
       ctx.beginPath();
       ctx.arc(coreX, coreY, coreRadius, 0, Math.PI * 2);
       ctx.fill();
+
+      const ringFractions = [0.36, 0.56, 0.78] as const;
+      for (let i = 0; i < ringFractions.length; i += 1) {
+        const ringBreathe = staticFrame ? 0.5 : 0.5 + 0.5 * Math.sin(t * 0.45 + i * 1.35);
+        const ringRadius = coreRadius * ringFractions[i]!;
+        ctx.strokeStyle = `rgba(${rgb.line}, ${(0.1 + ringBreathe * 0.07) * alphaScale * (1 - convergeProgress * 0.4)})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(coreX, coreY, ringRadius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      // One slow-rotating highlight arc — a whisper of motion across the
+      // glass, never a spinner: a full revolution takes minutes.
+      const arcAngle = staticFrame ? 0 : t * 0.12;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${0.16 * alphaScale})`;
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(coreX, coreY, coreRadius * 0.56, arcAngle, arcAngle + Math.PI * 0.3);
+      ctx.stroke();
 
       // --- Midground nodes (depth 1) ---
       for (const node of nodes) {
@@ -465,7 +673,9 @@ export function IntelligenceNetwork({
       window.removeEventListener('pointermove', onPointerMove);
     };
     // Re-initializes the whole imperative scene only when density/tone
-    // props change; `converging` and `tint` are read live via refs instead.
+    // props change; `converging`, `tint`, and `activeZone` are read live via
+    // refs instead — a role switch must recompose the zone emphasis without
+    // rebuilding the whole node layout underneath it.
   }, [quiet, ambient, simplified]);
 
   return (

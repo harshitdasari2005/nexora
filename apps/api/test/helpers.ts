@@ -56,8 +56,10 @@ import { InMemoryProblemStore } from '../src/detection/in-memory-problem-store.j
 import { InMemoryPlanStore } from '@nexora/module-remediation';
 import {
   FakeActivityRepository,
+  FakeBudgetRepository,
   FakeCalendarEntryRepository,
   FakeDocumentRepository,
+  FakeExpenseRepository,
   FakeDocumentTemplateRepository,
   FakeAgentExecutionRecorder,
   FakeDocumentVersionRepository,
@@ -183,6 +185,8 @@ export async function buildTestApp(
     knowledgeArticles: new FakeKnowledgeArticleRepository(),
     knowledgeCategories: new FakeKnowledgeCategoryRepository(),
     calendarEvents: new FakeCalendarEntryRepository(),
+    budgets: new FakeBudgetRepository(),
+    expenses: new FakeExpenseRepository(),
     webhookEndpoints: new FakeWebhookEndpointRepository(),
     webhookDeliveries: new FakeWebhookDeliveryRepository(),
     emailOutbox: new FakeEmailOutboxRepository(),
@@ -298,9 +302,16 @@ export function currentUserId(client: ChatClient): UserId {
   return user.id;
 }
 
-/** Creates an organization and a workspace through the onboarding API. */
+/**
+ * Creates an organization and a workspace through the onboarding API. The
+ * creator becomes the workspace's `owner`; the workspace `type` (default
+ * `engineering`) selects which business role that owner resolves to (P0
+ * hardening's per-domain capability set — e.g. `type: 'legal'` resolves the
+ * owner to `legal.general_counsel`, the role holding `documents.upload`).
+ */
 export async function onboardOrgAndWorkspace(
   client: ChatClient,
+  options?: { workspaceType?: string },
 ): Promise<{ organizationId: string; workspaceId: string; workspaceSlug: string }> {
   const org = await client.post('/api/organizations', {
     name: 'Acme Inc.',
@@ -314,7 +325,7 @@ export async function onboardOrgAndWorkspace(
     organizationId,
     name: 'Engineering',
     slug: 'engineering',
-    type: 'engineering',
+    type: options?.workspaceType ?? 'engineering',
   });
   expect(workspace.statusCode).toBe(201);
   const created = workspace.json().workspace as { id: string; slug: string };

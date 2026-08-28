@@ -6,16 +6,21 @@
  * constant across every app view. The top bar hosts the Notification
  * Center (Notification + Activity Feed vertical slice).
  *
- * S32: the shell runs the dark navy theme (the same intelligence
- * environment as Landing/Login, quieted to `ambient`) so every authenticated
- * page inherits the premium look instead of silently falling back to light.
+ * S44: the shell runs the light enterprise theme (`:root` default tokens,
+ * no `data-theme` override) — warm-white page, white cards, a hair of
+ * surface differentiation for the sidebar/topbar, role color used only for
+ * badges/active-nav/icons rather than as an ambient wash. The S39–S41
+ * cinematic 3D ambient background (`DigitalHeadquarters`/
+ * `IntelligenceNetwork`) was retired from the authenticated shell entirely
+ * — it stays on Login only, which keeps its own separate composition.
  *
- * S33: the shell's atmosphere, accent, navigation priority, and role badge
- * are now driven by the caller's RESOLVED business role (`RoleThemeContext`)
- * rather than the current page path — switching roles changes the
- * environment; switching pages within one role does not. A signature
- * "signal sweep" plays across the shell whenever the resolved role changes,
- * so a role switch reads as Nexora recalculating context, not a reload.
+ * S33: the shell's accent, navigation priority, and role badge are driven
+ * by the caller's RESOLVED business role (`RoleThemeContext`) rather than
+ * the current page path — switching roles changes the workspace; switching
+ * pages within one role does not. Nav re-fades and the role badge pulses
+ * briefly whenever the resolved role actually changes, so a role switch
+ * reads as Nexora recalculating context, not a reload — deliberately
+ * subtle now (S44), not the earlier full-screen accent sweep.
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -23,11 +28,15 @@ import { Link, useLocation } from 'react-router-dom';
 import { Avatar, Badge, spacing, typography } from '@nexora/design-system';
 
 import { isModuleVisible } from '../lib/modules.js';
+import {
+  applyNavLabelOverride,
+  resolvePersonaForRole,
+  type RolePersona,
+} from '../lib/rolePersonas.js';
 import { RoleThemeProvider, useRoleTheme } from '../lib/RoleThemeContext.js';
 import type { RoleTheme } from '../lib/roleThemes.js';
 import type { UserDto } from '../lib/types.js';
 import { CommandPalette } from './CommandPalette.js';
-import { IntelligenceNetwork } from './IntelligenceNetwork.js';
 import { NotificationCenter } from './NotificationCenter.js';
 import { RoleSwitcher } from './RoleSwitcher.js';
 
@@ -60,23 +69,40 @@ interface NavItem {
   action?: 'search';
 }
 
+// Every icon here is unique within the list — a first-time user scanning the
+// sidebar has to be able to tell items apart by glyph alone, before ever
+// reading the label. (This used to not be true: Command Center, Agent, and
+// AI Assistant all shared '✦', and Projects/Documents both used '▤' — three
+// and two destinations respectively were visually indistinguishable at a
+// glance. Fixed as part of the first-time-user audit.) 'Overview' (`/app`)
+// is gone entirely: it duplicated Command Center's own greeting while
+// showing far less, so `Dashboard` now sends an onboarded user straight to
+// Command Center instead of stopping at a second, thinner "home."
 const BASE_NAV_ITEMS: readonly NavItem[] = [
-  { label: 'Overview', icon: '◎', to: '/app' },
   { label: 'Command Center', icon: '✦', to: '/app/command-center' },
-  { label: 'Agent', icon: '✦', to: '/app/agent' },
+  { label: 'Agent', icon: '✓', to: '/app/agent' },
   { label: 'Problems', icon: '⚠', to: '/app/problems' },
   { label: 'Projects', icon: '▤', to: '/app/projects' },
-  { label: 'Employees', icon: '⚕', to: '/app/employees' },
-  { label: 'Documents', icon: '▤', to: '/app/documents' },
+  { label: 'Employees', icon: '👥', to: '/app/employees' },
+  { label: 'Documents', icon: '📄', to: '/app/documents' },
   { label: 'Knowledge', icon: '📚', to: '/app/knowledge' },
   { label: 'Workflows', icon: '⧉', to: '/app/workflows' },
+  { label: 'Calendar', icon: '📅', to: '/app/calendar' },
+  { label: 'Finance', icon: '💰', to: '/app/finance' },
+  { label: 'Audit', icon: '🛡', to: '/app/audit' },
   { label: 'Apps', icon: '▦', to: '/app/apps' },
   { label: 'Integrations', icon: '🔌', to: '/app/integrations' },
   { label: 'Insights', icon: '📊', to: '/app/insights' },
-  { label: 'AI Assistant', icon: '✦', to: '/app/assistant' },
+  { label: 'AI Assistant', icon: '💬', to: '/app/assistant' },
   { label: 'Search', icon: '⌕', action: 'search' },
   { label: 'Settings', icon: '⚙', to: '/app/settings' },
 ];
+
+/** The nav catalog split into primary (leading) and secondary (deprioritized) tiers. */
+interface TieredNav {
+  primary: readonly NavItem[];
+  secondary: readonly NavItem[];
+}
 
 /**
  * Reorders the fixed nav catalog so the active role's priorities lead, THEN
@@ -85,8 +111,19 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
  * sees "Problems" rendered at all, matching what the backend would actually
  * allow (`authorizePermission` fails closed the same way). Presentation
  * only — the backend remains authoritative regardless of what renders here.
+ *
+ * S35: when the resolved role maps to one of the six curated personas, nav
+ * visibility is ADDITIONALLY curated by that persona's primary/secondary
+ * module lists (declutter only — a persona can hide a module the caller is
+ * permitted to see, never show one it isn't). Roles outside the six
+ * personas (e.g. Sales, Product) are untouched: one flat RBAC-filtered list,
+ * exactly the pre-S35 behavior.
  */
-function orderNavItems(theme: RoleTheme, permissions: readonly string[]): readonly NavItem[] {
+function orderNavItems(
+  theme: RoleTheme,
+  permissions: readonly string[],
+  persona: RolePersona | undefined,
+): TieredNav {
   const byLabel = new Map(BASE_NAV_ITEMS.map((item) => [item.label, item] as const));
   const ordered: NavItem[] = [];
   for (const label of theme.navPriority) {
@@ -96,13 +133,136 @@ function orderNavItems(theme: RoleTheme, permissions: readonly string[]): readon
       byLabel.delete(label);
     }
   }
-  // 'Overview' is a legacy landing route, not part of any role's priority
-  // list by design — keep it available, just last, rather than dropping it.
+  // Any catalog item a role's `navPriority` doesn't mention (e.g. Apps,
+  // Integrations, Search, Settings for most roles) still needs to render —
+  // appended last rather than dropped.
   for (const item of BASE_NAV_ITEMS) {
     if (byLabel.has(item.label)) ordered.push(item);
   }
-  return ordered.filter((item) => isModuleVisible(item.label, permissions));
+  const visible = ordered.filter((item) => isModuleVisible(item.label, permissions));
+  if (persona === undefined) {
+    return { primary: visible, secondary: [] };
+  }
+  const byLabelVisible = new Map(visible.map((item) => [item.label, item] as const));
+  const primary = persona.primaryModules
+    .map((label) => byLabelVisible.get(label))
+    .filter((item): item is NavItem => item !== undefined);
+  const secondary = persona.secondaryModules
+    .map((label) => byLabelVisible.get(label))
+    .filter((item): item is NavItem => item !== undefined);
+  return { primary, secondary };
 }
+
+/** Renders one nav item — shared by the primary and secondary tiers. */
+function renderNavItem(
+  item: NavItem,
+  options: {
+    pathname: string;
+    scopeSuffix: string;
+    theme: RoleTheme;
+    persona: RolePersona | undefined;
+    onSearch: () => void;
+    muted?: boolean;
+  },
+): JSX.Element {
+  const { pathname, scopeSuffix, theme, persona, onSearch, muted = false } = options;
+  const active =
+    item.to !== undefined &&
+    (item.to === '/app' ? pathname === '/app' : pathname.startsWith(item.to));
+  const label = applyNavLabelOverride(persona, item.label);
+  const content = (
+    <>
+      <span aria-hidden style={{ width: 18, textAlign: 'center' }}>
+        {item.icon}
+      </span>
+      <span>{label}</span>
+      {item.action === 'search' ? (
+        <span
+          style={{
+            marginLeft: 'auto',
+            fontSize: typography.sizes.xs,
+            color: 'var(--nexora-textMuted)',
+          }}
+        >
+          ⌘K
+        </span>
+      ) : item.soon === true ? (
+        <span
+          style={{
+            marginLeft: 'auto',
+            fontSize: typography.sizes.xs,
+            color: 'var(--nexora-textMuted)',
+          }}
+        >
+          soon
+        </span>
+      ) : null}
+    </>
+  );
+  const style = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: muted ? '7px 10px' : '9px 10px',
+    borderRadius: 8,
+    fontSize: muted ? typography.sizes.sm : typography.sizes.base,
+    color: active
+      ? 'var(--nexora-text)'
+      : muted
+        ? 'var(--nexora-textMuted)'
+        : 'var(--nexora-textSecondary)',
+    background: active ? theme.accentSoft : 'transparent',
+    borderLeft: active ? `2px solid ${theme.accent}` : '2px solid transparent',
+    fontWeight: active ? typography.weights.medium : typography.weights.regular,
+    cursor: item.soon ? 'default' : 'pointer',
+    opacity: item.soon ? 0.7 : muted ? 0.82 : 1,
+    textDecoration: 'none',
+    border: 'none',
+    width: '100%',
+    textAlign: 'left',
+    fontFamily: 'inherit',
+    transition: 'background 140ms ease, color 140ms ease',
+  } as const;
+  const className = `nexora-navlink${active ? ' nexora-navlink-active' : ''}`;
+  if (item.action === 'search') {
+    return (
+      <button
+        key={item.label}
+        type="button"
+        className={className}
+        onClick={onSearch}
+        style={{ ...style, background: 'transparent', borderLeft: '2px solid transparent' }}
+      >
+        {content}
+      </button>
+    );
+  }
+  return item.to !== undefined ? (
+    <Link
+      key={item.label}
+      to={`${item.to}${scopeSuffix}`}
+      aria-current={active ? 'page' : undefined}
+      className={className}
+      style={style}
+    >
+      {content}
+    </Link>
+  ) : (
+    <div key={item.label} className={className} style={style}>
+      {content}
+    </div>
+  );
+}
+
+// Module-level, not component state: every top-level authenticated page
+// wraps its OWN `<AppShell>` instance, so the shell technically remounts
+// on each in-app navigation even though it reads as one persistent OS
+// chrome. This flag survives those remounts (reset only by a real page
+// load) so the "entering the operating environment" entrance plays
+// exactly once per authenticated session — right after the OAuth
+// callback lands on `/app` — never replayed on ordinary navigation
+// between Command Center, Problems, Agent, etc. (S39).
+let hasEnteredEnvironment = false;
 
 /** Renders the persistent application shell. */
 export function AppShell(props: AppShellProps): JSX.Element {
@@ -127,6 +287,13 @@ function AppShellChrome({
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { theme, current } = useRoleTheme();
+  // "Entering the Nexora operating environment": a brief, one-time entrance
+  // right after authentication — never replayed on later in-app navigation.
+  const [grandEntrance] = useState(() => {
+    const first = !hasEnteredEnvironment;
+    hasEnteredEnvironment = true;
+    return first;
+  });
 
   // Global ⌘K / Ctrl+K opens the search palette from anywhere in the shell.
   // Escape closes the mobile drawer when it's open.
@@ -177,14 +344,22 @@ function AppShellChrome({
     return suffix.length > 0 ? `?${suffix}` : '';
   })();
 
-  const navItems = orderNavItems(theme, current?.permissions ?? []);
+  const persona = resolvePersonaForRole(current?.roleId);
+  const { primary: primaryNavItems, secondary: secondaryNavItems } = orderNavItems(
+    theme,
+    current?.permissions ?? [],
+    persona,
+  );
   const roleLabel =
-    current !== null ? `${current.domainName} · ${current.roleName}` : theme.identity;
+    persona !== undefined
+      ? `${persona.displayRole} · ${persona.focusLabel}`
+      : current !== null
+        ? `${current.domainName} · ${current.roleName}`
+        : theme.identity;
 
   return (
     <div
-      data-theme="dark"
-      className="nexora-shell"
+      className={`nexora-shell${grandEntrance ? ' nexora-shell-enter' : ''}`}
       style={{
         height: '100vh',
         display: 'flex',
@@ -194,48 +369,6 @@ function AppShellChrome({
         color: 'var(--nexora-text)',
       }}
     >
-      {/* Global ambient background — the same intelligence environment as
-          Landing/Login, quieted for sustained work, tinted to the active
-          ROLE's atmosphere (not the page) so switching business lenses is
-          the thing that visibly changes the environment. */}
-      <div
-        aria-hidden="true"
-        style={{ position: 'absolute', inset: 0, zIndex: 0, pointerEvents: 'none' }}
-      >
-        <IntelligenceNetwork quiet ambient tint={theme.tint} />
-      </div>
-
-      {/* A very low-opacity corner wash in the role's accent — the
-          "different atmosphere per role" cue that survives even when the
-          canvas scene itself is sparse or reduced-motion static. */}
-      <div
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          inset: 0,
-          zIndex: 0,
-          pointerEvents: 'none',
-          background: `radial-gradient(ellipse 70% 55% at 12% -8%, ${theme.accentSoft}, transparent 62%)`,
-        }}
-      />
-
-      {/* The signature role-transition signal: a soft accent pulse from the
-          workspace center, replayed by remounting on `sweepGeneration`. */}
-      {sweepGeneration > 0 ? (
-        <div
-          key={sweepGeneration}
-          aria-hidden="true"
-          className="nexora-role-sweep"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            zIndex: 2,
-            pointerEvents: 'none',
-            background: `radial-gradient(circle at 50% 42%, ${theme.accent}59, transparent 60%)`,
-          }}
-        />
-      ) : null}
-
       {/* Sidebar */}
       <aside
         className={`nexora-sidebar${mobileNavOpen ? ' nexora-sidebar-open' : ''}`}
@@ -308,9 +441,15 @@ function AppShellChrome({
           />
         </div>
 
-        {/* Navigation */}
+        {/* Navigation — remounts (and fades in) on a resolved-role change,
+            the "sidebar module visibility" half of the role-transition
+            signal (S35). Secondary-tier modules render in a visually
+            quieter group below a "More" divider rather than blending in at
+            equal weight with the role's primary work. */}
         <nav
+          key={current?.roleId ?? 'default'}
           aria-label="Workspace navigation"
+          className="nexora-nav-fade"
           style={{
             display: 'flex',
             flexDirection: 'column',
@@ -319,94 +458,42 @@ function AppShellChrome({
             overflowY: 'auto',
           }}
         >
-          {navItems.map((item) => {
-            const active =
-              item.to !== undefined &&
-              (item.to === '/app' ? pathname === '/app' : pathname.startsWith(item.to));
-            const content = (
-              <>
-                <span aria-hidden style={{ width: 18, textAlign: 'center' }}>
-                  {item.icon}
-                </span>
-                <span>{item.label}</span>
-                {item.action === 'search' ? (
-                  <span
-                    style={{
-                      marginLeft: 'auto',
-                      fontSize: typography.sizes.xs,
-                      color: 'var(--nexora-textMuted)',
-                    }}
-                  >
-                    ⌘K
-                  </span>
-                ) : item.soon === true ? (
-                  <span
-                    style={{
-                      marginLeft: 'auto',
-                      fontSize: typography.sizes.xs,
-                      color: 'var(--nexora-textMuted)',
-                    }}
-                  >
-                    soon
-                  </span>
-                ) : null}
-              </>
-            );
-            const style = {
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '9px 10px',
-              borderRadius: 8,
-              fontSize: typography.sizes.base,
-              color: active ? 'var(--nexora-text)' : 'var(--nexora-textSecondary)',
-              background: active ? theme.accentSoft : 'transparent',
-              borderLeft: active ? `2px solid ${theme.accent}` : '2px solid transparent',
-              boxShadow: active ? `0 0 20px -6px ${theme.accent}` : 'none',
-              fontWeight: active ? typography.weights.medium : typography.weights.regular,
-              cursor: item.soon ? 'default' : 'pointer',
-              opacity: item.soon ? 0.7 : 1,
-              textDecoration: 'none',
-              border: 'none',
-              width: '100%',
-              textAlign: 'left',
-              fontFamily: 'inherit',
-              transition: 'background 140ms ease, color 140ms ease',
-            } as const;
-            const className = `nexora-navlink${active ? ' nexora-navlink-active' : ''}`;
-            if (item.action === 'search') {
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  className={className}
-                  onClick={() => setSearchOpen(true)}
-                  style={{
-                    ...style,
-                    background: 'transparent',
-                    borderLeft: '2px solid transparent',
-                  }}
-                >
-                  {content}
-                </button>
-              );
-            }
-            return item.to !== undefined ? (
-              <Link
-                key={item.label}
-                to={`${item.to}${scopeSuffix}`}
-                aria-current={active ? 'page' : undefined}
-                className={className}
-                style={style}
+          {primaryNavItems.map((item) =>
+            renderNavItem(item, {
+              pathname,
+              scopeSuffix,
+              theme,
+              persona,
+              onSearch: () => setSearchOpen(true),
+            }),
+          )}
+          {secondaryNavItems.length > 0 ? (
+            <>
+              <div
+                aria-hidden
+                style={{
+                  padding: '12px 10px 4px',
+                  fontSize: typography.sizes.xs,
+                  fontWeight: typography.weights.medium,
+                  color: 'var(--nexora-textMuted)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}
               >
-                {content}
-              </Link>
-            ) : (
-              <div key={item.label} className={className} style={style}>
-                {content}
+                More
               </div>
-            );
-          })}
+              {secondaryNavItems.map((item) =>
+                renderNavItem(item, {
+                  pathname,
+                  scopeSuffix,
+                  theme,
+                  persona,
+                  onSearch: () => setSearchOpen(true),
+                  muted: true,
+                }),
+              )}
+            </>
+          ) : null}
         </nav>
 
         {/* Identity chip */}
@@ -603,13 +690,12 @@ function AppShellChrome({
           background: var(--nexora-overlay);
           z-index: 39;
         }
-        @keyframes nexora-role-sweep {
-          0% { opacity: 0; transform: scale(0.82); }
-          32% { opacity: 1; }
-          100% { opacity: 0; transform: scale(1.55); }
+        @keyframes nexora-shell-enter {
+          from { opacity: 0; transform: scale(0.985); filter: blur(6px); }
+          to { opacity: 1; transform: scale(1); filter: blur(0); }
         }
-        .nexora-role-sweep {
-          animation: nexora-role-sweep 750ms cubic-bezier(0.16, 1, 0.3, 1);
+        .nexora-shell-enter {
+          animation: nexora-shell-enter 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
         }
         @keyframes nexora-role-badge-pulse {
           0% { transform: scale(1); }
@@ -618,6 +704,16 @@ function AppShellChrome({
         }
         .nexora-role-badge-pulse {
           animation: nexora-role-badge-pulse 550ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes nexora-nav-fade {
+          0% { opacity: 0; transform: translateY(4px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
+        .nexora-nav-fade {
+          animation: nexora-nav-fade 420ms cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .nexora-nav-fade { animation: none; }
         }
         @media (max-width: 900px) {
           .nexora-crumb-org { display: none; }

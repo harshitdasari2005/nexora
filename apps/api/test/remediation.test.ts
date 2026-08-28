@@ -36,10 +36,12 @@ import {
   currentUserId,
   login,
   onboardOrgAndWorkspace,
+  seedOrganizationMembership,
   seedProject,
+  seedWorkspaceMembership,
   type ChatClient,
 } from './helpers.js';
-import { FakeAgentExecutionRecorder } from './fakes.js';
+import { FakeAgentExecutionRecorder, MultiIdentityGateway } from './fakes.js';
 
 /** Creates + publishes a knowledge article through the real API path. */
 async function createAndPublishArticle(
@@ -701,6 +703,209 @@ describe('Phase 10 remediation — end-to-end resolution (approval gate + real f
       );
       expect((problemAfter.json() as { problem: BusinessProblemDto }).problem.status).toBe(
         'RESOLVED',
+      );
+    },
+  );
+});
+
+describe('Phase 10 remediation — Finance vertical (S35): budget overrun → remediation', () => {
+  it(
+    'finance_budget_overrun: an over-threshold budget → problem → known runbook → plan → ' +
+      'approve → execute → verify → RESOLVED, with the budget genuinely flagged under_review',
+    async () => {
+      // Two CFO-scoped users in one finance workspace: `client` (submitter)
+      // creates the budget and submits the expense; `approverCookie` is a
+      // DIFFERENT user who approves it (segregation of duties — a submitter
+      // can never approve its own expense, PRD §14.3.3 / FR-21).
+      const { app, repos, store } = await buildTestApp({
+        oidc: new MultiIdentityGateway([
+          {
+            subject: 'sub-cfo-submitter',
+            email: 'submitter@nexora.dev',
+            emailVerified: true,
+            displayName: 'Sam Submitter',
+            issuer: 'http://keycloak.test/realms/nexora',
+          },
+          {
+            subject: 'sub-cfo-approver',
+            email: 'approver@nexora.dev',
+            emailVerified: true,
+            displayName: 'Ada Approver',
+            issuer: 'http://keycloak.test/realms/nexora',
+          },
+        ]),
+      });
+      const submitterCookie = await login(app);
+      const approverCookie = await login(app);
+      const inject = (
+        method: 'GET' | 'POST' | 'PUT' | 'PATCH',
+        url: string,
+        cookie: string,
+        payload?: Record<string, unknown>,
+      ) =>
+        app.inject({
+          method,
+          url,
+          headers: { cookie, 'content-type': 'application/json' },
+          payload: payload ?? {},
+        });
+      const client: ChatClient = {
+        app,
+        session: submitterCookie,
+        store,
+        repos,
+        get: (path) => inject('GET', path, submitterCookie),
+        postEmpty: (path) => inject('POST', path, submitterCookie),
+        post: (path, body) => inject('POST', path, submitterCookie, body),
+        put: (path, body) => inject('PUT', path, submitterCookie, body),
+        patch: (path, body) => inject('PATCH', path, submitterCookie, body),
+      };
+      const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client, {
+        workspaceType: 'finance',
+      });
+      const approverMe = await inject('GET', '/api/me', approverCookie);
+      const approverId = (approverMe.json() as { user: { id: string } }).user.id;
+      await seedOrganizationMembership(repos, {
+        organizationId,
+        userId: approverId,
+        role: 'member',
+      });
+      await seedWorkspaceMembership(repos, {
+        organizationId,
+        workspaceId,
+        userId: approverId,
+        role: 'member',
+      });
+
+      // Real persisted state: a budget whose APPROVED spend crosses the
+      // deterministic 90% high-utilization threshold — through the real
+      // Finance REST surface, never seeded as a fixture.
+      const budgetCreated = await client.post('/api/finance/budgets', {
+        organizationId,
+        workspaceId,
+        name: 'Marketing Q3 Budget',
+        allocatedMinorUnits: 100_000,
+        currency: 'INR',
+        periodStart: '2026-07-01T00:00:00.000Z',
+        periodEnd: '2026-09-30T00:00:00.000Z',
+      });
+      expect(budgetCreated.statusCode).toBe(201);
+      const budgetId = (budgetCreated.json() as { budget: { id: string } }).budget.id;
+
+      const expenseCreated = await client.post('/api/finance/expenses', {
+        organizationId,
+        workspaceId,
+        budgetId,
+        description: 'Q3 campaign spend',
+        amountMinorUnits: 95_000,
+        currency: 'INR',
+      });
+      expect(expenseCreated.statusCode).toBe(201);
+      const expenseId = (expenseCreated.json() as { expense: { id: string } }).expense.id;
+
+      // The submitter cannot approve its own expense (422); a different
+      // CFO-scoped user does.
+      const selfApproved = await client.post(`/api/finance/expenses/${expenseId}/decide`, {
+        organizationId,
+        workspaceId,
+        decision: 'approve',
+      });
+      expect(selfApproved.statusCode).toBe(422);
+
+      const decided = await inject(
+        'POST',
+        `/api/finance/expenses/${expenseId}/decide`,
+        approverCookie,
+        { organizationId, workspaceId, decision: 'approve' },
+      );
+      expect(decided.statusCode).toBe(200);
+      expect((decided.json() as { expense: { status: string } }).expense.status).toBe('approved');
+
+      // Existing knowledge first — the runbook is discovered, never invented.
+      await createAndPublishArticle(
+        client,
+        { organizationId, workspaceId },
+        {
+          title: 'Budget overrun runbook',
+          body: 'When a finance budget overrun occurs, flag over-budget items for review and reduce discretionary spend.',
+        },
+      );
+
+      const scanned = await client.postEmpty(
+        `/api/problems/scan?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+      );
+      const problem = (scanned.json() as { problems: BusinessProblemDto[] }).problems.find(
+        (p) => p.signalId === 'finance_budget_overrun',
+      );
+      expect(problem).toBeDefined();
+      expect(problem?.severity).toBe('high');
+      const problemId = problem?.id ?? '';
+      const applicable = problem?.solutions.find((s) => s.applicability === 'APPLICABLE');
+      expect(applicable).toBeDefined();
+
+      const created = await client.post(
+        `/api/problems/${problemId}/plans?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+        {},
+      );
+      expect(created.statusCode).toBe(200);
+      const plan = (created.json() as { plan: RemediationPlanDto }).plan;
+      expect(plan.agentId).toBe('finance');
+      expect(plan.roleId).toBe('finance.cfo');
+      expect(plan.steps.map((step) => step.capabilityId)).toContain(
+        'finance.flag_over_budget_items',
+      );
+      const planId = plan.id;
+
+      // Advance until the consequential step opens its approval (BR-13/
+      // BR-19: a real state change — budgets flip to under_review — is
+      // never executed without a human decision).
+      let approvalId: string | undefined;
+      let latest: RemediationPlanDto = plan;
+      for (let i = 0; i < 3 && approvalId === undefined && latest.status !== 'COMPLETED'; i += 1) {
+        const advanced = await client.postEmpty(
+          `/api/plans/${planId}/advance?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+        );
+        expect(advanced.statusCode).toBe(200);
+        latest = (advanced.json() as { plan: RemediationPlanDto }).plan;
+        approvalId = latest.steps.find((step) => step.status === 'AWAITING_APPROVAL')?.approvalId;
+      }
+      expect(approvalId).toBeDefined();
+
+      // Approve through the EXISTING chat approval surface (the same
+      // decision endpoint every other governed write uses) — the CFO
+      // approves their own domain's consequential action (S35 routing).
+      const decision = await client.post(`/api/ai/approvals/${approvalId}/decision`, {
+        decision: 'approve',
+      });
+      expect(decision.statusCode).toBe(200);
+
+      // The now-approved step executes through the SAME governed advance
+      // call: it re-scans budgets, flags the over-threshold one, and
+      // re-evaluates — the condition is genuinely gone (the budget is no
+      // longer `active`), so the plan COMPLETES and the problem RESOLVES.
+      const finalAdvance = await client.postEmpty(
+        `/api/plans/${planId}/advance?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+      );
+      expect(finalAdvance.statusCode).toBe(200);
+      const finalPlan = (finalAdvance.json() as { plan: RemediationPlanDto }).plan;
+      expect(finalPlan.status).toBe('COMPLETED');
+      expect(finalPlan.problem.status).toBe('RESOLVED');
+
+      const problemAfter = await client.get(
+        `/api/problems/${problemId}?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+      );
+      expect((problemAfter.json() as { problem: BusinessProblemDto }).problem.status).toBe(
+        'RESOLVED',
+      );
+
+      // Verify the REAL persisted state change through the REST read path —
+      // never trust the plan outcome alone.
+      const budgetAfter = await client.get(
+        `/api/finance/budgets/${budgetId}?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+      );
+      expect(budgetAfter.statusCode).toBe(200);
+      expect((budgetAfter.json() as { budget: { status: string } }).budget.status).toBe(
+        'under_review',
       );
     },
   );

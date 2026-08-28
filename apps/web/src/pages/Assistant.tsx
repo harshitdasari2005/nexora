@@ -134,6 +134,7 @@ export function Assistant(): JSX.Element {
           }}
         >
           <AiPanel
+            organizationId={dashboard.organization.id}
             workspaceId={dashboard.workspace.id}
             organizationName={dashboard.organization.name}
             userDisplayName={dashboard.user.displayName}

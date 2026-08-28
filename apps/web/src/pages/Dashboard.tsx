@@ -1,14 +1,20 @@
 /**
  * @nexora/app-web — Dashboard.
  *
- * The first-run dashboard (FRONTEND.md §5): current user, organization,
- * workspace, empty installed-apps and activity feeds, and the AI assistant
- * placeholder. No business modules yet — this is the shell the platform
- * grows into.
+ * The onboarding entry point ONLY (FRONTEND.md §5): `/app` is where an
+ * authenticated session lands first, but a caller who already belongs to an
+ * organization is sent straight through to Command Center — that page
+ * covers everything this one used to show (the same greeting, the same
+ * organization/workspace identity) plus the actual business content
+ * (health, attention, activity). Two near-identical "home" screens was
+ * exactly the kind of duplication a first-time user trips on: which one is
+ * the real home? (First-time-user usability audit.) This page still does
+ * real work for the one case Command Center doesn't handle — no
+ * organization yet — where it hands off to the organization-creation flow.
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import {
   Badge,
   Button,
@@ -20,8 +26,6 @@ import {
 } from '@nexora/design-system';
 
 import { ActivityFeed } from '../components/ActivityFeed.js';
-import { AiPanel } from '../components/AiPanel.js';
-import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
@@ -78,51 +82,38 @@ export function Dashboard(): JSX.Element {
     return <LoadingScreen />;
   }
 
-  if (data.organization === null) {
-    // The user has not onboarded yet.
+  if (data.organization !== null) {
+    // Already onboarded — Command Center is the real home; this page's own
+    // job is only the pre-onboarding welcome screen below.
     return (
-      <div
-        style={{
-          height: '100vh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 24,
-        }}
-      >
-        <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
-          <EmptyState
-            icon="🚀"
-            title="Welcome to Nexora"
-            description="Create your organization to get started. Your workspace, apps, and AI agents will live here."
-            action={
-              <Link to="/onboarding/organization">
-                <Button size="lg">Create your organization</Button>
-              </Link>
-            }
-          />
-        </Card>
-      </div>
+      <Navigate to={{ pathname: '/app/command-center', search: searchParams.toString() }} replace />
     );
   }
 
+  // The user has not onboarded yet.
   return (
-    <AppShell
-      user={data.user}
-      organizationName={data.organization.name}
-      workspaceName={data.workspace?.name ?? 'No workspace yet'}
-      organizationId={data.organization.id}
-      workspaceId={data.workspace?.id}
-      right={
-        <AiPanel
-          workspaceId={data.workspace?.id}
-          organizationName={data.organization.name}
-          userDisplayName={data.user.displayName}
-        />
-      }
+    <div
+      style={{
+        height: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+      }}
     >
-      <DashboardView data={data} />
-    </AppShell>
+      <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
+        <EmptyState
+          icon="🚀"
+          title="Welcome to Nexora"
+          description="Create your organization to get started. Your workspace, apps, and AI agents will live here."
+          action={
+            <Link to="/onboarding/organization">
+              <Button size="lg">Create your organization</Button>
+            </Link>
+          }
+        />
+      </Card>
+    </div>
   );
 }
 

@@ -2,10 +2,13 @@
  * @nexora/app-api — project routes.
  *
  * The first business-application surface (Projects vertical slice): create a
- * project in an organization and list the organization's projects. The
- * authenticated user must be a member of the target organization (membership
- * gating — the same authorization rule the AI tool uses, so the REST and AI
- * surfaces share ONE business execution path).
+ * project in an organization and list the organization's projects. Every
+ * endpoint verifies organization membership (tenant scope — the same rule
+ * the AI tool uses) AND the caller's effective RBAC capability (P0 security
+ * hardening): `projects.create` to create, `projects.read` to list or read
+ * membership. Membership alone is tenant isolation, not authorization — a
+ * member of the org without the capability is rejected with 403 even though
+ * they belong to the tenant.
  */
 
 import type { FastifyInstance, FastifySchema } from 'fastify';
@@ -20,7 +23,12 @@ import type { ListEmployeesByIdsHandler } from '@nexora/application-hr';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 
 import { requireAuth } from '../plugins/auth.js';
+import {
+  authorizePermission,
+  type PermissionResolverDependencies,
+} from '../business-context/permissions.js';
 import { toHttpError } from '../http/errors.js';
+import { sendForbidden } from './permission-response.js';
 
 /** Request body schema for POST /api/projects. */
 const createProjectSchema: FastifySchema = {
@@ -43,6 +51,8 @@ export interface ProjectRoutesDependencies {
   listProjectMembers: ListProjectMembersHandler;
   listEmployeesByIds: ListEmployeesByIdsHandler;
   listOrganizations: ListOrganizationsHandler;
+  /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
+  permissions: PermissionResolverDependencies;
 }
 
 /** Registers the project routes. */
@@ -69,6 +79,14 @@ export function registerProjectRoutes(
           requestId: request.id,
         },
       });
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: body.organizationId },
+      'projects.create',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'create a project');
     }
 
     const result = await dependencies.createProject.handle({
@@ -110,6 +128,14 @@ export function registerProjectRoutes(
         },
       });
     }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: organizationId },
+      'projects.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view projects');
+    }
 
     const result = await dependencies.listProjects.handle({
       organizationId: organizationId as TenantId,
@@ -147,6 +173,14 @@ export function registerProjectRoutes(
           requestId: request.id,
         },
       });
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: organizationId },
+      'projects.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view project members');
     }
 
     const result = await dependencies.listProjectMembers.handle({

@@ -127,9 +127,15 @@ export class KeycloakOidcGateway implements OidcGateway {
     if (typeof claims.sub !== 'string' || claims.sub.length === 0) {
       throw new Error('OIDC token set carried no subject claim');
     }
+    if (typeof claims.email !== 'string' || claims.email.length === 0) {
+      // The realm is configured to always release `email` (scope `email`).
+      // A token without it is malformed for our purposes — fail rather than
+      // provision a user with an empty address (defense in depth).
+      throw new Error('OIDC token set carried no email claim');
+    }
     return {
       subject: claims.sub,
-      email: typeof claims.email === 'string' ? claims.email : '',
+      email: claims.email,
       emailVerified: claims.email_verified === true,
       displayName:
         typeof claims.name === 'string' && claims.name.length > 0
