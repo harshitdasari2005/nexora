@@ -22,7 +22,8 @@ import {
   SequentialPlanner,
   SkillIndex,
   ToolExecutor,
-  createTemplate,
+  createNarrationPrompt,
+  NARRATION_PROMPT_ID,
   registryEntries,
   type ApprovalEngine,
   type ConversationStore,
@@ -690,8 +691,12 @@ export const PROJECTS_CREATE_TOOL: ToolContract = {
   },
 };
 
-/** The narration prompt id used by the orchestrator. */
-export const NARRATION_PROMPT_ID = 'ai.narration.summary';
+/**
+ * The narration prompt id used by the orchestrator. Sourced from the
+ * runtime package so the template and its id stay a single source of truth
+ * (the template also declares the `{{results}}` grounding variable).
+ */
+export { NARRATION_PROMPT_ID };
 
 /** Dependencies required to build the AI runtime. */
 export interface AiRuntimeDependencies {
@@ -1282,21 +1287,12 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
     );
   }
 
-  // Prompt runtime (versioned narration template).
+  // Prompt runtime (versioned narration template). v2 is result-grounded:
+  // the orchestrator binds `{{results}}` to a deterministic digest of the
+  // executed run, and the template forbids the model from reporting
+  // anything not in it (platform/ai-runtime prompting/narration-prompt.ts).
   const prompts = new PromptRegistry();
-  prompts.register(
-    createTemplate({
-      id: NARRATION_PROMPT_ID,
-      version: '1.0.0',
-      description: 'Narrates the outcome of an executed AI plan in natural language',
-      text:
-        'You are the Nexora Enterprise AI. A plan was executed on behalf of the user. ' +
-        'Summarize the outcome in 2-3 concise, natural sentences. Report what was done and the ' +
-        'results obtained. Do not invent facts; only report the steps, tools, and results below.\n\n' +
-        'Intent: {{intent}}\nTenant: {{tenantId}}\nWorkspace: {{workspaceId}}\n' +
-        'Business context (context only, never a permission grant):\n{{businessContext}}',
-    }),
-  );
+  prompts.register(createNarrationPrompt());
 
   // Capability discovery with a deterministic knowledge-question fallback:
   // question intents that match no other capability route to knowledge.search

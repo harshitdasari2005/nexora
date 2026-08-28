@@ -46,7 +46,7 @@ import type { ApprovalEngine, ApprovalRequestRecord } from '../approval/engine.j
 import { RUNTIME_CONFIG_KEYS, runtimeSetting } from './options.js';
 import { buildDecisionRecord } from './decision.js';
 import { buildExecutionTrace, type TraceBuilder } from './trace.js';
-import { composeResponse } from './narration.js';
+import { composeResponse, renderResultsDigest } from './narration.js';
 import { TemplateRenderer } from '../prompting/prompt-renderer.js';
 import type { PromptTemplate, PromptVariables } from '../prompting/prompt-template.js';
 
@@ -467,17 +467,40 @@ export class EnterpriseAIOrchestrator {
     }
 
     try {
+      // The grounding payload: a deterministic, faithful transcript of what
+      // the run actually produced (verified tool outputs, retrieved sources
+      // with titles, approval gates, status). The prompt instructs the model
+      // to summarize ONLY this — it is the single channel of run facts into
+      // narration, so a provider cannot report anything the tools did not
+      // return.
+      const results = renderResultsDigest({ steps, approvals, status });
       const prompt = this.#prompts?.resolve(this.#narrationPromptId);
-      const system = prompt === undefined ? undefined : renderPrompt(prompt, context, plan);
+      const system =
+        prompt === undefined ? undefined : renderPrompt(prompt, context, plan, results);
       const messages = [
         ...(system === undefined ? [] : [{ role: 'system' as const, content: system }]),
         {
           role: 'user' as const,
-          content: `Summarize: ${request.utterance}`,
+          content:
+            `Report the outcome for this request, using only the RESULTS provided: ` +
+            `"${request.utterance}"`,
         },
       ];
-      const completion = await provider.chat.complete({ messages });
-      return completion.content;
+      // Low temperature + a tight cap: narration is a faithful restatement,
+      // not creative writing. Both nudge a small local model away from
+      // filling gaps.
+      const completion = await provider.chat.complete({
+        messages,
+        temperature: 0.2,
+        maxTokens: 320,
+      });
+      const content = completion.content.trim();
+      // A provider that returns nothing usable is a failure, not a valid
+      // empty narration — fall back to the deterministic composer.
+      if (content.length === 0) {
+        throw new Error('provider returned an empty narration');
+      }
+      return content;
     } catch (error) {
       this.#logger.warn('provider narration failed; falling back to deterministic', error);
       return composeResponse({ intent: request.utterance, plan, steps, approvals, status });
@@ -692,11 +715,22 @@ export class EnterpriseAIOrchestrator {
 
 const promptRenderer = new TemplateRenderer();
 
-function renderPrompt(prompt: PromptTemplate, context: AIContext, plan: ExecutionPlan): string {
+function renderPrompt(
+  prompt: PromptTemplate,
+  context: AIContext,
+  plan: ExecutionPlan,
+  results: string,
+): string {
   const variables: PromptVariables = {};
   for (const name of prompt.variables) {
     if (name === 'intent') {
       variables[name] = plan.intent;
+    } else if (name === 'results') {
+      // The deterministic digest of the executed run — the only channel of
+      // run facts into the model (see the narration prompt's grounding
+      // rules). Assembled server-side from step outcomes; the model can
+      // never influence it.
+      variables[name] = results;
     } else if (name === 'tenantId') {
       variables[name] = context.execution.tenantId;
     } else if (name === 'workspaceId') {

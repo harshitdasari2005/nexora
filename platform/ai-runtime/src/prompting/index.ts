@@ -5,6 +5,7 @@
  * rendering, and system prompt composition.
  */
 
+export * from './narration-prompt.js';
 export * from './prompt-registry.js';
 export * from './prompt-renderer.js';
 export * from './prompt-template.js';

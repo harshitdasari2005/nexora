@@ -76,17 +76,129 @@ export function composeResponse(input: NarrationInput): string {
  * cannot bloat the narration.
  */
 function renderOutput(output: unknown): string {
+  const described = describeOutput(output);
+  return described.length === 0 ? '' : ` — ${described}`;
+}
+
+/**
+ * The readable form of a single tool output, with no leading separator.
+ * Strings pass through (capped); the canonical retrieval shape
+ * (`{ references: [...] }`) becomes a cited line; anything else is capped
+ * JSON. Shared by the user-facing composer and the model-facing digest so
+ * both describe a result identically.
+ */
+function describeOutput(output: unknown): string {
   if (output === undefined || output === null) {
     return '';
   }
   if (typeof output === 'string') {
-    return ` — ${cap(output)}`;
+    return cap(output);
   }
   const retrieval = renderRetrieval(output);
   if (retrieval !== undefined) {
-    return ` — ${retrieval}`;
+    return retrieval;
   }
-  return ` — ${cap(JSON.stringify(output))}`;
+  return cap(JSON.stringify(output));
+}
+
+/** Inputs to {@link renderResultsDigest}. */
+export interface ResultsDigestInput {
+  /** Per-step outcomes, in execution order. */
+  steps: readonly StepOutcome[];
+  /** Approval gate outcomes. */
+  approvals: readonly ApprovalOutcome[];
+  /** The run status. */
+  status: string;
+}
+
+/** Per-output character budget inside the digest (larger than a snippet). */
+const DIGEST_OUTPUT_BUDGET = 1200;
+
+/**
+ * Renders a **deterministic, faithful digest of what the run actually
+ * produced** — the grounding payload handed to a model provider for
+ * narration (see `prompting/narration-prompt.js`).
+ *
+ * This is not prose and not a summary: it is a structured transcript of the
+ * executed steps, their verified tool outputs (retrieval results shown with
+ * their source titles), and the approval gates, plus the run status. The
+ * model is instructed to summarize ONLY this text, so the digest must
+ * contain every fact the answer may state and must not editorialize.
+ *
+ * Faithfulness rules:
+ * - No step output is fabricated or inferred; an empty output is reported
+ *   as empty, not omitted.
+ * - Raw failure messages are NOT included (they can carry internal detail —
+ *   the same reason the user-facing failure narrative stays generic). A
+ *   failed step is reported as "did not complete", which the prompt turns
+ *   into an honest "could not be determined".
+ * - A trailing NOTE is added when nothing substantive came back, so a
+ *   model with thin input is pushed toward "the data does not show ..."
+ *   rather than invention.
+ */
+export function renderResultsDigest(input: ResultsDigestInput): string {
+  const lines: string[] = [`Run status: ${input.status}`, ''];
+
+  if (input.steps.length === 0) {
+    lines.push('No tools were executed, so there are no results.');
+  }
+
+  let substantive = 0;
+  input.steps.forEach((step, index) => {
+    const n = index + 1;
+    if (step.status === 'succeeded') {
+      const verified = step.verified ? 'verified' : 'unverified';
+      const described = describeOutputForDigest(step.output);
+      if (described.length > 0) {
+        substantive += 1;
+        lines.push(`${n}. ${step.capabilityId} — succeeded (${verified})`);
+        for (const outputLine of described.split('\n')) {
+          lines.push(`   ${outputLine}`);
+        }
+      } else {
+        lines.push(`${n}. ${step.capabilityId} — succeeded (${verified}), but returned no data`);
+      }
+    } else if (step.status === 'blocked') {
+      lines.push(`${n}. ${step.capabilityId} — blocked, awaiting human approval; not executed`);
+    } else if (step.status === 'failed') {
+      lines.push(`${n}. ${step.capabilityId} — did not complete; no result was returned`);
+    } else {
+      lines.push(`${n}. ${step.capabilityId} — skipped; an earlier step did not complete`);
+    }
+  });
+
+  if (input.approvals.length > 0) {
+    lines.push('', 'Approval gates:');
+    for (const approval of input.approvals) {
+      const label = approval.capabilityId ?? approval.toolId;
+      lines.push(`- ${label} — ${approval.status} (${approval.sideEffectClass})`);
+    }
+  }
+
+  if (substantive === 0) {
+    lines.push(
+      '',
+      'NOTE: No substantive data was returned by any step. If the intent cannot be ' +
+        'answered from the above, say so explicitly and do not speculate.',
+    );
+  }
+
+  return lines.join('\n');
+}
+
+/** {@link describeOutput} with the digest's larger character budget. */
+function describeOutputForDigest(output: unknown): string {
+  if (typeof output === 'string') {
+    return truncate(output, DIGEST_OUTPUT_BUDGET);
+  }
+  const retrieval = renderRetrieval(output);
+  if (retrieval !== undefined) {
+    return retrieval;
+  }
+  if (output === undefined || output === null) {
+    return '';
+  }
+  return truncate(JSON.stringify(output), DIGEST_OUTPUT_BUDGET);
 }
 
 /** One retrieved knowledge reference, as tools emit it. */
