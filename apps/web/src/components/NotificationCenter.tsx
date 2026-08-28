@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge, Spinner, Stack, typography } from '@nexora/design-system';
 
+import { NavIcon } from './NavIcon.js';
 import { api, ApiError } from '../lib/api.js';
 import type { NotificationDto, NotificationPreferencesDto } from '../lib/types.js';
 
@@ -222,6 +223,7 @@ export function NotificationCenter({
       {/* Bell + unread badge */}
       <button
         type="button"
+        className="nexora-icon-btn"
         aria-label={unread > 0 ? `Notifications (${unread} unread)` : 'Notifications'}
         onClick={() => {
           setOpen((current) => !current);
@@ -229,33 +231,36 @@ export function NotificationCenter({
         }}
         style={{
           position: 'relative',
-          width: 36,
-          height: 36,
-          borderRadius: 10,
+          width: 34,
+          height: 34,
+          borderRadius: 8,
           border: '1px solid var(--nexora-border)',
-          background: 'var(--nexora-surfaceMuted)',
+          background: 'var(--nexora-surface)',
+          color: 'var(--nexora-textSecondary)',
           cursor: 'pointer',
-          fontSize: 15,
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
+          transition: 'background 120ms ease, border-color 120ms ease, color 120ms ease',
         }}
       >
-        🔔
+        <NavIcon name="bell" size={16} />
         {unread > 0 ? (
           <span
             style={{
               position: 'absolute',
-              top: -5,
-              right: -5,
-              minWidth: 17,
-              height: 17,
-              paddingInline: 4,
-              borderRadius: 9,
+              top: -6,
+              right: -6,
+              minWidth: 16,
+              height: 16,
+              paddingInline: 3,
+              borderRadius: 999,
               background: 'var(--nexora-danger)',
               color: '#fff',
               fontSize: 10,
-              fontWeight: 700,
+              fontWeight: 600,
+              lineHeight: 1,
+              border: '2px solid var(--nexora-shellTopbar, var(--nexora-surface))',
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -271,16 +276,17 @@ export function NotificationCenter({
         <div
           style={{
             position: 'absolute',
-            top: 44,
+            top: 'calc(100% + 8px)',
             right: 0,
             width: 380,
             maxHeight: '70vh',
             display: 'flex',
             flexDirection: 'column',
             background: 'var(--nexora-surface)',
-            border: '1px solid var(--nexora-borderStrong)',
-            borderRadius: 14,
-            boxShadow: '0 12px 40px rgba(0,0,0,0.16)',
+            border: '1px solid var(--nexora-border)',
+            borderRadius: 12,
+            boxShadow:
+              '0 12px 32px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.04)',
             overflow: 'hidden',
             zIndex: 40,
           }}
@@ -389,8 +395,32 @@ export function NotificationCenter({
                 </button>
               </div>
             ) : notifications.length === 0 ? (
-              <div style={{ padding: 28, textAlign: 'center' }}>
-                <div style={{ fontSize: 26, marginBottom: 8 }}>🔕</div>
+              <div
+                style={{
+                  padding: 32,
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 9,
+                    border: '1px solid var(--nexora-border)',
+                    background: 'var(--nexora-surfaceMuted)',
+                    color: 'var(--nexora-textMuted)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <NavIcon name="bell-off" size={15} />
+                </span>
                 <div
                   style={{ fontSize: typography.sizes.sm, fontWeight: typography.weights.medium }}
                 >
@@ -483,7 +513,8 @@ export function NotificationCenter({
                           style={{
                             marginLeft: 'auto',
                             fontSize: typography.sizes.xs,
-                            color: 'var(--nexora-primary)',
+                            fontWeight: typography.weights.medium,
+                            color: 'var(--nexora-link)',
                           }}
                         >
                           {notification.action.label} →
@@ -504,9 +535,10 @@ export function NotificationCenter({
 const linkButtonStyle: React.CSSProperties = {
   border: 'none',
   background: 'transparent',
-  color: 'var(--nexora-primary)',
+  color: 'var(--nexora-textSecondary)',
   fontSize: typography.sizes.xs,
+  fontWeight: typography.weights.medium,
   cursor: 'pointer',
   padding: 0,
-  textDecoration: 'underline',
+  textDecoration: 'none',
 };

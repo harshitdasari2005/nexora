@@ -214,7 +214,7 @@ export function RoleSwitcher({
             overflowY: 'auto',
             background: 'var(--nexora-shellCardElevated, var(--nexora-surface))',
             border: '1px solid var(--nexora-border)',
-            borderRadius: 14,
+            borderRadius: 12,
             boxShadow: elevation.lg,
             zIndex: 50,
           }}

@@ -1,8 +1,9 @@
 /**
  * @nexora/design-system — Avatar.
  *
- * An initials avatar (DESIGN_SYSTEM.md §8 identity components). The tone is
- * derived from the name so the same person always gets the same color.
+ * An initials avatar (DESIGN_SYSTEM.md §8 identity components). Monochrome
+ * by design — a neutral chip with a hairline ring — so a wall of people
+ * reads as one calm system rather than a bag of pastels.
  */
 
 import type { CSSProperties } from 'react';
@@ -15,16 +16,6 @@ export interface AvatarProps {
   /** Diameter in pixels (default `32`). */
   size?: number;
 }
-
-/** Deterministic pastel tones for avatars. */
-const AVATAR_TONES = [
-  { background: '#e0e7ff', color: '#4338ca' },
-  { background: '#fce7f3', color: '#be185d' },
-  { background: '#d1fae5', color: '#047857' },
-  { background: '#fef3c7', color: '#b45309' },
-  { background: '#e0e7ff', color: '#4f46e5' },
-  { background: '#fae8ff', color: '#a21caf' },
-] as const;
 
 /** Derives the initials of a name (up to two letters). */
 export function initialsOf(name: string): string {
@@ -39,8 +30,6 @@ export function initialsOf(name: string): string {
 
 /** Renders an initials avatar. */
 export function Avatar({ name, size = 32 }: AvatarProps): JSX.Element {
-  const hash = [...name].reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  const tone = AVATAR_TONES[hash % AVATAR_TONES.length] ?? AVATAR_TONES[0]!;
   const style: CSSProperties = {
     width: size,
     height: size,
@@ -50,8 +39,10 @@ export function Avatar({ name, size = 32 }: AvatarProps): JSX.Element {
     justifyContent: 'center',
     fontSize: size * 0.38,
     fontWeight: typography.weights.semibold,
-    background: tone.background,
-    color: tone.color,
+    letterSpacing: '0.01em',
+    background: 'var(--nexora-surfaceMuted)',
+    color: 'var(--nexora-textSecondary)',
+    border: '1px solid var(--nexora-border)',
     flexShrink: 0,
     userSelect: 'none',
   };

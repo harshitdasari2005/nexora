@@ -2,7 +2,9 @@
  * @nexora/design-system — form controls.
  *
  * Labeled inputs and selects with hint/error states (DESIGN_SYSTEM.md §8
- * forms; §10 error states).
+ * forms; §10 error states). Focus/hover states live in `GlobalStyles`
+ * (`.nexora-input`); the native select gets a hand-drawn chevron so it
+ * matches the input rather than the OS.
  */
 
 import type { CSSProperties, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
@@ -12,7 +14,7 @@ import { Stack } from './Stack.js';
 /** Base styling shared by inputs and selects. */
 const controlStyle: React.CSSProperties = {
   width: '100%',
-  height: 38,
+  height: 34,
   paddingInline: spacing[3],
   background: 'var(--nexora-surface)',
   border: '1px solid var(--nexora-borderStrong)',
@@ -22,6 +24,10 @@ const controlStyle: React.CSSProperties = {
   outline: 'none',
   transition: `border-color ${motion.duration.fast} ${motion.easing.standard}, box-shadow ${motion.duration.fast} ${motion.easing.standard}`,
 };
+
+/** A subtle down-chevron for native selects (data URI so no asset). */
+const SELECT_CHEVRON =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237d7d7d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
 
 /** Props of {@link Field}. */
 export interface FieldProps {
@@ -41,9 +47,15 @@ export interface FieldProps {
 export function Field({ label, hint, error, required, children }: FieldProps): JSX.Element {
   return (
     <Stack gap={1.5} stretch>
-      <label style={{ fontSize: typography.sizes.sm, fontWeight: typography.weights.medium }}>
+      <label
+        style={{
+          fontSize: typography.sizes.sm,
+          fontWeight: typography.weights.medium,
+          color: 'var(--nexora-text)',
+        }}
+      >
         {label}
-        {required ? <span style={{ color: 'var(--nexora-danger)' }}> *</span> : null}
+        {required ? <span style={{ color: 'var(--nexora-textMuted)' }}> *</span> : null}
       </label>
       {children}
       {error !== undefined ? (
@@ -66,13 +78,21 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 /** A styled text input. */
-export function Input({ invalid = false, style, ...rest }: InputProps): JSX.Element {
+export function Input({ invalid = false, className, style, ...rest }: InputProps): JSX.Element {
   const merged: CSSProperties = {
     ...controlStyle,
     borderColor: invalid ? 'var(--nexora-danger)' : undefined,
     ...style,
   };
-  return <input style={merged} {...rest} />;
+  return (
+    <input
+      className={['nexora-input', invalid ? 'nexora-input-invalid' : '', className]
+        .filter(Boolean)
+        .join(' ')}
+      style={merged}
+      {...rest}
+    />
+  );
 }
 
 /** Props of {@link Select}. */
@@ -82,14 +102,34 @@ export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 /** A styled native select. */
-export function Select({ invalid = false, style, children, ...rest }: SelectProps): JSX.Element {
+export function Select({
+  invalid = false,
+  className,
+  style,
+  children,
+  ...rest
+}: SelectProps): JSX.Element {
   const merged: CSSProperties = {
     ...controlStyle,
     borderColor: invalid ? 'var(--nexora-danger)' : undefined,
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    MozAppearance: 'none',
+    paddingRight: spacing[8],
+    backgroundImage: SELECT_CHEVRON,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: `right ${spacing[2.5]} center`,
+    cursor: 'pointer',
     ...style,
   };
   return (
-    <select style={merged} {...rest}>
+    <select
+      className={['nexora-input', invalid ? 'nexora-input-invalid' : '', className]
+        .filter(Boolean)
+        .join(' ')}
+      style={merged}
+      {...rest}
+    >
       {children}
     </select>
   );

@@ -106,6 +106,18 @@ export function GlobalStyles(): JSX.Element {
 .nexora-btn-ghost:not(:disabled):hover { background: var(--nexora-surfaceMuted); color: var(--nexora-text); }
 .nexora-btn-danger:not(:disabled):hover { filter: brightness(0.93); }
 .nexora-btn-danger:not(:disabled):active { filter: brightness(0.86); }
+.nexora-input::placeholder { color: var(--nexora-textMuted); }
+.nexora-input:hover:not(:focus):not(:disabled) { border-color: var(--nexora-text); }
+.nexora-input:focus {
+  border-color: var(--nexora-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nexora-ring) 16%, transparent);
+}
+.nexora-input:disabled { opacity: 0.55; cursor: not-allowed; }
+.nexora-input-invalid:focus {
+  border-color: var(--nexora-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nexora-danger) 16%, transparent);
+}
+.nexora-icon-btn:hover { background: var(--nexora-surfaceMuted) !important; color: var(--nexora-text) !important; border-color: var(--nexora-borderStrong) !important; }
 ${resetCss}`}
     </style>
   );

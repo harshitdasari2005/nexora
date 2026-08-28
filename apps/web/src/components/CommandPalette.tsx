@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { typography } from '@nexora/design-system';
 
+import { NavIcon, type IconName } from './NavIcon.js';
 import { api } from '../lib/api.js';
 import type {
   BusinessProblemDto,
@@ -41,7 +42,7 @@ export interface CommandPaletteProps {
 interface SearchResult {
   id: string;
   group: string;
-  icon: string;
+  icon: IconName;
   title: string;
   subtitle?: string;
   href: string;
@@ -137,10 +138,10 @@ export function CommandPalette({
           ...projects.projects
             .filter((p) => matches(p.name, trimmed))
             .slice(0, MAX_PER_GROUP)
-            .map((p) => ({
+            .map((p): SearchResult => ({
               id: `project_${p.id}`,
               group: 'Projects',
-              icon: '▤',
+              icon: 'projects',
               title: p.name,
               subtitle: p.status,
               href: `/app/projects${scopeSuffix}`,
@@ -148,10 +149,10 @@ export function CommandPalette({
           ...employees.employees
             .filter((e) => matches(e.name, trimmed))
             .slice(0, MAX_PER_GROUP)
-            .map((e) => ({
+            .map((e): SearchResult => ({
               id: `employee_${e.id}`,
               group: 'Employees',
-              icon: '⚕',
+              icon: 'employees',
               title: e.name,
               subtitle: e.status,
               href: `/app/employees${scopeSuffix}`,
@@ -159,10 +160,10 @@ export function CommandPalette({
           ...documents.documents
             .filter((d) => matches(d.title, trimmed))
             .slice(0, MAX_PER_GROUP)
-            .map((d) => ({
+            .map((d): SearchResult => ({
               id: `document_${d.id}`,
               group: 'Documents',
-              icon: '▤',
+              icon: 'documents',
               title: d.title,
               subtitle: d.status,
               href: `/app/documents${scopeSuffix}`,
@@ -170,10 +171,10 @@ export function CommandPalette({
           ...problems.problems
             .filter((p) => matches(p.title, trimmed))
             .slice(0, MAX_PER_GROUP)
-            .map((p) => ({
+            .map((p): SearchResult => ({
               id: `problem_${p.id}`,
               group: 'Problems',
-              icon: '⚠',
+              icon: 'problems',
               title: p.title,
               subtitle: `${p.severity} · ${p.status}`,
               href: `/app/problems${scopeSuffix}`,
@@ -181,18 +182,18 @@ export function CommandPalette({
           ...workflows.workflows
             .filter((w) => matches(w.definitionKey, trimmed))
             .slice(0, MAX_PER_GROUP)
-            .map((w) => ({
+            .map((w): SearchResult => ({
               id: `workflow_${w.id}`,
               group: 'Workflows',
-              icon: '⧉',
+              icon: 'workflows',
               title: w.definitionKey,
               subtitle: w.status,
               href: `/app/workflows${scopeSuffix}`,
             })),
-          ...knowledge.references.slice(0, MAX_PER_GROUP).map((r) => ({
+          ...knowledge.references.slice(0, MAX_PER_GROUP).map((r): SearchResult => ({
             id: `knowledge_${r.sourceId}`,
             group: 'Knowledge',
-            icon: '📚',
+            icon: 'knowledge',
             title: r.title,
             subtitle: r.snippet,
             href: `/app/knowledge${scopeSuffix}`,
@@ -260,11 +261,11 @@ export function CommandPalette({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(15, 15, 20, 0.45)',
+        background: 'var(--nexora-overlay)',
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'center',
-        paddingTop: '12vh',
+        paddingTop: '13vh',
         zIndex: 100,
       }}
     >
@@ -275,14 +276,14 @@ export function CommandPalette({
         onClick={(event) => event.stopPropagation()}
         style={{
           width: 560,
-          maxWidth: '90vw',
-          maxHeight: '65vh',
+          maxWidth: '92vw',
+          maxHeight: '62vh',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--nexora-surface)',
-          borderRadius: 16,
-          border: '1px solid var(--nexora-borderStrong)',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.28)',
+          borderRadius: 14,
+          border: '1px solid var(--nexora-border)',
+          boxShadow: '0 24px 48px rgba(0,0,0,0.14), 0 8px 16px rgba(0,0,0,0.06)',
           overflow: 'hidden',
         }}
       >
@@ -291,31 +292,39 @@ export function CommandPalette({
             display: 'flex',
             alignItems: 'center',
             gap: 10,
-            padding: '14px 18px',
+            padding: '13px 16px',
             borderBottom: '1px solid var(--nexora-border)',
           }}
         >
-          <span aria-hidden style={{ color: 'var(--nexora-textMuted)' }}>
-            ⌕
+          <span aria-hidden style={{ color: 'var(--nexora-textMuted)', display: 'inline-flex' }}>
+            <NavIcon name="search" size={16} />
           </span>
           <input
             ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search projects, employees, documents, problems, workflows, knowledge…"
+            placeholder="Search projects, people, documents, problems…"
             style={{
               flex: 1,
               border: 'none',
               outline: 'none',
               background: 'transparent',
-              fontSize: typography.sizes.base,
+              fontSize: typography.sizes.md,
               color: 'var(--nexora-text)',
             }}
           />
-          <span style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+          <kbd
+            style={{
+              fontSize: '11px',
+              color: 'var(--nexora-textMuted)',
+              border: '1px solid var(--nexora-border)',
+              borderRadius: 4,
+              padding: '1px 5px',
+            }}
+          >
             Esc
-          </span>
+          </kbd>
         </div>
 
         <div style={{ overflowY: 'auto', flex: 1 }}>
@@ -354,13 +363,15 @@ export function CommandPalette({
             </div>
           ) : (
             groups.map((group) => (
-              <div key={group}>
+              <div key={group} style={{ padding: '4px 8px' }}>
                 <div
                   style={{
-                    padding: '8px 18px 4px',
-                    fontSize: typography.sizes.xs,
+                    padding: '8px 10px 4px',
+                    fontSize: '11px',
                     color: 'var(--nexora-textMuted)',
-                    fontWeight: typography.weights.medium,
+                    fontWeight: typography.weights.semibold,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
                   }}
                 >
                   {group}
@@ -379,17 +390,24 @@ export function CommandPalette({
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 12,
+                          gap: 11,
                           width: '100%',
                           textAlign: 'left',
-                          padding: '10px 18px',
+                          padding: '9px 10px',
                           border: 'none',
-                          background: active ? 'var(--nexora-primarySoft)' : 'transparent',
+                          borderRadius: 8,
+                          background: active ? 'var(--nexora-surfaceMuted)' : 'transparent',
                           cursor: 'pointer',
                         }}
                       >
-                        <span aria-hidden style={{ width: 18, textAlign: 'center' }}>
-                          {result.icon}
+                        <span
+                          aria-hidden
+                          style={{
+                            display: 'inline-flex',
+                            color: active ? 'var(--nexora-text)' : 'var(--nexora-textMuted)',
+                          }}
+                        >
+                          <NavIcon name={result.icon} size={15} />
                         </span>
                         <span style={{ minWidth: 0, flex: 1 }}>
                           <div

@@ -25,42 +25,51 @@ export interface EmptyStateProps {
 /** Renders an empty-state panel. */
 export function EmptyState({ icon, title, description, action }: EmptyStateProps): JSX.Element {
   return (
-    <Stack gap={3} align="center" style={{ textAlign: 'center', padding: spacing[10] }}>
+    <Stack gap={3} align="center" style={{ textAlign: 'center', padding: `${spacing[10]} ${spacing[6]}` }}>
       {icon !== undefined ? (
         <span
           aria-hidden
           style={{
-            fontSize: '28px',
+            fontSize: '18px',
             lineHeight: 1,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 56,
-            height: 56,
-            borderRadius: '16px',
+            width: 40,
+            height: 40,
+            borderRadius: '10px',
             background: 'var(--nexora-surfaceMuted)',
+            border: '1px solid var(--nexora-border)',
+            color: 'var(--nexora-textMuted)',
           }}
         >
           {icon}
         </span>
       ) : null}
-      <Stack gap={1}>
-        <h3 style={{ fontSize: typography.sizes.md, fontWeight: typography.weights.semibold }}>
+      <Stack gap={1.5}>
+        <h3
+          style={{
+            fontSize: typography.sizes.base,
+            fontWeight: typography.weights.semibold,
+            letterSpacing: '-0.01em',
+          }}
+        >
           {title}
         </h3>
         {description !== undefined ? (
           <p
             style={{
               fontSize: typography.sizes.sm,
-              color: 'var(--nexora-textSecondary)',
-              maxWidth: 380,
+              color: 'var(--nexora-textMuted)',
+              maxWidth: 360,
+              lineHeight: typography.lineHeights.snug,
             }}
           >
             {description}
           </p>
         ) : null}
       </Stack>
-      {action !== undefined ? <div>{action}</div> : null}
+      {action !== undefined ? <div style={{ marginTop: spacing[1] }}>{action}</div> : null}
     </Stack>
   );
 }
