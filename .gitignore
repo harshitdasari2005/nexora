@@ -32,3 +32,11 @@ test-results/
 
 # Local infra volumes (docker compose)
 infrastructure/compose/.volumes/
+
+# Media editing masters — large source files that are NOT needed at build or
+# runtime (the derived, size-optimized assets under apps/web/public/media/
+# ARE committed because the app serves them). Keep media-source/README.md
+# tracked so the regeneration steps stay in the repo.
+apps/web/media-source/*.mp4
+apps/web/media-source/*.mov
+apps/web/media-source/*.webm

@@ -1,0 +1,20 @@
+# Normalize line endings for text; leave binaries alone.
+* text=auto eol=lf
+
+# Media assets are binary — never try to diff or merge them, and don't let
+# an editor's line-ending rules touch them. If the committed set under
+# apps/web/public/media/ grows, move these globs to Git LFS.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.mp4 binary
+*.webm binary
+*.mov binary
+*.woff binary
+*.woff2 binary
+
+# Generated/lockfiles: keep them out of diffs by default.
+pnpm-lock.yaml -diff linguist-generated
