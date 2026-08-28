@@ -71,8 +71,9 @@ export function composeResponse(input: NarrationInput): string {
 /**
  * Renders a step output as a compact, explainable appendix (AIX-11: the AI
  * must surface what it actually did). The runtime stays generic — output is
- * serialized as-is; only strings are inlined. Serialization is capped so a
- * large tool output cannot bloat the narration.
+ * serialized as-is; only strings and the canonical retrieval shape are
+ * given a readable form. Serialization is capped so a large tool output
+ * cannot bloat the narration.
  */
 function renderOutput(output: unknown): string {
   if (output === undefined || output === null) {
@@ -81,10 +82,68 @@ function renderOutput(output: unknown): string {
   if (typeof output === 'string') {
     return ` — ${cap(output)}`;
   }
+  const retrieval = renderRetrieval(output);
+  if (retrieval !== undefined) {
+    return ` — ${retrieval}`;
+  }
   return ` — ${cap(JSON.stringify(output))}`;
+}
+
+/** One retrieved knowledge reference, as tools emit it. */
+interface RetrievedReference {
+  title?: unknown;
+  snippet?: unknown;
+}
+
+/** How many cited sources are named before the rest are summarized. */
+const MAX_CITED_SOURCES = 3;
+
+/** Per-snippet character budget in the narration. */
+const SNIPPET_BUDGET = 240;
+
+/**
+ * Renders the canonical retrieval output (`{ references: [...] }`) as a
+ * readable, cited answer instead of a raw JSON dump.
+ *
+ * This is deterministic grounding, not generation: the text shown is the
+ * retrieved snippet verbatim, attributed to its source title, so the answer
+ * can always be traced to the document it came from (AIX-11). Nothing is
+ * summarized or inferred — retrieval already ran permission-filtered and
+ * workspace-scoped, and this only formats what it returned.
+ *
+ * Returns `undefined` when the output is not a retrieval result, so every
+ * other tool keeps the generic JSON rendering.
+ */
+function renderRetrieval(output: unknown): string | undefined {
+  if (typeof output !== 'object' || output === null || !('references' in output)) {
+    return undefined;
+  }
+  const raw = (output as { references: unknown }).references;
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  if (raw.length === 0) {
+    return 'no matching knowledge found in the documents you can access';
+  }
+
+  const cited = raw.slice(0, MAX_CITED_SOURCES).map((reference) => {
+    const { title, snippet } = reference as RetrievedReference;
+    const label = typeof title === 'string' && title.length > 0 ? title : 'Untitled source';
+    const body = typeof snippet === 'string' ? snippet.trim() : '';
+    return body.length === 0 ? `“${label}”` : `“${label}”: ${truncate(body, SNIPPET_BUDGET)}`;
+  });
+
+  const remaining = raw.length - cited.length;
+  const more = remaining > 0 ? ` (+${remaining} more source${remaining === 1 ? '' : 's'})` : '';
+  return `${cited.join(' · ')}${more}`;
 }
 
 /** Truncates a serialized value for narration (400 chars). */
 function cap(value: string): string {
-  return value.length > 400 ? `${value.slice(0, 400)}…` : value;
+  return truncate(value, 400);
+}
+
+/** Truncates to a character budget, marking the cut with an ellipsis. */
+function truncate(value: string, budget: number): string {
+  return value.length > budget ? `${value.slice(0, budget)}…` : value;
 }
