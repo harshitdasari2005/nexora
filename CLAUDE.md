@@ -18,17 +18,17 @@ Twelve specification documents at the repo root are the source of truth (`PRD.md
 
 The specs describe the full vision; the code is well past MVP but far from all of it. Quick map:
 
-| Area | State |
-| --- | --- |
-| `apps/api` (Fastify modular monolith), `apps/web` (Vite/React SPA) | Real, primary |
-| Auth (Keycloak OIDC + cookie session), RBAC (S34 authoritative — `business-context/permissions.ts`) | Real |
-| Persistence: Postgres via Drizzle, migrations `0000`–`0018` | Real |
-| AI runtime: orchestrator, discovery, planner, durable approval engine, workflow engine | Real |
-| Registered agents: Workspaces, Projects, HR, Knowledge, Notifications, Calendar, Finance, Workflow | Real |
-| MCP server (stdio + authenticated HTTP), external connectors (GitHub, Slack) | Real |
-| Verticals: HR, Projects, Documents, Knowledge, Calendar, Finance, Command Center, detection/problems, remediation, marketplace, integrations, audit views | Real |
-| `domains/`: crm, sales, inventory, procurement, analytics, administration, marketplace | **Stub** (one-line `index.ts`) — later `ROADMAP.md` sprints |
-| `apps/admin`, `apps/docs` | Scaffold only |
+| Area                                                                                                                                                      | State                                                       |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `apps/api` (Fastify modular monolith), `apps/web` (Vite/React SPA)                                                                                        | Real, primary                                               |
+| Auth (Keycloak OIDC + cookie session), RBAC (S34 authoritative — `business-context/permissions.ts`)                                                       | Real                                                        |
+| Persistence: Postgres via Drizzle, migrations `0000`–`0018`                                                                                               | Real                                                        |
+| AI runtime: orchestrator, discovery, planner, durable approval engine, workflow engine                                                                    | Real                                                        |
+| Registered agents: Workspaces, Projects, HR, Knowledge, Notifications, Calendar, Finance, Workflow                                                        | Real                                                        |
+| MCP server (stdio + authenticated HTTP), external connectors (GitHub, Slack)                                                                              | Real                                                        |
+| Verticals: HR, Projects, Documents, Knowledge, Calendar, Finance, Command Center, detection/problems, remediation, marketplace, integrations, audit views | Real                                                        |
+| `domains/`: crm, sales, inventory, procurement, analytics, administration, marketplace                                                                    | **Stub** (one-line `index.ts`) — later `ROADMAP.md` sprints |
+| `apps/admin`, `apps/docs`                                                                                                                                 | Scaffold only                                               |
 
 `git log` HEAD is `feat(s34)`; the working tree typically carries later uncommitted sprint work.
 `pnpm typecheck` / `pnpm lint` / `pnpm test` (~1,300 tests) are the gates — keep them green.
@@ -97,13 +97,13 @@ Fastify process wiring all modules).
 
 ### Layer / package layout
 
-| Tree | Package name pattern | Role & allowed dependencies |
-| --- | --- | --- |
-| `domains/<ctx>/src` | `@nexora/domain-<ctx>` | Pure bounded-context core: entities, aggregates, value objects, domain events, repository **interfaces**, domain services/policies. Depends only on `@nexora/contracts` and `@nexora/shared`. No persistence, HTTP, or infra. (16 contexts: hr, identity, organizations, workspaces, projects, documents, knowledge, calendar, finance, crm, sales, inventory, procurement, analytics, administration, marketplace.) |
-| `domains/<ctx>/application` | `@nexora/application-<ctx>` | Use-case layer: command/query handlers, DTOs, validators orchestrating the domain core. No persistence/HTTP/infra. Only some contexts have this layer so far. |
-| `platform/<cap>` | `@nexora/module-<cap>` (also `@nexora/ai-runtime`, `@nexora/connectors`, `@nexora/mcp`) | Platform capabilities: workflow, event-bus, policy, search, notifications, measurements, configuration, observability, command-center, integrations, agents, detection, remediation, domains, plus the AI runtime. |
-| `packages/*` | `@nexora/<name>` | Shared libs — see below. |
-| `apps/*` | `@nexora/app-<name>` | Executables: `app-api`, `app-web`; `app-admin` and `app-docs` are scaffold only. |
+| Tree                        | Package name pattern                                                                    | Role & allowed dependencies                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domains/<ctx>/src`         | `@nexora/domain-<ctx>`                                                                  | Pure bounded-context core: entities, aggregates, value objects, domain events, repository **interfaces**, domain services/policies. Depends only on `@nexora/contracts` and `@nexora/shared`. No persistence, HTTP, or infra. (16 contexts: hr, identity, organizations, workspaces, projects, documents, knowledge, calendar, finance, crm, sales, inventory, procurement, analytics, administration, marketplace.) |
+| `domains/<ctx>/application` | `@nexora/application-<ctx>`                                                             | Use-case layer: command/query handlers, DTOs, validators orchestrating the domain core. No persistence/HTTP/infra. Only some contexts have this layer so far.                                                                                                                                                                                                                                                        |
+| `platform/<cap>`            | `@nexora/module-<cap>` (also `@nexora/ai-runtime`, `@nexora/connectors`, `@nexora/mcp`) | Platform capabilities: workflow, event-bus, policy, search, notifications, measurements, configuration, observability, command-center, integrations, agents, detection, remediation, domains, plus the AI runtime.                                                                                                                                                                                                   |
+| `packages/*`                | `@nexora/<name>`                                                                        | Shared libs — see below.                                                                                                                                                                                                                                                                                                                                                                                             |
+| `apps/*`                    | `@nexora/app-<name>`                                                                    | Executables: `app-api`, `app-web`; `app-admin` and `app-docs` are scaffold only.                                                                                                                                                                                                                                                                                                                                     |
 
 Legacy hexagonal sub-dirs inside domains (`api/`, `ai/`, `infrastructure/`, `contracts/`) are
 mostly `.gitkeep` placeholders per `ENGINEERING_PLAYBOOK.md §3.3`; real code lives in `src/` and
@@ -149,13 +149,14 @@ Keycloak (:8080, `nexora` realm imported at startup). When `S3_ENDPOINT` is unse
 back to in-memory document storage.
 
 **AI narration provider** (`AI_PROVIDER`): planning/tool-selection/approval-gating is always
-deterministic — a model is used *only* to phrase the final answer, so `AI_PROVIDER` is purely a
+deterministic — a model is used _only_ to phrase the final answer, so `AI_PROVIDER` is purely a
 data-residency choice for that one call. `none` (default) → deterministic composer, nothing leaves
 the process. `local` → any self-hosted OpenAI-compatible endpoint (`AI_BASE_URL`, e.g. Ollama on
 `http://localhost:11434/v1`); prompt content stays in-network. `groq` → hosted Groq API
 (`GROQ_API_KEY`). Legacy: a bare `GROQ_API_KEY` with no `AI_PROVIDER` still selects `groq`. Config
-+ validation in `apps/api/src/config.ts` (`loadAiConfig`); adapters share one transport
-(`platform/ai-runtime/src/adapters/openai-compatible-transport.ts`).
+
+- validation in `apps/api/src/config.ts` (`loadAiConfig`); adapters share one transport
+  (`platform/ai-runtime/src/adapters/openai-compatible-transport.ts`).
 
 ## Conventions
 

@@ -32,7 +32,9 @@ describe('resolveAiProvider', () => {
   });
 
   it('lets an explicit AI_PROVIDER override a stray legacy key', () => {
-    expect(resolveAiProvider(env({ AI_PROVIDER: 'none', GROQ_API_KEY: 'gsk_legacy' }))).toBe('none');
+    expect(resolveAiProvider(env({ AI_PROVIDER: 'none', GROQ_API_KEY: 'gsk_legacy' }))).toBe(
+      'none',
+    );
   });
 
   it('rejects an unknown provider', () => {

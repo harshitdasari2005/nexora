@@ -34,7 +34,8 @@ describe('composeResponse — retrieval rendering', () => {
           references: [
             {
               title: 'Mobile Banking Project Plan',
-              snippet: 'The Mobile Banking project deadline is June 30. The launch window opens in May.',
+              snippet:
+                'The Mobile Banking project deadline is June 30. The launch window opens in May.',
             },
           ],
         }),
