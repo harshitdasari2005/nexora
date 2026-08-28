@@ -13,10 +13,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { OidcIdentity } from '../src/oidc/gateway.js';
 
 import type { FakeUserRepository } from './fakes.js';
-import { FakeOidcGateway } from './fakes.js';
+import { MultiIdentityGateway } from './fakes.js';
 import {
   buildTestApp,
   currentUserId,
@@ -46,26 +45,6 @@ async function chat(client: ChatClient, body: Record<string, unknown>) {
   const events = parseSse(raw.body as string);
   const done = events.find((event) => event.event === 'done')?.data as KnowledgeDonePayload;
   return { raw, events, done };
-}
-
-/**
- * A gateway that issues sessions for each identity in turn, enabling two
- * distinct users inside one app instance (for cross-user authorization).
- */
-class MultiIdentityGateway extends FakeOidcGateway {
-  readonly #identities: readonly OidcIdentity[];
-  #index = 0;
-
-  constructor(identities: readonly OidcIdentity[]) {
-    super(identities[0]);
-    this.#identities = identities;
-  }
-
-  override async exchangeCode(): Promise<OidcIdentity> {
-    const identity = this.#identities[this.#index % this.#identities.length]!;
-    this.#index += 1;
-    return identity;
-  }
 }
 
 /** A knowledge-test client with TWO logged-in users (alice + bob). */

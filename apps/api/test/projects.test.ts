@@ -4,9 +4,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { OidcIdentity } from '../src/oidc/gateway.js';
 
-import { FakeOidcGateway } from './fakes.js';
+import { MultiIdentityGateway } from './fakes.js';
 import type { FakeProjectRepository } from './fakes.js';
 import {
   buildTestApp,
@@ -16,23 +15,6 @@ import {
   seedProject,
   type ChatClient,
 } from './helpers.js';
-
-/** A gateway that issues sessions for each identity in turn. */
-class MultiIdentityGateway extends FakeOidcGateway {
-  readonly #identities: readonly OidcIdentity[];
-  #index = 0;
-
-  constructor(identities: readonly OidcIdentity[]) {
-    super(identities[0]);
-    this.#identities = identities;
-  }
-
-  override async exchangeCode(): Promise<OidcIdentity> {
-    const identity = this.#identities[this.#index % this.#identities.length]!;
-    this.#index += 1;
-    return identity;
-  }
-}
 
 /** POST /api/projects as a second logged-in user (bob). */
 async function postAs(

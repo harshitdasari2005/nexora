@@ -1174,13 +1174,7 @@ export class MultiIdentityGateway extends FakeOidcGateway {
     this.#identities = identities;
   }
 
-  override async exchangeCode(
-    params: OidcCallbackParams,
-    expectedState: string,
-    codeVerifier: string,
-  ): Promise<OidcIdentity> {
-    this.exchangedStates.push(expectedState);
-    this.exchangedVerifiers.push(codeVerifier);
+  override async exchangeCode(): Promise<OidcIdentity> {
     const identity = this.#identities[this.#index % this.#identities.length]!;
     this.#index += 1;
     return identity;

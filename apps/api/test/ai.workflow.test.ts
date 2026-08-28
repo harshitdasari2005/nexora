@@ -17,9 +17,8 @@ import { describe, expect, it } from 'vitest';
 import type { ResourceAssignment } from '@nexora/domain-projects';
 import type { OrganizationId } from '@nexora/domain-organizations';
 import type { WorkflowInstance, WorkflowStepExecution } from '@nexora/module-workflow';
-import type { OidcIdentity } from '../src/oidc/gateway.js';
 
-import { FakeOidcGateway } from './fakes.js';
+import { MultiIdentityGateway } from './fakes.js';
 import type {
   FakeProjectRepository,
   FakeResourceAssignmentRepository,
@@ -84,26 +83,6 @@ async function seedSarah(client: ChatClient, organizationId: string): Promise<vo
     organizationId,
     name: 'Sarah Chen',
   });
-}
-
-/**
- * A gateway that issues sessions for each identity in turn, enabling two
- * distinct users inside one app instance (for cross-user authorization).
- */
-class MultiIdentityGateway extends FakeOidcGateway {
-  readonly #identities: readonly OidcIdentity[];
-  #index = 0;
-
-  constructor(identities: readonly OidcIdentity[]) {
-    super(identities[0]);
-    this.#identities = identities;
-  }
-
-  override async exchangeCode(): Promise<OidcIdentity> {
-    const identity = this.#identities[this.#index % this.#identities.length]!;
-    this.#index += 1;
-    return identity;
-  }
 }
 
 /** A workflow-test client with TWO logged-in users (alice + bob). */

@@ -25,29 +25,7 @@ import {
   seedWorkspaceMembership,
   type ChatClient,
 } from './helpers.js';
-import { FakeOidcGateway } from './fakes.js';
-import type { OidcIdentity } from '../src/oidc/gateway.js';
-
-/**
- * A gateway that issues sessions for each identity in turn, so one app
- * instance can hold two distinct users (needed for segregation-of-duties:
- * the submitter of an expense can never be its approver — PRD §14.3.3).
- */
-class MultiIdentityGateway extends FakeOidcGateway {
-  readonly #identities: readonly OidcIdentity[];
-  #index = 0;
-
-  constructor(identities: readonly OidcIdentity[]) {
-    super(identities[0]);
-    this.#identities = identities;
-  }
-
-  override async exchangeCode(): Promise<OidcIdentity> {
-    const identity = this.#identities[this.#index % this.#identities.length]!;
-    this.#index += 1;
-    return identity;
-  }
-}
+import { FakeOidcGateway, MultiIdentityGateway } from './fakes.js';
 
 /**
  * Onboards a `finance` workspace with TWO members that both resolve to

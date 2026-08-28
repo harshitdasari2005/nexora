@@ -14,9 +14,8 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ResourceAssignment } from '@nexora/domain-projects';
-import type { OidcIdentity } from '../src/oidc/gateway.js';
 
-import { FakeOidcGateway } from './fakes.js';
+import { MultiIdentityGateway } from './fakes.js';
 import type {
   FakeEmployeeRepository,
   FakeProjectRepository,
@@ -68,26 +67,6 @@ interface WorkflowClient extends ChatClient {
   bob: string;
   /** GET with bob's session. */
   getAsBob(path: string): Promise<{ statusCode: number; json: () => unknown }>;
-}
-
-/**
- * A gateway that issues sessions for each identity in turn, enabling two
- * distinct users inside one app instance (for cross-user authorization).
- */
-class MultiIdentityGateway extends FakeOidcGateway {
-  readonly #identities: readonly OidcIdentity[];
-  #index = 0;
-
-  constructor(identities: readonly OidcIdentity[]) {
-    super(identities[0]);
-    this.#identities = identities;
-  }
-
-  override async exchangeCode(): Promise<OidcIdentity> {
-    const identity = this.#identities[this.#index % this.#identities.length]!;
-    this.#index += 1;
-    return identity;
-  }
 }
 
 /** Builds the app with two identities (alice owns the org, bob does not). */
