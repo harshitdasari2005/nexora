@@ -9,10 +9,8 @@ import { renderToString } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 
 import { Landing } from '../src/pages/Landing.js';
-import { Login } from '../src/pages/Login.js';
 import { DashboardView } from '../src/pages/Dashboard.js';
 import { OrganizationWizard } from '../src/pages/onboarding/OrganizationWizard.js';
-import { SessionProvider } from '../src/session.js';
 import type { DashboardResponse } from '../src/lib/types.js';
 
 function dashboardData(): DashboardResponse {
@@ -59,39 +57,22 @@ describe('Landing', () => {
     expect(html).toContain('Nexora');
   });
 
-  // S38 regression guard: every entry point into the sign-in flow must
-  // still target the actual `/login` route registered in App.tsx — this is
-  // exactly the class of defect ("route renamed/removed during a visual
-  // pass") the reported regression described. S43 rebuilt Landing around a
-  // header "Sign in" + header "Get started" (the primary action, always
-  // reachable without scrolling the cinematic corridor) + the fallback
-  // pane's own "Get started" — this test renders with no `window` (this
-  // suite's Node environment), so `Landing` falls back to its single
-  // static pane: 3 entry points total.
-  it('every sign-in entry point links to /login', () => {
+  // Regression guard: every entry point into the sign-in flow must go
+  // STRAIGHT to the identity provider (`/api/auth/login`) — there is no
+  // in-app `/login` screen. This is the "route renamed/removed during a
+  // visual pass" class of defect. Landing has a header "Sign in" + header
+  // "Get started" + the fallback pane's "Get started"; this suite renders
+  // with no `window`, so Landing falls back to its single static pane:
+  // 3 entry points total.
+  it('every sign-in entry point goes straight to the identity provider', () => {
     const html = renderToString(
       <MemoryRouter>
         <Landing />
       </MemoryRouter>,
     );
-    const hrefCount = (html.match(/href="\/login"/g) ?? []).length;
+    expect(html).not.toContain('href="/login"');
+    const hrefCount = (html.match(/href="\/api\/auth\/login"/g) ?? []).length;
     expect(hrefCount).toBe(3);
-  });
-});
-
-describe('Login', () => {
-  it('renders the SSO redirect state (no intermediate "continue" card)', () => {
-    const html = renderToString(
-      <MemoryRouter>
-        <SessionProvider>
-          <Login />
-        </SessionProvider>
-      </MemoryRouter>,
-    );
-    // The page redirects straight to the identity provider; the only thing
-    // rendered is a brief "redirecting" notice, never a "Continue with SSO" step.
-    expect(html).toContain('Taking you to your organization');
-    expect(html).not.toContain('Continue with SSO');
   });
 });
 

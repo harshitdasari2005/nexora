@@ -32,7 +32,6 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
 import { Badge, Button, Stack, typography } from '@nexora/design-system';
 
 import { CinematicJourney, type CinematicSource } from '../components/CinematicJourney.js';
@@ -78,7 +77,6 @@ function resolveTier(): Tier {
 
 /** The public landing page. */
 export function Landing(): JSX.Element {
-  const navigate = useNavigate();
   const [transitioning, setTransitioning] = useState(false);
   const timeoutRef = useRef<number | undefined>(undefined);
 
@@ -167,6 +165,12 @@ export function Landing(): JSX.Element {
 
   useEffect(() => () => window.clearTimeout(timeoutRef.current), []);
 
+  // Both "Get started" and "Sign in" take the user STRAIGHT to the identity
+  // provider (`/api/auth/login`) — a full-page navigation, no in-app
+  // sign-in screen in between. The plain anchor `href` is the real target
+  // (works with JS disabled); `goToLogin` only intercepts a plain click to
+  // play the cinematic fade-out before the redirect.
+  const SSO_LOGIN_URL = '/api/auth/login';
   const goToLogin = useCallback(
     (event: React.MouseEvent<HTMLAnchorElement>) => {
       // Preserve modifier-key / middle-click "open in new tab" — only
@@ -183,19 +187,22 @@ export function Landing(): JSX.Element {
       }
       event.preventDefault();
       if (reducedMotion()) {
-        navigate('/login');
+        window.location.assign(SSO_LOGIN_URL);
         return;
       }
       setTransitioning(true);
-      timeoutRef.current = window.setTimeout(() => navigate('/login'), TRANSITION_MS);
+      timeoutRef.current = window.setTimeout(
+        () => window.location.assign(SSO_LOGIN_URL),
+        TRANSITION_MS,
+      );
     },
-    [navigate],
+    [],
   );
 
   const cta = (size: 'sm' | 'lg' = 'lg'): JSX.Element => (
-    <Link to="/login" onClick={goToLogin}>
+    <a href={SSO_LOGIN_URL} onClick={goToLogin} style={{ textDecoration: 'none' }}>
       <Button size={size}>Get started</Button>
-    </Link>
+    </a>
   );
 
   // Readability over live footage, applied only where the video actually
@@ -283,8 +290,8 @@ export function Landing(): JSX.Element {
           </span>
         </div>
         <Stack direction="row" gap={4} align="center">
-          <Link
-            to="/login"
+          <a
+            href={SSO_LOGIN_URL}
             onClick={goToLogin}
             style={{
               color: 'var(--nexora-textSecondary)',
@@ -293,7 +300,7 @@ export function Landing(): JSX.Element {
             }}
           >
             Sign in
-          </Link>
+          </a>
           {cta('sm')}
         </Stack>
       </header>

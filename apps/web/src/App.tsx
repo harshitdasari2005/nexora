@@ -2,13 +2,13 @@
  * @nexora/app-web — application routes.
  *
  * The onboarding flow (FRONTEND.md §3 information architecture): Landing →
- * Login (SSO) → Organization wizard → Workspace wizard → Dashboard.
+ * identity provider (Keycloak SSO, via `/api/auth/login` — no in-app
+ * sign-in screen) → Organization wizard → Workspace wizard → Dashboard.
  */
 
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
 import { Landing } from './pages/Landing.js';
-import { Login } from './pages/Login.js';
 import { OrganizationWizard } from './pages/onboarding/OrganizationWizard.js';
 import { WorkspaceWizard } from './pages/onboarding/WorkspaceWizard.js';
 import { Dashboard } from './pages/Dashboard.js';
@@ -37,7 +37,6 @@ export function App(): JSX.Element {
       <SessionProvider>
         <Routes>
           <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
           <Route
             path="/onboarding/organization"
             element={

@@ -8,7 +8,6 @@
  */
 
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 import { ErrorState } from './components/ErrorState.js';
 import { LoadingScreen } from './components/LoadingScreen.js';
@@ -48,18 +47,18 @@ export function useSession(): Session {
 /** Gates a protected route behind an authenticated session. */
 export function RequireAuth({ children }: { children: ReactNode }): JSX.Element {
   const { data, loading, error, reload } = useSession();
-  const navigate = useNavigate();
 
-  // Redirect to login when the session resolves to "not authenticated" —
-  // either an explicit 401 OR a completed load that produced no session and
-  // no error (a resolved-but-empty state must never hang on a spinner).
+  // When the session resolves to "not authenticated" — an explicit 401 OR a
+  // completed load with no session and no error — send the browser STRAIGHT
+  // to the identity provider (a full-page navigation, no in-app sign-in
+  // screen). A resolved-but-empty state must never hang on a spinner.
   const unauthenticated =
     !loading && ((error?.isUnauthorized ?? false) || (error === null && data === null));
   useEffect(() => {
     if (unauthenticated) {
-      navigate('/login', { replace: true });
+      window.location.assign('/api/auth/login');
     }
-  }, [unauthenticated, navigate]);
+  }, [unauthenticated]);
 
   if (loading) {
     return <LoadingScreen />;
@@ -70,8 +69,8 @@ export function RequireAuth({ children }: { children: ReactNode }): JSX.Element 
     return <ErrorState message={error.message} onRetry={() => void reload()} />;
   }
   if (data === null) {
-    // Unauthenticated (or resolved-empty): the effect above is navigating to
-    // /login — render nothing rather than an indefinite spinner.
+    // Unauthenticated (or resolved-empty): the effect above is redirecting
+    // to the IdP — render the loader, not an indefinite spinner state.
     return <LoadingScreen />;
   }
   return <>{children}</>;
