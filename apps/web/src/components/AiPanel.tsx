@@ -11,7 +11,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Avatar, Button, motion, radius, spacing, typography } from '@nexora/design-system';
+import type { CSSProperties } from 'react';
+import { Button, radius, spacing, typography } from '@nexora/design-system';
 
 import {
   decideApproval,
@@ -23,6 +24,42 @@ import {
 import { humanizeIdentifier } from '../lib/humanize.js';
 import { resolvePersonaForRole } from '../lib/rolePersonas.js';
 import { useRoleTheme } from '../lib/RoleThemeContext.js';
+import { NavIcon } from './NavIcon.js';
+
+/** The small caps eyebrow used on the panel's inline cards. */
+const CARD_EYEBROW: CSSProperties = {
+  fontSize: '11px',
+  fontWeight: typography.weights.semibold,
+  textTransform: 'uppercase',
+  letterSpacing: typography.tracking.caps,
+  color: 'var(--nexora-textMuted)',
+};
+
+/** A 6px status dot for a workflow step (succeeded / failed / running). */
+function StepStatusDot({ status }: { status: string }): JSX.Element {
+  const color =
+    status === 'succeeded'
+      ? 'var(--nexora-success)'
+      : status === 'failed'
+        ? 'var(--nexora-danger)'
+        : 'var(--nexora-textMuted)';
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 6,
+        height: 6,
+        flexShrink: 0,
+        borderRadius: radius.full,
+        background: color,
+        animation:
+          status !== 'succeeded' && status !== 'failed'
+            ? 'nexora-pulse 1.4s ease-in-out infinite'
+            : 'none',
+      }}
+    />
+  );
+}
 
 /** A rendered message in the panel. */
 export interface PanelMessage {
@@ -269,28 +306,34 @@ export function AiPanel({
         <span
           aria-hidden
           style={{
-            width: 30,
-            height: 30,
+            width: 28,
+            height: 28,
             borderRadius: radius.md,
-            background: 'linear-gradient(135deg, #6366f1, #7c3aed)',
-            color: '#fff',
+            background: 'var(--nexora-text)',
+            color: 'var(--nexora-bg)',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 15,
+            flexShrink: 0,
           }}
         >
-          ✦
+          <NavIcon name="sparkles" size={15} />
         </span>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.sm }}>
+          <div
+            style={{
+              fontWeight: typography.weights.semibold,
+              fontSize: typography.sizes.sm,
+              letterSpacing: '-0.01em',
+            }}
+          >
             Nexora AI
           </div>
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: spacing[1],
+              gap: spacing[1.5],
               fontSize: typography.sizes.xs,
               color: streaming ? 'var(--nexora-ai)' : 'var(--nexora-textMuted)',
             }}
@@ -302,6 +345,7 @@ export function AiPanel({
                 height: 6,
                 borderRadius: radius.full,
                 background: streaming ? 'var(--nexora-ai)' : 'var(--nexora-textMuted)',
+                animation: streaming ? 'nexora-pulse 1.4s ease-in-out infinite' : 'none',
               }}
             />
             {streaming ? 'Working…' : 'Enterprise AI'}
@@ -417,6 +461,7 @@ export function AiPanel({
         <textarea
           id="nexora-ai-input"
           name="message"
+          className="nexora-input"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
@@ -432,22 +477,16 @@ export function AiPanel({
           style={{
             flex: 1,
             resize: 'none',
-            minHeight: 38,
+            minHeight: 36,
             maxHeight: 120,
-            padding: '9px 12px',
-            background: 'var(--nexora-surfaceMuted)',
+            padding: '8px 12px',
+            background: 'var(--nexora-surface)',
             border: '1px solid var(--nexora-borderStrong)',
-            borderRadius: radius.lg,
-            fontSize: typography.sizes.base,
+            borderRadius: radius.md,
+            fontSize: typography.sizes.sm,
             color: 'var(--nexora-text)',
             outline: 'none',
-            transition: `border-color ${motion.duration.fast} ${motion.easing.standard}`,
-          }}
-          onFocus={(event) => {
-            event.currentTarget.style.borderColor = 'var(--nexora-primary)';
-          }}
-          onBlur={(event) => {
-            event.currentTarget.style.borderColor = 'var(--nexora-borderStrong)';
+            transition: 'border-color 140ms ease, box-shadow 140ms ease',
           }}
         />
         <Button type="submit" disabled={streaming || draft.trim().length === 0} size="sm">
@@ -487,11 +526,34 @@ function MessageBubble({
             display: 'flex',
             alignItems: 'center',
             gap: spacing[2],
-            marginBottom: spacing[1],
+            marginBottom: spacing[1.5],
           }}
         >
-          <Avatar name="Nexora AI" size={22} />
-          <span style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+          <span
+            aria-hidden
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: radius.sm,
+              background: 'var(--nexora-text)',
+              color: 'var(--nexora-bg)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <NavIcon name="sparkles" size={12} />
+          </span>
+          <span
+            style={{
+              fontSize: '11px',
+              fontWeight: typography.weights.semibold,
+              textTransform: 'uppercase',
+              letterSpacing: typography.tracking.caps,
+              color: 'var(--nexora-textMuted)',
+            }}
+          >
             Nexora AI
           </span>
         </div>
@@ -531,7 +593,7 @@ function StreamingCursor(): JSX.Element {
         verticalAlign: 'text-bottom',
         background: 'var(--nexora-ai)',
         borderRadius: 1,
-        animation: 'nexora-blink 1s steps(2, start) infinite',
+        animation: 'nexora-blink 1.1s ease infinite',
       }}
     />
   );
@@ -582,37 +644,41 @@ export function ApprovalCard({
         alignSelf: 'center',
         width: '100%',
         maxWidth: 320,
-        border: '1px solid var(--nexora-warning)',
+        border: '1px solid var(--nexora-borderStrong)',
         borderRadius: radius.lg,
-        background: 'var(--nexora-warningSoft)',
+        background: 'var(--nexora-surface)',
         padding: spacing[4],
         display: 'flex',
         flexDirection: 'column',
         gap: spacing[3],
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: spacing[2] }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: spacing[2.5] }}>
         <span
           aria-hidden
           style={{
-            width: 24,
-            height: 24,
+            width: 26,
+            height: 26,
             borderRadius: radius.md,
-            background: 'var(--nexora-warning)',
-            color: '#fff',
+            background: 'var(--nexora-warningSoft)',
+            color: 'var(--nexora-warning)',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 13,
+            flexShrink: 0,
           }}
         >
-          !
+          <NavIcon name="problems" size={14} />
         </span>
         <div>
-          <div style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.sm }}>
-            Approval required
-          </div>
-          <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+          <div style={{ ...CARD_EYEBROW, color: 'var(--nexora-warning)' }}>Approval required</div>
+          <div
+            style={{
+              fontSize: typography.sizes.sm,
+              fontWeight: typography.weights.medium,
+              marginTop: 1,
+            }}
+          >
             {action}
           </div>
         </div>
@@ -741,18 +807,16 @@ export function PlanCard({
         alignSelf: 'center',
         width: '100%',
         maxWidth: 360,
-        border: '1px solid var(--nexora-borderStrong)',
+        border: '1px solid var(--nexora-border)',
         borderRadius: radius.lg,
-        background: 'var(--nexora-surfaceMuted)',
+        background: 'var(--nexora-surface)',
         padding: spacing[4],
         display: 'flex',
         flexDirection: 'column',
         gap: spacing[2],
       }}
     >
-      <div style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.sm }}>
-        Plan
-      </div>
+      <div style={CARD_EYEBROW}>Plan</div>
       {rows.map((row) => (
         <div key={`${row.capabilityId}-${row.index}`} style={{ display: 'flex', gap: spacing[2] }}>
           <span
@@ -825,31 +889,25 @@ export function WorkflowTimeline({ data }: { data: WorkflowTimelineData }): JSX.
         alignSelf: 'center',
         width: '100%',
         maxWidth: 360,
-        border: '1px solid var(--nexora-borderStrong)',
+        border: '1px solid var(--nexora-border)',
         borderRadius: radius.lg,
-        background: 'var(--nexora-surfaceMuted)',
+        background: 'var(--nexora-surface)',
         padding: spacing[4],
         display: 'flex',
         flexDirection: 'column',
         gap: spacing[2],
       }}
     >
-      <div style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.sm }}>
-        Execution
-      </div>
+      <div style={CARD_EYEBROW}>Execution</div>
       {data.steps.map((step) => (
-        <div key={step.stepId} style={{ display: 'flex', gap: spacing[2] }}>
-          <span aria-hidden style={{ width: 18, flexShrink: 0, textAlign: 'center' }}>
-            {step.status === 'succeeded' ? '✓' : step.status === 'failed' ? '✕' : '…'}
-          </span>
+        <div key={step.stepId} style={{ display: 'flex', alignItems: 'center', gap: spacing[2.5] }}>
+          <StepStatusDot status={step.status} />
           <span style={{ fontSize: typography.sizes.sm }}>{step.name}</span>
         </div>
       ))}
       {succeeded ? (
-        <div style={{ display: 'flex', gap: spacing[2] }}>
-          <span aria-hidden style={{ width: 18, flexShrink: 0, textAlign: 'center' }}>
-            ✓
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: spacing[2.5] }}>
+          <StepStatusDot status="succeeded" />
           <span style={{ fontSize: typography.sizes.sm }}>Verify</span>
         </div>
       ) : null}
@@ -890,26 +948,29 @@ function EmptyConversation({
       <span
         aria-hidden
         style={{
-          width: 44,
-          height: 44,
+          width: 40,
+          height: 40,
           borderRadius: radius.lg,
-          background: 'var(--nexora-aiSoft)',
-          color: 'var(--nexora-ai)',
+          background: 'var(--nexora-surfaceMuted)',
+          border: '1px solid var(--nexora-border)',
+          color: 'var(--nexora-textSecondary)',
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 20,
         }}
       >
-        ✦
+        <NavIcon name="sparkles" size={18} />
       </span>
       <div>
-        <div style={{ fontWeight: typography.weights.semibold }}>Ask Nexora anything</div>
+        <div style={{ fontWeight: typography.weights.semibold, letterSpacing: '-0.01em' }}>
+          Ask Nexora anything
+        </div>
         <div
           style={{
             fontSize: typography.sizes.sm,
             color: 'var(--nexora-textMuted)',
             marginTop: spacing[1],
+            maxWidth: '40ch',
           }}
         >
           The enterprise AI plans, discovers your tools, executes them, and reports the result.
@@ -923,24 +984,27 @@ function EmptyConversation({
             onClick={() => onPick(prompt)}
             style={{
               padding: `${spacing[2.5]} ${spacing[3]}`,
-              background: 'var(--nexora-surfaceMuted)',
+              background: 'var(--nexora-surface)',
               border: '1px solid var(--nexora-border)',
               borderRadius: radius.md,
               fontSize: typography.sizes.sm,
               color: 'var(--nexora-textSecondary)',
+              textAlign: 'left',
               cursor: 'pointer',
-              transition: `background ${motion.duration.fast} ${motion.easing.standard}, border-color ${motion.duration.fast} ${motion.easing.standard}`,
+              transition: 'background 140ms ease, border-color 140ms ease, color 140ms ease',
             }}
             onMouseEnter={(event) => {
-              event.currentTarget.style.borderColor = 'var(--nexora-ai)';
-              event.currentTarget.style.color = 'var(--nexora-ai)';
+              event.currentTarget.style.borderColor = 'var(--nexora-borderStrong)';
+              event.currentTarget.style.color = 'var(--nexora-text)';
+              event.currentTarget.style.background = 'var(--nexora-surfaceMuted)';
             }}
             onMouseLeave={(event) => {
               event.currentTarget.style.borderColor = 'var(--nexora-border)';
               event.currentTarget.style.color = 'var(--nexora-textSecondary)';
+              event.currentTarget.style.background = 'var(--nexora-surface)';
             }}
           >
-            “{prompt}”
+            {prompt}
           </button>
         ))}
       </div>

@@ -51,6 +51,7 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 
 @keyframes nexora-spin { to { transform: rotate(360deg); } }
 @keyframes nexora-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes nexora-blink { 0%, 45% { opacity: 1; } 55%, 100% { opacity: 0; } }
 @keyframes nexora-kpi-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
