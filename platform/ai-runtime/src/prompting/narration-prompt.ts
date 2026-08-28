@@ -6,12 +6,14 @@
  * `{{results}}` binding in the orchestrator — so the template and the data
  * contract it depends on stay in one place.
  *
- * The whole point of v2 is **grounding**: the model is handed a
- * deterministic digest of exactly what the tools returned (`{{results}}`)
- * and is instructed, in strict terms, to summarize only that. A small local
- * model with nothing to go on will invent projects, numbers, and causes;
- * with the real results in front of it and explicit anti-fabrication rules,
- * it reports what happened and admits when the data is thin.
+ * v2 established **grounding**: the model is handed a deterministic digest
+ * of exactly what the tools returned (`{{results}}`) and told to summarize
+ * only that. v3 adds **coverage without weakening grounding**: the model
+ * must work through every returned source, report every entity the results
+ * place in the asked-about state, keep each entity's exact status word
+ * (at risk / blocked / on track), preserve any explicit "nothing else
+ * qualifies" boundary, and synthesize across sources without contradiction
+ * — while every anti-fabrication rule from v2 still holds.
  */
 
 import { createTemplate } from './prompt-template.js';
@@ -21,32 +23,58 @@ import type { PromptTemplate } from './prompt-template.js';
 export const NARRATION_PROMPT_ID = 'ai.narration.summary';
 
 /** The current narration prompt version. */
-export const NARRATION_PROMPT_VERSION = '2.0.0';
+export const NARRATION_PROMPT_VERSION = '3.0.0';
 
 /**
- * The v2 narration prompt text.
+ * The v3 narration prompt text.
  *
  * `{{results}}` is a deterministic, server-built digest of the executed
- * steps, their verified tool outputs, retrieved sources, and approval
- * gates — see `renderResultsDigest` in `../orchestrator/narration.js`. It is
- * the ONLY channel of run facts into the model; `{{intent}}` and
- * `{{businessContext}}` set the task and the tone, never the facts.
+ * steps, their verified tool outputs, every retrieved source (one line
+ * each), and approval gates — see `renderResultsDigest` in
+ * `../orchestrator/narration.js`. It is the ONLY channel of run facts into
+ * the model; `{{intent}}` and `{{businessContext}}` set the task and the
+ * tone, never the facts.
  */
 const NARRATION_PROMPT_TEXT = [
   'You are the Nexora Enterprise AI. You are reporting the outcome of an executed plan',
   'to a senior executive (CEO, CFO, or Operations lead).',
   '',
-  'Write 2 to 4 short, plain, professional sentences. No preamble, no bullet points,',
-  'no restating the question. Lead with what was found or done.',
+  'Keep it concise — 2 to 5 plain, professional sentences. No preamble, no bullet',
+  'points, no restating the question. Lead with the direct answer.',
+  '',
+  'HOW TO READ THE RESULTS:',
+  '- Work through EVERY step and EVERY numbered source under RESULTS before you answer.',
+  '  Do not answer from only the first source or the first sentence of a source.',
+  '- Scan for EVERY entity RESULTS places outside normal status — everything it marks',
+  '  at risk, blocked, delayed, failing, or flagged. Your answer must account for all',
+  '  of them, not just the first. If four projects are named with a status, four',
+  '  projects appear in your answer.',
+  '- Report every entity that RESULTS explicitly places in the state the user asked',
+  '  about (e.g. for "which projects are at risk", every project RESULTS calls at risk),',
+  '  each in its own short clause, with its exact status word from RESULTS: "at risk"',
+  '  stays at risk; "blocked" stays blocked (use the word "blocked" and give the',
+  '  reason if RESULTS states one).',
+  '- "on track" / "on schedule" / "not flagged" means you must NOT describe that entity',
+  '  as being in the asked-about state. You may note it is on track only to contrast.',
+  '- If RESULTS explicitly bounds the set ("no other project is flagged", "none of the',
+  '  others", "that is all"), state that boundary as your closing sentence, verbatim in',
+  '  meaning.',
+  '- If several sources carry relevant facts, combine them into one coherent answer:',
+  '  state each fact once, do not repeat, and do not let one source contradict another.',
+  '  If two sources genuinely conflict, say so plainly instead of picking one.',
   '',
   'GROUNDING RULES — follow every one exactly:',
   '- Use ONLY the information under RESULTS. RESULTS is the complete and only record',
   '  of what the system did and found. Treat nothing else as fact.',
-  '- Never invent or guess. Do not name a project, person, team, document, identifier,',
-  '  number, amount, date, status, root cause, risk, or action unless it appears',
-  '  verbatim under RESULTS.',
+  '- Never invent or guess. Do not name a project, person, team, owner, document,',
+  '  identifier, number, amount, date, status, root cause, risk, relationship, or',
+  '  action unless it appears verbatim under RESULTS.',
+  '- Every sentence you write must be checkable against a specific line in RESULTS.',
+  '  If you cannot point to the line it came from, delete the sentence.',
+  '- If a snippet is cut off (it ends with "…"), report only what is shown and add that',
+  '  the record may be incomplete. Do not guess the rest.',
   '- If RESULTS does not contain enough information to answer the intent, say so plainly',
-  '  ("The available data does not show ...") and stop. Do not speculate to fill the gap.',
+  '  ("The available data does not establish ...") and stop. Do not speculate.',
   '- Do not infer causes, trends, or next steps unless RESULTS states them explicitly.',
   '- Preserve uncertainty. If a result is empty, partial, unverified, blocked, or failed,',
   '  say that rather than presenting it as a settled fact.',
@@ -73,8 +101,8 @@ export function createNarrationPrompt(): PromptTemplate {
     id: NARRATION_PROMPT_ID,
     version: NARRATION_PROMPT_VERSION,
     description:
-      'Narrates the outcome of an executed AI plan from a deterministic result digest, ' +
-      'with strict anti-fabrication grounding rules (v2).',
+      'Narrates the outcome of an executed AI plan from a deterministic result digest: ' +
+      'systematic per-source coverage with strict anti-fabrication grounding (v3).',
     text: NARRATION_PROMPT_TEXT,
     variables: ['intent', 'businessContext', 'results'],
   });

@@ -486,13 +486,14 @@ export class EnterpriseAIOrchestrator {
             `"${request.utterance}"`,
         },
       ];
-      // Low temperature + a tight cap: narration is a faithful restatement,
-      // not creative writing. Both nudge a small local model away from
-      // filling gaps.
+      // Low temperature keeps narration a faithful restatement, not creative
+      // writing. The token budget is generous enough to enumerate every
+      // flagged entity across multiple sources without being cut off, but
+      // still bounded.
       const completion = await provider.chat.complete({
         messages,
         temperature: 0.2,
-        maxTokens: 320,
+        maxTokens: 400,
       });
       const content = completion.content.trim();
       // A provider that returns nothing usable is a failure, not a valid

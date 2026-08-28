@@ -114,20 +114,21 @@ const DEMO_ARTICLE_BODY =
 /**
  * Published, indexed knowledge articles for the demo workspace. The first is
  * the known-solution playbook the hero/remediation flow depends on. The
- * second carries a handful of specific, checkable facts (which projects are
- * at risk, why, and the dates) so a retrieval question has a substantive,
- * verifiable answer — used to demonstrate that provider narration reports
- * only what the retrieved source actually says.
+ * second carries a handful of specific, checkable facts — one project at
+ * risk (with a cause and a date), one blocked, one on track, and an
+ * explicit "nothing else" boundary — so a retrieval question has a
+ * substantive, verifiable answer that exercises status fidelity. Kept
+ * under the knowledge layer's ~240-char snippet bound so every fact lands
+ * in the retrieved snippet the model actually sees.
  */
 const DEMO_ARTICLES: readonly { title: string; body: string }[] = [
   { title: DEMO_ARTICLE_TITLE, body: DEMO_ARTICLE_BODY },
   {
     title: 'Portfolio risk review — Q3',
     body:
-      'Mobile Banking is at risk: the vendor payments integration slipped and the ' +
-      '30 June go-live is now uncertain. Customer Onboarding is on track for its ' +
-      'August milestone. Atlas Migration is blocked pending a security sign-off ' +
-      'from the platform team. No other active project is currently flagged.',
+      'Mobile Banking is at risk: the vendor integration slipped and the 30 June ' +
+      'go-live is uncertain. Atlas Migration is blocked, pending platform security ' +
+      'sign-off. Customer Onboarding is on track. No other active project is flagged.',
   },
 ];
 

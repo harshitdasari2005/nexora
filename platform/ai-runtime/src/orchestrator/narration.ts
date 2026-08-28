@@ -186,12 +186,22 @@ export function renderResultsDigest(input: ResultsDigestInput): string {
   return lines.join('\n');
 }
 
-/** {@link describeOutput} with the digest's larger character budget. */
+/**
+ * {@link describeOutput} for the model-facing digest. Retrieval results are
+ * expanded — one line per source, each carrying the full snippet the tool
+ * returned — so the model can be told to consider every reference, not just
+ * the first. Any upstream snippet truncation is preserved as-is; the digest
+ * itself does not shorten a snippet further.
+ */
 function describeOutputForDigest(output: unknown): string {
   if (typeof output === 'string') {
     return truncate(output, DIGEST_OUTPUT_BUDGET);
   }
-  const retrieval = renderRetrieval(output);
+  const retrieval = renderRetrieval(output, {
+    maxSources: DIGEST_MAX_SOURCES,
+    snippetBudget: DIGEST_SNIPPET_BUDGET,
+    layout: 'lines',
+  });
   if (retrieval !== undefined) {
     return retrieval;
   }
@@ -207,11 +217,42 @@ interface RetrievedReference {
   snippet?: unknown;
 }
 
-/** How many cited sources are named before the rest are summarized. */
+/** How many cited sources the user-facing composer names inline. */
 const MAX_CITED_SOURCES = 3;
 
-/** Per-snippet character budget in the narration. */
+/** Per-snippet character budget in the user-facing composer. */
 const SNIPPET_BUDGET = 240;
+
+/** How many sources the model-facing digest enumerates (grounding coverage). */
+const DIGEST_MAX_SOURCES = 8;
+
+/**
+ * Per-snippet budget in the digest. Higher than the composer's so the digest
+ * never becomes the truncation bottleneck — only an upstream limit (the
+ * knowledge layer's snippet bound) can shorten what the model sees.
+ */
+const DIGEST_SNIPPET_BUDGET = 600;
+
+/** Rendering options for {@link renderRetrieval}. */
+interface RetrievalRenderOptions {
+  /** Maximum sources rendered before the rest are counted. */
+  maxSources: number;
+  /** Per-snippet character budget. */
+  snippetBudget: number;
+  /**
+   * `inline` joins sources with ` · ` (compact, user-facing); `lines` puts
+   * each source on its own `- Source N —` line (the digest — one anchor per
+   * reference for "consider every source").
+   */
+  layout: 'inline' | 'lines';
+}
+
+/** The composer's inline defaults. */
+const INLINE_RETRIEVAL_OPTIONS: RetrievalRenderOptions = {
+  maxSources: MAX_CITED_SOURCES,
+  snippetBudget: SNIPPET_BUDGET,
+  layout: 'inline',
+};
 
 /**
  * Renders the canonical retrieval output (`{ references: [...] }`) as a
@@ -220,13 +261,18 @@ const SNIPPET_BUDGET = 240;
  * This is deterministic grounding, not generation: the text shown is the
  * retrieved snippet verbatim, attributed to its source title, so the answer
  * can always be traced to the document it came from (AIX-11). Nothing is
- * summarized or inferred — retrieval already ran permission-filtered and
- * workspace-scoped, and this only formats what it returned.
+ * summarized, reordered, or inferred — retrieval already ran
+ * permission-filtered and workspace-scoped, and this only formats what it
+ * returned. Every reference is rendered (up to `maxSources`); none is
+ * dropped for relevance here.
  *
  * Returns `undefined` when the output is not a retrieval result, so every
  * other tool keeps the generic JSON rendering.
  */
-function renderRetrieval(output: unknown): string | undefined {
+function renderRetrieval(
+  output: unknown,
+  options: RetrievalRenderOptions = INLINE_RETRIEVAL_OPTIONS,
+): string | undefined {
   if (typeof output !== 'object' || output === null || !('references' in output)) {
     return undefined;
   }
@@ -238,16 +284,23 @@ function renderRetrieval(output: unknown): string | undefined {
     return 'no matching knowledge found in the documents you can access';
   }
 
-  const cited = raw.slice(0, MAX_CITED_SOURCES).map((reference) => {
+  const shown = raw.slice(0, options.maxSources).map((reference, index) => {
     const { title, snippet } = reference as RetrievedReference;
     const label = typeof title === 'string' && title.length > 0 ? title : 'Untitled source';
     const body = typeof snippet === 'string' ? snippet.trim() : '';
-    return body.length === 0 ? `“${label}”` : `“${label}”: ${truncate(body, SNIPPET_BUDGET)}`;
+    const rendered =
+      body.length === 0 ? `“${label}”` : `“${label}”: ${truncate(body, options.snippetBudget)}`;
+    return options.layout === 'lines' ? `- Source ${index + 1} — ${rendered}` : rendered;
   });
 
-  const remaining = raw.length - cited.length;
-  const more = remaining > 0 ? ` (+${remaining} more source${remaining === 1 ? '' : 's'})` : '';
-  return `${cited.join(' · ')}${more}`;
+  const remaining = raw.length - shown.length;
+  const more =
+    remaining > 0 ? `+${remaining} more source${remaining === 1 ? '' : 's'} not shown` : '';
+
+  if (options.layout === 'lines') {
+    return [...shown, ...(more.length > 0 ? [`- ${more}`] : [])].join('\n');
+  }
+  return `${shown.join(' · ')}${more.length > 0 ? ` (${more})` : ''}`;
 }
 
 /** Truncates a serialized value for narration (400 chars). */

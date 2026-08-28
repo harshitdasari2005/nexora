@@ -181,12 +181,59 @@ describe('orchestrator provider narration — result grounding', () => {
     expect(system?.content).toMatch(/Preserve uncertainty/i);
   });
 
+  it('sends the v3 systematic-coverage instructions with every request', async () => {
+    const { orchestrator, provider } = harness({ projects: [{ name: 'Solo', health: 'green' }] });
+    await orchestrator.run({ ...baseRequest, utterance: 'list projects' });
+
+    const system = provider.chat.completions[0]?.messages.find((m) => m.role === 'system');
+    expect(system?.content).toMatch(/Work through EVERY step and EVERY numbered source/i);
+    expect(system?.content).toMatch(/Do not answer from only the first source/i);
+    expect(system?.content).toMatch(/"blocked" stays blocked/i);
+    expect(system?.content).toMatch(/state that boundary as your closing sentence/i);
+    expect(system?.content).toMatch(/combine them into one coherent answer/i);
+  });
+
+  it('feeds EVERY retrieved source and every fact into the system prompt', async () => {
+    const { orchestrator, provider } = harness({
+      found: true,
+      references: [
+        {
+          title: 'Portfolio risk review — Q3',
+          snippet:
+            'Mobile Banking is at risk: the vendor integration slipped and the 30 June ' +
+            'go-live is uncertain. Atlas Migration is blocked, pending platform security ' +
+            'sign-off. Customer Onboarding is on track. No other active project is flagged.',
+        },
+        {
+          title: 'Delivery status board',
+          snippet: 'GST Compliance Automation is at risk after a June scope change.',
+        },
+      ],
+    });
+
+    await orchestrator.run({ ...baseRequest, utterance: 'list projects' });
+    const system = provider.chat.completions[0]?.messages.find((m) => m.role === 'system');
+
+    // Both sources are enumerated and titled.
+    expect(system?.content).toContain('Source 1 — “Portfolio risk review — Q3”');
+    expect(system?.content).toContain('Source 2 — “Delivery status board”');
+    // Every distinct status word survives, from BOTH sources.
+    expect(system?.content).toContain('Mobile Banking is at risk');
+    expect(system?.content).toContain('Atlas Migration is blocked');
+    expect(system?.content).toContain('Customer Onboarding is on track');
+    expect(system?.content).toContain('No other active project is flagged');
+    expect(system?.content).toContain('GST Compliance Automation is at risk');
+    // Nothing fabricated slipped into the grounding context.
+    expect(system?.content).not.toMatch(/\bP[0-9]\b/);
+    expect(system?.content).not.toContain('critical resources');
+  });
+
   it('narrates at low temperature with a token cap', async () => {
     const { orchestrator, provider } = harness({ projects: [] });
     await orchestrator.run({ ...baseRequest, utterance: 'list projects' });
 
     expect(provider.chat.completions[0]?.temperature).toBe(0.2);
-    expect(provider.chat.completions[0]?.maxTokens).toBe(320);
+    expect(provider.chat.completions[0]?.maxTokens).toBe(400);
   });
 
   it('tells the model plainly when a step returned no data', async () => {
