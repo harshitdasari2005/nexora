@@ -28,6 +28,22 @@ async function main(): Promise<void> {
   const oidc = new KeycloakOidcGateway(config.oidc);
 
   const app = await buildApp({ config, database, oidc });
+
+  // State the narration provider at boot: it is the only component that can
+  // send prompt content (and therefore tenant data) out of this process, so
+  // an operator must be able to see at a glance where that content goes.
+  app.log.info(
+    {
+      provider: config.ai.provider,
+      model: config.ai.model,
+      endpoint:
+        config.ai.provider === 'none'
+          ? 'none (deterministic narration)'
+          : (config.ai.baseUrl ?? 'provider default'),
+    },
+    'AI narration provider',
+  );
+
   await app.listen({ port: config.port, host: config.host });
 }
 

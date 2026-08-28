@@ -16,12 +16,28 @@ export interface OidcConfig {
   redirectUri: string;
 }
 
+/**
+ * Which model provider serves narration.
+ *
+ * - `none`  — no provider registered; the deterministic composer narrates
+ *             and NO prompt content leaves the process at all.
+ * - `groq`  — hosted Groq API (prompt content transits a third party).
+ * - `local` — any OpenAI-compatible endpoint you host yourself (Ollama,
+ *             vLLM, LM Studio, TGI). Prompt content stays inside your own
+ *             network — the data-residency option.
+ */
+export type AiProviderKind = 'none' | 'groq' | 'local';
+
 /** Enterprise AI Runtime configuration. */
 export interface AiConfig {
-  /** Groq API key (optional; deterministic narration is used when absent). */
-  groqApiKey?: string;
-  /** The model served by the Groq provider (e.g. `llama-3.3-70b-versatile`). */
+  /** The selected narration provider. */
+  provider: AiProviderKind;
+  /** The model id served by the provider (e.g. `llama-3.3-70b-versatile`, `llama3`). */
   model: string;
+  /** Bearer token for the provider, when it requires one. */
+  apiKey?: string;
+  /** Base URL override (required in practice for `local`). */
+  baseUrl?: string;
 }
 
 /** Webhook/email inbound signing configuration (BKD §9.2). */
@@ -119,6 +135,53 @@ function required(env: NodeJS.ProcessEnv, name: string, fallback?: string): stri
 }
 
 /**
+ * Resolves the AI provider from the environment.
+ *
+ * `AI_PROVIDER` is authoritative when set. When absent, the legacy behavior
+ * is preserved: a non-empty `GROQ_API_KEY` selects Groq, anything else falls
+ * back to deterministic narration — so an existing deployment that never
+ * heard of `AI_PROVIDER` keeps working unchanged, and a deployment that
+ * configures nothing never silently starts sending tenant data anywhere.
+ */
+export function resolveAiProvider(env: NodeJS.ProcessEnv): AiProviderKind {
+  const declared = env['AI_PROVIDER']?.trim().toLowerCase() ?? '';
+  if (declared === 'none' || declared === 'groq' || declared === 'local') {
+    return declared;
+  }
+  if (declared.length > 0) {
+    throw new Error(`Invalid AI_PROVIDER "${declared}": must be one of none, groq, local`);
+  }
+  return (env['GROQ_API_KEY']?.trim() ?? '').length > 0 ? 'groq' : 'none';
+}
+
+/** Builds the AI configuration, validating the selected provider's inputs. */
+export function loadAiConfig(env: NodeJS.ProcessEnv): AiConfig {
+  const provider = resolveAiProvider(env);
+  const apiKey = (env['AI_API_KEY']?.trim() ?? '') || (env['GROQ_API_KEY']?.trim() ?? '');
+  const baseUrl = env['AI_BASE_URL']?.trim() ?? '';
+  const model = env['AI_MODEL']?.trim() || 'llama-3.3-70b-versatile';
+
+  // Fail fast on a provider that cannot possibly serve a completion, rather
+  // than degrading to deterministic narration on the first user request and
+  // leaving the operator to guess why.
+  if (provider === 'groq' && apiKey.length === 0) {
+    throw new Error('AI_PROVIDER=groq requires GROQ_API_KEY (or AI_API_KEY) to be set');
+  }
+  if (provider === 'local' && baseUrl.length === 0) {
+    throw new Error(
+      'AI_PROVIDER=local requires AI_BASE_URL, e.g. http://localhost:11434/v1 for Ollama',
+    );
+  }
+
+  return {
+    provider,
+    model,
+    ...(apiKey.length > 0 ? { apiKey } : {}),
+    ...(baseUrl.length > 0 ? { baseUrl } : {}),
+  };
+}
+
+/**
  * Loads and validates the API configuration from the environment.
  *
  * @param env - environment values (defaults to `process.env`).
@@ -161,10 +224,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       secure: env['COOKIE_SECURE'] === 'true',
       maxAgeSeconds,
     },
-    ai: {
-      groqApiKey: env['GROQ_API_KEY'] === undefined ? undefined : env['GROQ_API_KEY'],
-      model: env['AI_MODEL']?.trim() || 'llama-3.3-70b-versatile',
-    },
+    ai: loadAiConfig(env),
     integrations: {
       // REQUIRED (S21 finding IN-04): no hardcoded default — a deployment
       // that omits the var fails fast instead of signing inbound actions

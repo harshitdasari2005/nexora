@@ -34,7 +34,7 @@ import type {
   CapabilityDeclaration,
   ToolContract,
 } from '@nexora/contracts/ai';
-import { GroqAdapter } from '@nexora/ai-runtime/adapters';
+import { GroqAdapter, OllamaAdapter } from '@nexora/ai-runtime/adapters';
 import type { EventPublisher } from '@nexora/shared/events';
 import type {
   WorkflowInstanceRepository,
@@ -695,7 +695,7 @@ export const NARRATION_PROMPT_ID = 'ai.narration.summary';
 
 /** Dependencies required to build the AI runtime. */
 export interface AiRuntimeDependencies {
-  /** API configuration (Groq key + model). */
+  /** API configuration (narration provider selection + model). */
   config: ApiConfig;
   /** The membership-scoped workspaces handler the read tool delegates to. */
   listMyWorkspaces: ListMyWorkspacesHandler;
@@ -1250,10 +1250,36 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
   const store = dependencies.store ?? new InMemoryConversationStore();
   const conversations = new ConversationManager(store);
 
-  // Model provider (Groq; deterministic narration when no key is configured).
+  // Model provider. The narration provider is the ONLY component that can
+  // send prompt content — the user's utterance plus executed step results,
+  // which carry real tenant records — outside this process, so which
+  // adapter is registered here is a data-residency decision:
+  //
+  //   none  → nothing registered; the deterministic composer narrates and
+  //           no content leaves the process at all (the default).
+  //   local → a self-hosted OpenAI-compatible endpoint (Ollama, vLLM, LM
+  //           Studio, TGI). Content stays inside your own network.
+  //   groq  → the hosted Groq API. Content transits a third party.
+  //
+  // Every branch resolves through the same ModelProvider contract, so the
+  // orchestrator behaves identically in all three cases.
   const providers = new ProviderRegistry();
-  if (config.ai.groqApiKey !== undefined && config.ai.groqApiKey.trim().length > 0) {
-    providers.register(new GroqAdapter({ model: config.ai.model, apiKey: config.ai.groqApiKey }));
+  if (config.ai.provider === 'local') {
+    providers.register(
+      new OllamaAdapter({
+        model: config.ai.model,
+        ...(config.ai.baseUrl === undefined ? {} : { baseUrl: config.ai.baseUrl }),
+        ...(config.ai.apiKey === undefined ? {} : { apiKey: config.ai.apiKey }),
+      }),
+    );
+  } else if (config.ai.provider === 'groq') {
+    providers.register(
+      new GroqAdapter({
+        model: config.ai.model,
+        ...(config.ai.apiKey === undefined ? {} : { apiKey: config.ai.apiKey }),
+        ...(config.ai.baseUrl === undefined ? {} : { baseUrl: config.ai.baseUrl }),
+      }),
+    );
   }
 
   // Prompt runtime (versioned narration template).

@@ -146,8 +146,16 @@ mostly `.gitkeep` placeholders per `ENGINEERING_PLAYBOOK.md §3.3`; real code li
 
 PostgreSQL (host :5433), Redis, MinIO (S3-compatible document storage; :9000, override to :9002),
 Keycloak (:8080, `nexora` realm imported at startup). When `S3_ENDPOINT` is unset the API falls
-back to in-memory document storage. When `GROQ_API_KEY` is unset the AI uses deterministic
-narration instead of the Groq LLM.
+back to in-memory document storage.
+
+**AI narration provider** (`AI_PROVIDER`): planning/tool-selection/approval-gating is always
+deterministic — a model is used *only* to phrase the final answer, so `AI_PROVIDER` is purely a
+data-residency choice for that one call. `none` (default) → deterministic composer, nothing leaves
+the process. `local` → any self-hosted OpenAI-compatible endpoint (`AI_BASE_URL`, e.g. Ollama on
+`http://localhost:11434/v1`); prompt content stays in-network. `groq` → hosted Groq API
+(`GROQ_API_KEY`). Legacy: a bare `GROQ_API_KEY` with no `AI_PROVIDER` still selects `groq`. Config
++ validation in `apps/api/src/config.ts` (`loadAiConfig`); adapters share one transport
+(`platform/ai-runtime/src/adapters/openai-compatible-transport.ts`).
 
 ## Conventions
 

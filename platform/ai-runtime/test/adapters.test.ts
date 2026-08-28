@@ -61,14 +61,10 @@ describe('provider adapter placeholders', () => {
   });
 
   it('ollama declares its contract shape', () => {
-    const adapter = new OllamaAdapter({ model: 'llama3', baseUrl: 'http://localhost:11434' });
+    const adapter = new OllamaAdapter({ model: 'llama3', baseUrl: 'http://localhost:11434/v1' });
     expect(adapter.id).toBe('ollama');
-    expect(adapter.capabilities).toEqual(['chat', 'streaming']);
-  });
-
-  it('ollama chat fails loudly until wired', async () => {
-    const adapter = new OllamaAdapter({ model: 'llama3' });
-    await expect(adapter.chat!.complete({ messages: [] })).rejects.toThrow(ProviderError);
+    // Only the capability it can actually serve — streaming is not wired.
+    expect(adapter.capabilities).toEqual(['chat']);
   });
 
   it('providers are interchangeable through the ModelProvider contract', () => {
