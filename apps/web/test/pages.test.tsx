@@ -80,7 +80,7 @@ describe('Landing', () => {
 });
 
 describe('Login', () => {
-  it('renders the SSO entry point', () => {
+  it('renders the SSO redirect state (no intermediate "continue" card)', () => {
     const html = renderToString(
       <MemoryRouter>
         <SessionProvider>
@@ -88,8 +88,10 @@ describe('Login', () => {
         </SessionProvider>
       </MemoryRouter>,
     );
-    expect(html).toContain('Welcome to Nexora');
-    expect(html).toContain('Continue with SSO');
+    // The page redirects straight to the identity provider; the only thing
+    // rendered is a brief "redirecting" notice, never a "Continue with SSO" step.
+    expect(html).toContain('Taking you to your organization');
+    expect(html).not.toContain('Continue with SSO');
   });
 });
 
