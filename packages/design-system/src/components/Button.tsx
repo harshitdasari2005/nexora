@@ -3,6 +3,8 @@
  *
  * The primary action control (DESIGN_SYSTEM.md §5, §10 interaction): variants
  * for emphasis, sizes, a loading state, and keyboard/disabled semantics.
+ * Solid black primary, hairline-bordered secondary, quiet ghost — hover
+ * states live in `GlobalStyles` (`.nexora-btn-*`).
  */
 
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react';
@@ -30,9 +32,9 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const sizeStyles: Record<ButtonSize, CSSProperties> = {
-  sm: { height: 32, paddingInline: spacing[3], fontSize: typography.sizes.sm },
-  md: { height: 38, paddingInline: spacing[4], fontSize: typography.sizes.base },
-  lg: { height: 44, paddingInline: spacing[5], fontSize: typography.sizes.md },
+  sm: { height: 30, paddingInline: spacing[3], fontSize: typography.sizes.sm },
+  md: { height: 34, paddingInline: spacing[4], fontSize: typography.sizes.base },
+  lg: { height: 40, paddingInline: spacing[5], fontSize: typography.sizes.base },
 };
 
 /** Renders a styled button. */
@@ -43,17 +45,19 @@ export function Button({
   fullWidth = false,
   children,
   disabled,
+  className,
   style,
   ...rest
 }: ButtonProps): JSX.Element {
-  const variantStyle = getVariantStyle(variant);
+  const isDisabled = disabled || loading;
   return (
     <button
       type="button"
-      disabled={disabled || loading}
+      disabled={isDisabled}
+      className={[`nexora-btn nexora-btn-${variant}`, className].filter(Boolean).join(' ')}
       style={{
         ...sizeStyles[size],
-        ...variantStyle,
+        ...getVariantStyle(variant),
         ...(fullWidth ? { width: '100%' } : null),
         display: 'inline-flex',
         alignItems: 'center',
@@ -61,19 +65,23 @@ export function Button({
         gap: spacing[2],
         borderRadius: radius.md,
         fontWeight: typography.weights.medium,
-        cursor: disabled || loading ? 'not-allowed' : 'pointer',
-        opacity: disabled || loading ? 0.6 : 1,
-        border: 'none',
-        transition: `background-color ${motion.duration.fast} ${motion.easing.standard}, box-shadow ${motion.duration.fast} ${motion.easing.standard}`,
+        letterSpacing: '-0.006em',
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        opacity: isDisabled ? 0.45 : 1,
+        transition: `background-color ${motion.duration.fast} ${motion.easing.standard}, border-color ${motion.duration.fast} ${motion.easing.standard}, color ${motion.duration.fast} ${motion.easing.standard}, filter ${motion.duration.fast} ${motion.easing.standard}`,
         whiteSpace: 'nowrap',
         ...style,
       }}
       {...rest}
     >
-      {loading ? <Spinner size={14} tone={variant === 'primary' ? 'light' : 'dark'} /> : null}
+      {loading ? <Spinner size={14} tone={spinnerTone(variant)} /> : null}
       {children}
     </button>
   );
+}
+
+function spinnerTone(variant: ButtonVariant): 'light' | 'dark' {
+  return variant === 'primary' || variant === 'danger' ? 'light' : 'dark';
 }
 
 function getVariantStyle(variant: ButtonVariant): CSSProperties {
@@ -82,23 +90,25 @@ function getVariantStyle(variant: ButtonVariant): CSSProperties {
       return {
         background: 'var(--nexora-primary)',
         color: 'var(--nexora-primaryForeground)',
-        boxShadow: '0 1px 2px rgba(28, 25, 23, 0.2)',
+        border: '1px solid transparent',
       };
     case 'secondary':
       return {
         background: 'var(--nexora-surface)',
         color: 'var(--nexora-text)',
-        border: '1px solid var(--nexora-borderStrong)',
+        border: '1px solid var(--nexora-border)',
       };
     case 'ghost':
       return {
         background: 'transparent',
         color: 'var(--nexora-textSecondary)',
+        border: '1px solid transparent',
       };
     case 'danger':
       return {
         background: 'var(--nexora-danger)',
         color: '#ffffff',
+        border: '1px solid transparent',
       };
   }
 }

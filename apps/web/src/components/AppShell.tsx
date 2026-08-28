@@ -27,6 +27,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Avatar, Badge, spacing, typography } from '@nexora/design-system';
 
+import { NavIcon, type IconName } from './NavIcon.js';
 import { isModuleVisible } from '../lib/modules.js';
 import {
   applyNavLabelOverride,
@@ -60,7 +61,7 @@ export interface AppShellProps {
 
 interface NavItem {
   label: string;
-  icon: string;
+  icon: IconName;
   /** The destination route (renders a router link). */
   to?: string;
   /** Whether the destination is planned but not yet shipped. */
@@ -69,33 +70,28 @@ interface NavItem {
   action?: 'search';
 }
 
-// Every icon here is unique within the list — a first-time user scanning the
-// sidebar has to be able to tell items apart by glyph alone, before ever
-// reading the label. (This used to not be true: Command Center, Agent, and
-// AI Assistant all shared '✦', and Projects/Documents both used '▤' — three
-// and two destinations respectively were visually indistinguishable at a
-// glance. Fixed as part of the first-time-user audit.) 'Overview' (`/app`)
-// is gone entirely: it duplicated Command Center's own greeting while
-// showing far less, so `Dashboard` now sends an onboarded user straight to
-// Command Center instead of stopping at a second, thinner "home."
+// One monochrome line-icon per destination (`./NavIcon`) — 16px, currentColor,
+// so the whole rail reads as one system. 'Overview' (`/app`) is gone
+// entirely: it duplicated Command Center's own greeting while showing far
+// less, so `Dashboard` sends an onboarded user straight to Command Center.
 const BASE_NAV_ITEMS: readonly NavItem[] = [
-  { label: 'Command Center', icon: '✦', to: '/app/command-center' },
-  { label: 'Agent', icon: '✓', to: '/app/agent' },
-  { label: 'Problems', icon: '⚠', to: '/app/problems' },
-  { label: 'Projects', icon: '▤', to: '/app/projects' },
-  { label: 'Employees', icon: '👥', to: '/app/employees' },
-  { label: 'Documents', icon: '📄', to: '/app/documents' },
-  { label: 'Knowledge', icon: '📚', to: '/app/knowledge' },
-  { label: 'Workflows', icon: '⧉', to: '/app/workflows' },
-  { label: 'Calendar', icon: '📅', to: '/app/calendar' },
-  { label: 'Finance', icon: '💰', to: '/app/finance' },
-  { label: 'Audit', icon: '🛡', to: '/app/audit' },
-  { label: 'Apps', icon: '▦', to: '/app/apps' },
-  { label: 'Integrations', icon: '🔌', to: '/app/integrations' },
-  { label: 'Insights', icon: '📊', to: '/app/insights' },
-  { label: 'AI Assistant', icon: '💬', to: '/app/assistant' },
-  { label: 'Search', icon: '⌕', action: 'search' },
-  { label: 'Settings', icon: '⚙', to: '/app/settings' },
+  { label: 'Command Center', icon: 'command-center', to: '/app/command-center' },
+  { label: 'Agent', icon: 'agent', to: '/app/agent' },
+  { label: 'Problems', icon: 'problems', to: '/app/problems' },
+  { label: 'Projects', icon: 'projects', to: '/app/projects' },
+  { label: 'Employees', icon: 'employees', to: '/app/employees' },
+  { label: 'Documents', icon: 'documents', to: '/app/documents' },
+  { label: 'Knowledge', icon: 'knowledge', to: '/app/knowledge' },
+  { label: 'Workflows', icon: 'workflows', to: '/app/workflows' },
+  { label: 'Calendar', icon: 'calendar', to: '/app/calendar' },
+  { label: 'Finance', icon: 'finance', to: '/app/finance' },
+  { label: 'Audit', icon: 'audit', to: '/app/audit' },
+  { label: 'Apps', icon: 'apps', to: '/app/apps' },
+  { label: 'Integrations', icon: 'integrations', to: '/app/integrations' },
+  { label: 'Insights', icon: 'insights', to: '/app/insights' },
+  { label: 'AI Assistant', icon: 'assistant', to: '/app/assistant' },
+  { label: 'Search', icon: 'search', action: 'search' },
+  { label: 'Settings', icon: 'settings', to: '/app/settings' },
 ];
 
 /** The nav catalog split into primary (leading) and secondary (deprioritized) tiers. */
@@ -172,20 +168,34 @@ function renderNavItem(
   const label = applyNavLabelOverride(persona, item.label);
   const content = (
     <>
-      <span aria-hidden style={{ width: 18, textAlign: 'center' }}>
-        {item.icon}
+      <span
+        aria-hidden
+        style={{
+          display: 'inline-flex',
+          color: active ? theme.accent : 'currentColor',
+          opacity: active ? 1 : 0.75,
+        }}
+      >
+        <NavIcon name={item.icon} size={16} />
       </span>
-      <span>{label}</span>
+      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {label}
+      </span>
       {item.action === 'search' ? (
-        <span
+        <kbd
           style={{
             marginLeft: 'auto',
-            fontSize: typography.sizes.xs,
+            fontSize: '11px',
+            fontFamily: 'inherit',
             color: 'var(--nexora-textMuted)',
+            border: '1px solid var(--nexora-border)',
+            borderRadius: 4,
+            padding: '1px 5px',
+            lineHeight: 1.4,
           }}
         >
           ⌘K
-        </span>
+        </kbd>
       ) : item.soon === true ? (
         <span
           style={{
@@ -200,10 +210,12 @@ function renderNavItem(
     </>
   );
   const style = {
+    position: 'relative',
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    padding: muted ? '7px 10px' : '9px 10px',
+    height: muted ? 32 : 34,
+    padding: '0 10px',
     borderRadius: 8,
     fontSize: muted ? typography.sizes.sm : typography.sizes.base,
     color: active
@@ -211,17 +223,18 @@ function renderNavItem(
       : muted
         ? 'var(--nexora-textMuted)'
         : 'var(--nexora-textSecondary)',
-    background: active ? theme.accentSoft : 'transparent',
-    borderLeft: active ? `2px solid ${theme.accent}` : '2px solid transparent',
+    background: active ? 'var(--nexora-surfaceMuted)' : 'transparent',
     fontWeight: active ? typography.weights.medium : typography.weights.regular,
     cursor: item.soon ? 'default' : 'pointer',
-    opacity: item.soon ? 0.7 : muted ? 0.82 : 1,
+    opacity: item.soon ? 0.55 : 1,
     textDecoration: 'none',
     border: 'none',
     width: '100%',
     textAlign: 'left',
     fontFamily: 'inherit',
-    transition: 'background 140ms ease, color 140ms ease',
+    letterSpacing: 'inherit',
+    boxShadow: active ? `inset 2px 0 0 ${theme.accent}` : 'none',
+    transition: 'background 130ms ease, color 130ms ease',
   } as const;
   const className = `nexora-navlink${active ? ' nexora-navlink-active' : ''}`;
   if (item.action === 'search') {
@@ -231,7 +244,7 @@ function renderNavItem(
         type="button"
         className={className}
         onClick={onSearch}
-        style={{ ...style, background: 'transparent', borderLeft: '2px solid transparent' }}
+        style={{ ...style, background: 'transparent', boxShadow: 'none' }}
       >
         {content}
       </button>
@@ -373,7 +386,7 @@ function AppShellChrome({
       <aside
         className={`nexora-sidebar${mobileNavOpen ? ' nexora-sidebar-open' : ''}`}
         style={{
-          width: 248,
+          width: 236,
           flexShrink: 0,
           position: 'relative',
           zIndex: 1,
@@ -384,23 +397,40 @@ function AppShellChrome({
         }}
       >
         {/* Wordmark */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: spacing[5] }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 9,
+            height: 56,
+            padding: `0 ${spacing[5]}`,
+            flexShrink: 0,
+          }}
+        >
           <span
             aria-hidden
             style={{
-              width: 26,
-              height: 26,
-              borderRadius: 8,
-              background: 'linear-gradient(135deg, #6366f1, #7c3aed)',
+              width: 22,
+              height: 22,
+              borderRadius: 6,
+              background: 'var(--nexora-text)',
+              color: 'var(--nexora-bg)',
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 14,
+              fontSize: 12,
+              fontWeight: typography.weights.bold,
             }}
           >
-            ✦
+            N
           </span>
-          <span style={{ fontWeight: typography.weights.bold, fontSize: typography.sizes.md }}>
+          <span
+            style={{
+              fontWeight: typography.weights.semibold,
+              fontSize: typography.sizes.base,
+              letterSpacing: '-0.01em',
+            }}
+          >
             Nexora
           </span>
           <button
@@ -426,11 +456,11 @@ function AppShellChrome({
         {/* Workspace context / role switcher */}
         <div
           style={{
-            margin: `0 ${spacing[3]} ${spacing[4]}`,
-            padding: spacing[4],
-            background: 'var(--nexora-surfaceMuted)',
+            margin: `${spacing[2]} ${spacing[3]} ${spacing[4]}`,
+            padding: spacing[3],
+            background: 'var(--nexora-surface)',
             border: '1px solid var(--nexora-border)',
-            borderRadius: 12,
+            borderRadius: 10,
           }}
         >
           <RoleSwitcher
@@ -453,7 +483,7 @@ function AppShellChrome({
           style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: 2,
+            gap: 1,
             padding: `0 ${spacing[3]}`,
             overflowY: 'auto',
           }}
@@ -472,12 +502,12 @@ function AppShellChrome({
               <div
                 aria-hidden
                 style={{
-                  padding: '12px 10px 4px',
-                  fontSize: typography.sizes.xs,
-                  fontWeight: typography.weights.medium,
+                  padding: '16px 10px 6px',
+                  fontSize: '11px',
+                  fontWeight: typography.weights.semibold,
                   color: 'var(--nexora-textMuted)',
                   textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
+                  letterSpacing: typography.tracking.caps,
                 }}
               >
                 More
@@ -578,8 +608,6 @@ function AppShellChrome({
             gap: spacing[3],
             borderBottom: '1px solid var(--nexora-border)',
             background: 'var(--nexora-shellTopbar, var(--nexora-surface))',
-            backdropFilter: 'blur(14px)',
-            WebkitBackdropFilter: 'blur(14px)',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
@@ -641,9 +669,9 @@ function AppShellChrome({
                 dot
                 dotColor={theme.accent}
                 style={{
-                  background: theme.accentSoft,
-                  color: theme.accent,
-                  border: `1px solid ${theme.accent}55`,
+                  background: 'transparent',
+                  color: 'var(--nexora-textSecondary)',
+                  border: '1px solid var(--nexora-border)',
                 }}
               >
                 {roleLabel}
@@ -656,7 +684,12 @@ function AppShellChrome({
         {/* Content */}
         <main
           className="nexora-main"
-          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: spacing[8] }}
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            padding: `${spacing[8]} ${spacing[10]}`,
+          }}
         >
           {children}
         </main>
@@ -681,9 +714,10 @@ function AppShellChrome({
 
       <style>{`
         .nexora-navlink:hover:not(.nexora-navlink-active) {
-          background: rgba(148, 163, 184, 0.08);
+          background: var(--nexora-surfaceMuted);
           color: var(--nexora-text);
         }
+        .nexora-navlink:hover:not(.nexora-navlink-active) span[aria-hidden] { opacity: 1; }
         .nexora-drawer-backdrop {
           position: fixed;
           inset: 0;

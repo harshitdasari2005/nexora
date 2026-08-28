@@ -227,7 +227,7 @@ export function CalendarView({
         style={{ flexWrap: 'wrap' }}
       >
         <Stack gap={1}>
-          <h1 style={{ fontSize: typography.sizes['2xl'], fontWeight: typography.weights.bold }}>
+          <h1 style={{ fontSize: typography.sizes['3xl'], fontWeight: typography.weights.bold, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
             Calendar
           </h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>

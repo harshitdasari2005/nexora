@@ -296,7 +296,7 @@ export function AgentView({
       {/* Identity / context header */}
       <Stack gap={1}>
         <Stack direction="row" gap={2} align="center" style={{ flexWrap: 'wrap' }}>
-          <h1 style={{ fontSize: typography.sizes['2xl'], fontWeight: typography.weights.bold }}>
+          <h1 style={{ fontSize: typography.sizes['3xl'], fontWeight: typography.weights.bold, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
             Agent
           </h1>
           {agent !== null ? (

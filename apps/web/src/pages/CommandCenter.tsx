@@ -309,14 +309,14 @@ export function CommandCenterView({
     <div style={{ position: 'relative' }}>
       <Stack gap={6} style={{ maxWidth: 1080, margin: '0 auto', position: 'relative', zIndex: 1 }}>
         {/* Greeting header */}
-        <Stack gap={2}>
+        <Stack gap={2.5}>
           <div
             style={{
-              fontSize: typography.sizes.xs,
+              fontSize: '11px',
               fontWeight: typography.weights.semibold,
               color: 'var(--nexora-textMuted)',
               textTransform: 'uppercase',
-              letterSpacing: '0.08em',
+              letterSpacing: typography.tracking.caps,
             }}
           >
             {theme.identity}
@@ -324,25 +324,28 @@ export function CommandCenterView({
           <Stack direction="row" gap={3} align="center" style={{ flexWrap: 'wrap' }}>
             <h1
               style={{
-                fontSize: typography.sizes['3xl'],
+                fontSize: typography.sizes['4xl'],
                 fontWeight: typography.weights.bold,
-                letterSpacing: '-0.01em',
+                letterSpacing: typography.tracking.tighter,
+                lineHeight: 1.05,
               }}
             >
               {greeting()}
               {firstName !== undefined ? `, ${firstName}` : ''}.
             </h1>
             {roleLabel !== undefined ? (
-              <Badge
-                dot
-                dotColor={theme.accent}
-                style={{ color: theme.accent, background: theme.accentSoft }}
-              >
+              <Badge dot dotColor={theme.accent}>
                 {roleLabel}
               </Badge>
             ) : null}
           </Stack>
-          <p style={{ fontSize: typography.sizes.md, color: 'var(--nexora-textSecondary)' }}>
+          <p
+            style={{
+              fontSize: typography.sizes.md,
+              color: 'var(--nexora-textSecondary)',
+              maxWidth: '58ch',
+            }}
+          >
             {organizationName} · {theme.tagline}
           </p>
         </Stack>

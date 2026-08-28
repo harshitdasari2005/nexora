@@ -31,13 +31,13 @@ export interface BadgeProps {
 const toneStyles: Record<BadgeTone, CSSProperties> = {
   neutral: {
     color: 'var(--nexora-textSecondary)',
-    background: 'var(--nexora-surfaceMuted)',
+    background: 'transparent',
     border: '1px solid var(--nexora-border)',
   },
   primary: {
-    color: 'var(--nexora-primary)',
-    background: 'var(--nexora-primarySoft)',
-    border: '1px solid transparent',
+    color: 'var(--nexora-text)',
+    background: 'var(--nexora-surfaceMuted)',
+    border: '1px solid var(--nexora-border)',
   },
   success: {
     color: 'var(--nexora-success)',
@@ -85,12 +85,14 @@ export function Badge({
         display: 'inline-flex',
         alignItems: 'center',
         gap: spacing[1.5],
-        paddingInline: spacing[2.5],
-        height: 22,
-        borderRadius: radius.full,
+        paddingInline: spacing[2],
+        height: 20,
+        borderRadius: radius.sm,
         fontSize: typography.sizes.xs,
         fontWeight: typography.weights.medium,
+        letterSpacing: '-0.003em',
         whiteSpace: 'nowrap',
+        lineHeight: 1,
         ...style,
       }}
     >
@@ -98,10 +100,11 @@ export function Badge({
         <span
           aria-hidden
           style={{
-            width: 6,
-            height: 6,
+            width: 5,
+            height: 5,
             borderRadius: '50%',
             background: dotColor ?? dotColors[tone],
+            flexShrink: 0,
           }}
         />
       ) : null}

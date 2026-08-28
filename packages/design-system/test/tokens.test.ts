@@ -48,11 +48,17 @@ describe('design tokens', () => {
 
   it('generates well-formed CSS custom properties for a theme', () => {
     const css = cssVariables(lightColors);
-    expect(css).toContain('--nexora-bg: #fafaf9;');
-    expect(css).toContain('--nexora-primary: #4f46e5;');
+    // One `--nexora-<role>: <value>;` line per color role, no leftovers.
+    const lines = css.trim().split('\n');
+    expect(lines).toHaveLength(Object.keys(lightColors).length);
+    for (const line of lines) {
+      expect(line).toMatch(/^--nexora-[a-zA-Z]+: .+;$/);
+    }
+    expect(css).toContain(`--nexora-bg: ${lightColors.bg};`);
+    expect(css).toContain(`--nexora-primary: ${lightColors.primary};`);
     expect(lightThemeCss).toContain('--nexora-bg');
     expect(darkThemeCss).toContain('--nexora-bg');
-    expect(darkThemeCss).not.toContain('--nexora-bg: #fafaf9;');
+    expect(darkThemeCss).not.toContain(`--nexora-bg: ${lightColors.bg};`);
   });
 });
 

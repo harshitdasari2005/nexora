@@ -50,7 +50,7 @@ export function SectionLabel({ children }: { children: ReactNode }): JSX.Element
   return (
     <div
       style={{
-        fontSize: typography.sizes.xs,
+        fontSize: '11px',
         fontWeight: typography.weights.semibold,
         color: 'var(--nexora-textMuted)',
         textTransform: 'uppercase',

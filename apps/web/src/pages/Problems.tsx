@@ -244,7 +244,7 @@ export function ProblemsView({
           style={{ flexWrap: 'wrap' }}
         >
           <Stack direction="row" gap={2} align="center" style={{ flexWrap: 'wrap' }}>
-            <h1 style={{ fontSize: typography.sizes['2xl'], fontWeight: typography.weights.bold }}>
+            <h1 style={{ fontSize: typography.sizes['3xl'], fontWeight: typography.weights.bold, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
               Problems
             </h1>
             {problems.length > 0 ? (

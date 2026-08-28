@@ -73,8 +73,8 @@ export const DEFAULT_THEME: RoleTheme = {
   briefQuestion: 'What needs my attention?',
   assistantPrompt: 'What needs my attention?',
   tint: 'indigo',
-  accent: '#4f46e5',
-  accentSoft: 'rgba(129, 140, 248, 0.16)',
+  accent: '#5b5bd6',
+  accentSoft: '#5b5bd61f',
   sections: {
     health: 'Business Health',
     signals: 'Business Signals',
@@ -96,8 +96,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What matters across the organization today?',
     assistantPrompt: 'What should I know about the organization today?',
     tint: 'gold',
-    accent: '#b45309',
-    accentSoft: 'rgba(224, 184, 110, 0.16)',
+    accent: '#4f46e5',
+    accentSoft: '#4f46e51f',
     sections: {
       health: 'Organization Health',
       signals: 'Business Signals',
@@ -127,8 +127,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What financial issues require action?',
     assistantPrompt: 'What financial issues need my attention?',
     tint: 'emerald',
-    accent: '#059669',
-    accentSoft: 'rgba(52, 211, 153, 0.16)',
+    accent: '#047857',
+    accentSoft: '#0478571f',
     sections: {
       health: 'Financial Health',
       signals: 'Business Performance',
@@ -157,8 +157,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What technology signals require attention?',
     assistantPrompt: 'What technical risks need attention?',
     tint: 'cyan',
-    accent: '#0891b2',
-    accentSoft: 'rgba(34, 211, 238, 0.16)',
+    accent: '#0369a1',
+    accentSoft: '#0369a11f',
     sections: {
       health: 'Engineering Health',
       signals: 'System Signals',
@@ -188,7 +188,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     assistantPrompt: 'What does my team need attention on?',
     tint: 'steel',
     accent: '#2563eb',
-    accentSoft: 'rgba(79, 143, 209, 0.16)',
+    accentSoft: '#2563eb1f',
     sections: {
       health: 'Engineering Health',
       signals: 'Delivery Signals',
@@ -218,7 +218,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     assistantPrompt: 'What should I work on next?',
     tint: 'cyan',
     accent: '#0e7490',
-    accentSoft: 'rgba(103, 232, 249, 0.16)',
+    accentSoft: '#0e74901f',
     sections: {
       health: 'Workflow Health',
       signals: 'Engineering Signals',
@@ -246,8 +246,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What people signals need attention?',
     assistantPrompt: 'What people signals need my attention today?',
     tint: 'rose',
-    accent: '#e11d48',
-    accentSoft: 'rgba(240, 168, 187, 0.16)',
+    accent: '#be123c',
+    accentSoft: '#be123c1f',
     sections: {
       health: 'Workforce Health',
       signals: 'People Signals',
@@ -275,8 +275,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What growth signals require action?',
     assistantPrompt: 'What growth signals need my attention?',
     tint: 'jade',
-    accent: '#16a34a',
-    accentSoft: 'rgba(34, 197, 94, 0.16)',
+    accent: '#15803d',
+    accentSoft: '#15803d1f',
     sections: {
       health: 'Pipeline Health',
       signals: 'Revenue Signals',
@@ -304,8 +304,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What market signals need my attention?',
     assistantPrompt: 'What marketing signals should I know about?',
     tint: 'magenta',
-    accent: '#a3216f',
-    accentSoft: 'rgba(216, 145, 198, 0.16)',
+    accent: '#a21caf',
+    accentSoft: '#a21caf1f',
     sections: {
       health: 'Campaign Health',
       signals: 'Market Signals',
@@ -334,7 +334,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     assistantPrompt: 'Which product risks need attention?',
     tint: 'violet',
     accent: '#7c3aed',
-    accentSoft: 'rgba(167, 139, 250, 0.16)',
+    accentSoft: '#7c3aed1f',
     sections: {
       health: 'Product Health',
       signals: 'Product Signals',
@@ -364,7 +364,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     assistantPrompt: 'Which product priorities need my attention?',
     tint: 'violet',
     accent: '#6d28d9',
-    accentSoft: 'rgba(139, 92, 246, 0.16)',
+    accentSoft: '#6d28d91f',
     sections: {
       health: 'Product Health',
       signals: 'Product Signals',
@@ -393,8 +393,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What governance signals need my attention?',
     assistantPrompt: 'What compliance or governance risks need my attention?',
     tint: 'amber',
-    accent: '#8a6a1f',
-    accentSoft: 'rgba(217, 163, 90, 0.16)',
+    accent: '#92400e',
+    accentSoft: '#92400e1f',
     sections: {
       health: 'Governance Health',
       signals: 'Compliance Signals',
@@ -423,8 +423,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What compliance signals need my attention?',
     assistantPrompt: 'What compliance issues need my attention?',
     tint: 'amber',
-    accent: '#7a5c22',
-    accentSoft: 'rgba(201, 150, 83, 0.16)',
+    accent: '#78350f',
+    accentSoft: '#78350f1f',
     sections: {
       health: 'Governance Health',
       signals: 'Compliance Signals',
@@ -454,7 +454,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     assistantPrompt: 'What operational signals need attention?',
     tint: 'orange',
     accent: '#c2410c',
-    accentSoft: 'rgba(230, 146, 63, 0.16)',
+    accentSoft: '#c2410c1f',
     sections: {
       health: 'Operational Health',
       signals: 'Process Signals',
@@ -483,7 +483,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     assistantPrompt: 'What operational risks need my attention?',
     tint: 'orange',
     accent: '#9a3412',
-    accentSoft: 'rgba(217, 119, 6, 0.16)',
+    accentSoft: '#9a34121f',
     sections: {
       health: 'Operational Health',
       signals: 'Process Signals',
@@ -512,7 +512,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     assistantPrompt: 'Which customers need my attention?',
     tint: 'teal',
     accent: '#0d9488',
-    accentSoft: 'rgba(45, 212, 191, 0.16)',
+    accentSoft: '#0d94881f',
     sections: {
       health: 'Customer Health',
       signals: 'Customer Signals',
@@ -540,7 +540,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     assistantPrompt: 'Which customers need my attention?',
     tint: 'teal',
     accent: '#0f766e',
-    accentSoft: 'rgba(20, 184, 166, 0.16)',
+    accentSoft: '#0f766e1f',
     sections: {
       health: 'Customer Health',
       signals: 'Customer Signals',
@@ -567,8 +567,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What procurement signals need my attention?',
     assistantPrompt: 'What procurement risks need my attention?',
     tint: 'olive',
-    accent: '#6b5d1f',
-    accentSoft: 'rgba(183, 162, 74, 0.16)',
+    accent: '#4d7c0f',
+    accentSoft: '#4d7c0f1f',
     sections: {
       health: 'Procurement Health',
       signals: 'Supplier Signals',
@@ -595,8 +595,8 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefQuestion: 'What supplier signals need my attention?',
     assistantPrompt: 'What supplier risks need my attention?',
     tint: 'olive',
-    accent: '#5c501f',
-    accentSoft: 'rgba(160, 143, 63, 0.16)',
+    accent: '#3f6212',
+    accentSoft: '#3f62121f',
     sections: {
       health: 'Procurement Health',
       signals: 'Supplier Signals',
@@ -624,7 +624,7 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     assistantPrompt: 'What does my team need from me today?',
     tint: 'steel',
     accent: '#2563eb',
-    accentSoft: 'rgba(79, 143, 209, 0.16)',
+    accentSoft: '#2563eb1f',
     sections: {
       health: 'Team Health',
       signals: 'Delivery Signals',

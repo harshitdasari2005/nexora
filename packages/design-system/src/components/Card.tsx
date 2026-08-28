@@ -38,22 +38,26 @@ export interface CardProps {
  */
 export function Card({
   padding = 6,
-  elevationLevel = 'sm',
+  elevationLevel = 'none',
   interactive = false,
   id,
   className,
   style: extraStyle,
   children,
 }: CardProps): JSX.Element {
+  const shadow = elevation[elevationLevel];
   const style: CSSProperties = {
     background: 'var(--nexora-cardBg, var(--nexora-surface))',
     backdropFilter: 'var(--nexora-cardBackdropFilter, none)',
     WebkitBackdropFilter: 'var(--nexora-cardBackdropFilter, none)',
     border: '1px solid var(--nexora-border)',
     borderRadius: radius.lg,
-    boxShadow: `${elevation[elevationLevel]}, var(--nexora-cardInsetHighlight, inset 0 1px 0 rgba(255, 255, 255, 0))`,
+    boxShadow:
+      shadow === 'none'
+        ? 'var(--nexora-cardInsetHighlight, none)'
+        : `${shadow}, var(--nexora-cardInsetHighlight, none)`,
     padding: spacing[padding],
-    transition: `box-shadow ${motion.duration.base} ${motion.easing.standard}, transform ${motion.duration.base} ${motion.easing.emphasis}`,
+    transition: `box-shadow ${motion.duration.base} ${motion.easing.standard}, border-color ${motion.duration.base} ${motion.easing.standard}, transform ${motion.duration.base} ${motion.easing.emphasis}`,
     ...extraStyle,
   };
   const classes = [interactive ? 'nexora-card-interactive' : '', className]

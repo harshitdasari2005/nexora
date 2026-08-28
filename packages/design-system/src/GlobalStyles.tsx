@@ -18,18 +18,37 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  letter-spacing: -0.011em;
+  font-feature-settings: 'cv02' 1, 'cv03' 1, 'cv04' 1, 'cv11' 1;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 h1, h2, h3, h4, p { margin: 0; }
-button, input, select, textarea { font: inherit; color: inherit; }
-a { color: var(--nexora-primary); text-decoration: none; }
-a:hover { text-decoration: underline; }
-::selection { background: var(--nexora-primarySoft); }
+h1, h2, h3, h4 { letter-spacing: -0.02em; }
+button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+a { color: var(--nexora-link); text-decoration: none; }
+a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-underline-offset: 2px; }
+::selection { background: var(--nexora-primarySoft); color: var(--nexora-text); }
 :focus-visible {
-  outline: 2px solid var(--nexora-primary);
+  outline: 2px solid var(--nexora-ring);
   outline-offset: 2px;
+  border-radius: 3px;
 }
+
+/* Thin, unobtrusive scrollbars — the surface does the work, not chrome. */
+* { scrollbar-width: thin; scrollbar-color: var(--nexora-borderStrong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--nexora-border);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--nexora-borderStrong); background-clip: content-box; }
+*::-webkit-scrollbar-corner { background: transparent; }
+
 @keyframes nexora-spin { to { transform: rotate(360deg); } }
 @keyframes nexora-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 @keyframes nexora-kpi-in {
@@ -48,39 +67,45 @@ export function GlobalStyles(): JSX.Element {
     <style id="nexora-global-styles">
       {`:root {
   ${lightThemeCss}
-  /* App-shell structural tones (light): a very subtle depth ladder —
-     sidebar reads as a hair darker than the page, the topbar as a
-     translucent wash, elevated cards as pure white — enough to separate
-     regions without the shell looking like stacked panels. */
-  --nexora-shellSidebar: #f6f5f3;
-  --nexora-shellTopbar: rgba(255, 255, 255, 0.86);
+  /* App-shell structural tones (light): the sidebar sits flush with the
+     page (a single quiet plane, not a stacked panel); the topbar is an
+     opaque surface with a hairline underline; elevated cards are pure
+     white. Separation comes from the 1px hairline, never a shadow. */
+  --nexora-shellSidebar: var(--nexora-bg);
+  --nexora-shellTopbar: var(--nexora-surface);
   --nexora-shellCardElevated: #ffffff;
   /* Card surface (light): a plain opaque card — no glass, nothing behind
-     it to blur. See the [data-theme="dark"] block below for why this
-     differs there (Login/the pre-S44 cinematic surfaces still float over
-     a 3D scene and need real glass; the authenticated app, S44, does not). */
+     it to blur. The [data-theme="dark"] block below keeps real glass for
+     the Login scene only. */
   --nexora-cardBg: var(--nexora-surface);
   --nexora-cardBackdropFilter: none;
-  --nexora-cardInsetHighlight: inset 0 1px 0 rgba(255, 255, 255, 0);
+  --nexora-cardInsetHighlight: none;
 }
 [data-theme="dark"] {
   ${darkThemeCss}
-  /* App-shell structural tones (dark only): a visible depth ladder from
-     the deepest sidebar to the most-elevated card, distinct from the
-     generic bg/surface pair so the shell reads as layered, not flat. */
-  --nexora-shellSidebar: #05070d;
-  --nexora-shellTopbar: rgba(9, 12, 20, 0.72);
-  --nexora-shellCardElevated: #182036;
+  /* App-shell structural tones (dark): same principle — sidebar flush
+     with the page, topbar an opaque surface, cards one step up. */
+  --nexora-shellSidebar: var(--nexora-bg);
+  --nexora-shellTopbar: var(--nexora-surface);
+  --nexora-shellCardElevated: #1a1a1a;
   /* Card surface (dark): translucent glass over the 3D scene (Login only
      as of S44 — the authenticated shell no longer runs this theme). */
   --nexora-cardBg: var(--nexora-surfaceGlass);
   --nexora-cardBackdropFilter: blur(20px) saturate(150%);
   --nexora-cardInsetHighlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
-.nexora-card-interactive { cursor: pointer; outline-offset: 2px; }
+.nexora-card-interactive { cursor: pointer; transition: border-color 140ms ease, box-shadow 140ms ease; }
 .nexora-card-interactive:hover {
-  box-shadow: ${elevation.md}, var(--nexora-cardInsetHighlight);
+  border-color: var(--nexora-borderStrong);
+  box-shadow: ${elevation.md};
 }
+.nexora-btn:not(:disabled):hover { }
+.nexora-btn-primary:not(:disabled):hover { background: var(--nexora-primaryHover); }
+.nexora-btn-primary:not(:disabled):active { filter: brightness(0.92); }
+.nexora-btn-secondary:not(:disabled):hover { background: var(--nexora-surfaceMuted); border-color: var(--nexora-borderStrong); }
+.nexora-btn-ghost:not(:disabled):hover { background: var(--nexora-surfaceMuted); color: var(--nexora-text); }
+.nexora-btn-danger:not(:disabled):hover { filter: brightness(0.93); }
+.nexora-btn-danger:not(:disabled):active { filter: brightness(0.86); }
 ${resetCss}`}
     </style>
   );

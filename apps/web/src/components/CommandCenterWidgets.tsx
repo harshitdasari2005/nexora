@@ -47,21 +47,26 @@ export function CommandCenterWidget({
         minWidth: 0,
         display: 'flex',
         flexDirection: 'column',
-        ...(isHeroKpi
-          ? {
-              background:
-                'linear-gradient(135deg, var(--nexora-primarySoft), var(--nexora-surface))',
-              border: '1px solid var(--nexora-borderStrong)',
-            }
-          : null),
+        ...(isHeroKpi ? { borderColor: 'var(--nexora-borderStrong)' } : null),
       }}
     >
-      <Stack gap={1} style={{ marginBottom: 12 }}>
+      <Stack gap={1} style={{ marginBottom: widget.type === 'kpi' ? 12 : 14 }}>
         <h2
-          style={{
-            fontSize: isHeroKpi ? typography.sizes.lg : typography.sizes.md,
-            fontWeight: typography.weights.semibold,
-          }}
+          style={
+            widget.type === 'kpi'
+              ? {
+                  fontSize: '11px',
+                  fontWeight: typography.weights.semibold,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--nexora-textMuted)',
+                }
+              : {
+                  fontSize: typography.sizes.md,
+                  fontWeight: typography.weights.semibold,
+                  letterSpacing: '-0.01em',
+                }
+          }
         >
           {widget.title}
         </h2>
@@ -118,13 +123,14 @@ function KpiWidget({
     return <EmptyState title="No metric" />;
   }
   return (
-    <Stack gap={hero ? 1 : 0.5}>
+    <Stack gap={hero ? 1.5 : 1}>
       <div
         className="nexora-kpi-value"
         style={{
           fontSize: hero ? typography.sizes['5xl'] : typography.sizes['4xl'],
-          fontWeight: typography.weights.bold,
+          fontWeight: typography.weights.semibold,
           lineHeight: 1,
+          letterSpacing: '-0.035em',
           color: kpiToneColor(data.tone),
           fontVariantNumeric: 'tabular-nums',
         }}
