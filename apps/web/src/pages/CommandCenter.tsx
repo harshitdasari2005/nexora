@@ -161,11 +161,15 @@ function parseSuccessRate(status: string | undefined): number | undefined {
   return Number.isFinite(value) ? value : undefined;
 }
 
-/** Composes the deterministic "Nexora Brief" from real widget + problem data. */
-function composeBrief(
+/**
+ * Composes the deterministic "Nexora Brief" from real widget + problem
+ * data. Exported for focused unit tests of the attention-failure branch.
+ */
+export function composeBrief(
   organizationName: string,
   center: CommandCenterDto | null,
   problems: readonly BusinessProblemDto[] | null,
+  attentionFailed: boolean,
 ): string {
   if (center === null) {
     return `${organizationName} is set up — your role-aware workspace is ready.`;
@@ -187,6 +191,13 @@ function composeBrief(
     const avg = Math.round(rates.reduce((sum, n) => sum + n, 0) / rates.length);
     workflowNote = ` Workflow health is averaging ${avg}%.`;
     break;
+  }
+
+  if (attentionFailed) {
+    // The attention/problems request failed — the rest of the command
+    // center is real and current, but we must NOT claim "nothing needs
+    // your attention" from data we never received.
+    return `${organizationName}: the rest of your command center is current, but attention items could not be loaded — retry them below.${workflowNote}`;
   }
 
   if (total === 0) {
@@ -229,12 +240,46 @@ export function CommandCenterView({
   const [error, setError] = useState<ApiError | null>(null);
   const [roleContext, setRoleContext] = useState<RoleContextResponse | null>(null);
   const [problems, setProblems] = useState<readonly BusinessProblemDto[] | null>(null);
+  // The attention/problems request is SECONDARY: its failure must never
+  // take down the whole page, but it must also never render as a silent
+  // "nothing needs attention". This flag drives an inline, retryable
+  // failure state in the attention section (and suppresses the brief's
+  // "operating normally" claim) without touching the primary center.
+  const [attentionFailed, setAttentionFailed] = useState(false);
   // Cross-fades the content on role/workspace switch instead of a loading
   // screen — set true just before a NON-initial refetch, cleared once the
   // new center has painted.
   const [morphing, setMorphing] = useState(false);
   const firstLoadRef = useRef(true);
   const { theme } = useRoleTheme();
+
+  // Loads the SECONDARY context (role-context + detected problems). Never
+  // rejects: role-context failure falls back to the center's own role
+  // fields (still real data, never blank); a problems failure is surfaced
+  // through `attentionFailed` so it reads as "couldn't load", not "clear".
+  const loadSecondary = useCallback(async () => {
+    const scope = `organizationId=${encodeURIComponent(organizationId)}&workspaceId=${encodeURIComponent(workspaceId)}`;
+    const [context, problemList] = await Promise.all([
+      api<RoleContextResponse>(`/role-context?${scope}`).then(
+        (value) => ({ ok: true as const, value }),
+        () => ({ ok: false as const }),
+      ),
+      fetchProblems({ organizationId, workspaceId }).then(
+        (value) => ({ ok: true as const, value }),
+        () => ({ ok: false as const }),
+      ),
+    ]);
+    if (context.ok) {
+      setRoleContext(context.value);
+    }
+    if (problemList.ok) {
+      setProblems(problemList.value);
+      setAttentionFailed(false);
+    } else {
+      setProblems(null);
+      setAttentionFailed(true);
+    }
+  }, [organizationId, workspaceId]);
 
   const load = useCallback(async () => {
     if (!firstLoadRef.current) {
@@ -243,14 +288,13 @@ export function CommandCenterView({
     setError(null);
     try {
       const scope = `organizationId=${encodeURIComponent(organizationId)}&workspaceId=${encodeURIComponent(workspaceId)}`;
-      const [center, context, problemList] = await Promise.all([
+      // Only the command-center fetch can fail the page; `loadSecondary`
+      // absorbs its own errors into `attentionFailed`.
+      const [center] = await Promise.all([
         api<CommandCenterDto>(`/command-center?${scope}`),
-        api<RoleContextResponse>(`/role-context?${scope}`).catch(() => null),
-        fetchProblems({ organizationId, workspaceId }).catch(() => null),
+        loadSecondary(),
       ]);
       setCenter(center);
-      setRoleContext(context);
-      setProblems(problemList);
     } catch (caught) {
       setError(
         caught instanceof ApiError ? caught : new ApiError(0, 'INTERNAL_ERROR', 'Request failed'),
@@ -262,7 +306,7 @@ export function CommandCenterView({
       // the next frame so the cross-fade actually plays.
       requestAnimationFrame(() => requestAnimationFrame(() => setMorphing(false)));
     }
-  }, [organizationId, workspaceId]);
+  }, [organizationId, workspaceId, loadSecondary]);
 
   useEffect(() => {
     if (initialCenter === undefined) {
@@ -428,7 +472,7 @@ export function CommandCenterView({
                           lineHeight: typography.lineHeights.relaxed,
                         }}
                       >
-                        {composeBrief(organizationName, center, openProblems)}
+                        {composeBrief(organizationName, center, openProblems, attentionFailed)}
                       </p>
                       {sortedProblems !== null && sortedProblems.length > 0 ? (
                         <Link to="/app/problems" style={{ textDecoration: 'none' }}>
@@ -453,8 +497,46 @@ export function CommandCenterView({
                 ) : null}
               </Stack>
 
-              {/* ATTENTION REQUIRED — real detected problems, ranked by severity */}
-              {sortedProblems !== null && sortedProblems.length > 0 ? (
+              {/* ATTENTION REQUIRED — real detected problems, ranked by
+                  severity. A failed problems request renders an inline,
+                  retryable notice here instead of silently collapsing to
+                  nothing (which would read as "all clear"). */}
+              {attentionFailed ? (
+                <Stack gap={3}>
+                  <SectionLabel>{theme.sections.attention}</SectionLabel>
+                  <Card>
+                    <Stack
+                      direction="row"
+                      gap={3}
+                      align="center"
+                      justify="space-between"
+                      style={{ flexWrap: 'wrap' }}
+                    >
+                      <Stack gap={0.5} style={{ minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: typography.sizes.sm,
+                            fontWeight: typography.weights.semibold,
+                          }}
+                        >
+                          Attention items couldn’t be loaded
+                        </div>
+                        <div
+                          style={{
+                            fontSize: typography.sizes.xs,
+                            color: 'var(--nexora-textMuted)',
+                          }}
+                        >
+                          The rest of your command center is up to date. This section only.
+                        </div>
+                      </Stack>
+                      <Button variant="secondary" size="sm" onClick={() => void loadSecondary()}>
+                        Retry
+                      </Button>
+                    </Stack>
+                  </Card>
+                </Stack>
+              ) : sortedProblems !== null && sortedProblems.length > 0 ? (
                 <Stack gap={3}>
                   <SectionLabel>{theme.sections.attention}</SectionLabel>
                   <Stack gap={3}>

@@ -12,8 +12,8 @@ import { describe, expect, it } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 
-import { CommandCenterView } from '../src/pages/CommandCenter.js';
-import type { CommandCenterDto } from '../src/lib/types.js';
+import { CommandCenterView, composeBrief } from '../src/pages/CommandCenter.js';
+import type { BusinessProblemDto, CommandCenterDto } from '../src/lib/types.js';
 
 function center(overrides: Partial<CommandCenterDto> = {}): CommandCenterDto {
   return {
@@ -246,5 +246,40 @@ describe('CommandCenterView (S24 Phase 2)', () => {
     expect(html).not.toContain('CEOPage');
     expect(html).not.toContain('ManagerPage');
     expect(html).not.toContain('DeveloperPage');
+  });
+});
+
+describe('composeBrief — attention-request failure (P2-1)', () => {
+  function highProblem(): BusinessProblemDto {
+    return {
+      id: 'prb_1',
+      severity: 'high',
+      status: 'DETECTED',
+      title: 'Workflow failing',
+    } as unknown as BusinessProblemDto;
+  }
+
+  it('claims "operating normally" only when the problems list really loaded empty', () => {
+    const brief = composeBrief('Acme Inc.', center(), [], false);
+    expect(brief).toContain('operating normally');
+    expect(brief).toContain('nothing needs your attention');
+  });
+
+  it('reports real open-issue counts when the problems list loaded with data', () => {
+    const brief = composeBrief('Acme Inc.', center(), [highProblem()], false);
+    expect(brief).toContain('1 open issue');
+    expect(brief).toContain('require immediate attention');
+  });
+
+  it('does NOT claim "nothing needs your attention" when the problems request failed', () => {
+    const brief = composeBrief('Acme Inc.', center(), null, true);
+    expect(brief).not.toContain('operating normally');
+    expect(brief).not.toContain('nothing needs your attention');
+  });
+
+  it('states the attention items could not be loaded when the request failed', () => {
+    const brief = composeBrief('Acme Inc.', center(), null, true);
+    expect(brief.toLowerCase()).toContain('could not be loaded');
+    expect(brief.toLowerCase()).toContain('retry');
   });
 });

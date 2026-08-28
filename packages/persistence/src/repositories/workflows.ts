@@ -217,9 +217,18 @@ export class PgWorkflowStepExecutionRepository implements WorkflowStepExecutionR
     return rows.map((row) => WorkflowStepExecution.hydrate(rowToExecutionSnapshot(row)));
   }
 
-  async listByTenant(tenantId: TenantId): Promise<readonly WorkflowStepExecution[]> {
+  async listByTenant(
+    tenantId: TenantId,
+    limit?: number,
+  ): Promise<readonly WorkflowStepExecution[]> {
+    // Newest-first + bounded, consistent with the other audit journal
+    // queries (workflow instances, agent executions, approvals). Without
+    // this the Audit Center performed an unbounded tenant-wide scan of the
+    // entire step journal on every page load.
     const rows = await this.#db.query.workflowStepExecutions.findMany({
       where: eq(workflowStepExecutions.tenantId, tenantId),
+      orderBy: (table, { desc }) => [desc(table.createdAt)],
+      limit: limit ?? 500,
     });
     return rows.map((row) => WorkflowStepExecution.hydrate(rowToExecutionSnapshot(row)));
   }

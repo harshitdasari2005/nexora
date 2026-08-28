@@ -39,8 +39,13 @@ export interface WorkflowStepExecutionRepository {
   ): Promise<WorkflowStepExecution | undefined>;
   /** Lists the executions of a workflow in creation order. */
   listByWorkflow(workflowId: string): Promise<readonly WorkflowStepExecution[]>;
-  /** Lists the executions of a workflow's tenant (journal audit). */
-  listByTenant(tenantId: TenantId): Promise<readonly WorkflowStepExecution[]>;
+  /**
+   * Lists the executions of a workflow's tenant (journal audit), newest
+   * first, bounded by `limit` (default 500). The bound keeps the audit
+   * aggregation from performing an unbounded tenant-wide scan as the
+   * step journal grows.
+   */
+  listByTenant(tenantId: TenantId, limit?: number): Promise<readonly WorkflowStepExecution[]>;
 }
 
 export type { WorkflowInstanceSnapshot, WorkflowStepExecutionSnapshot };

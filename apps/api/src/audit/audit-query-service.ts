@@ -215,7 +215,7 @@ export class AuditQueryService {
           limit: fetchLimit,
         }),
       ),
-      this.#deps.workflowStepExecutions.listByTenant(scope.tenantId),
+      this.#deps.workflowStepExecutions.listByTenant(scope.tenantId, fetchLimit),
       this.#deps.activity.listByWorkspace(scope.tenantId, {
         workspaceId: scope.workspaceId,
         limit: fetchLimit,

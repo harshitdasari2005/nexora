@@ -17,6 +17,7 @@ import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
+import { useRoleTheme } from '../lib/RoleThemeContext.js';
 import type { DashboardResponse, InstalledAppDto, MarketplaceAppDto } from '../lib/types.js';
 import { useSession } from '../session.js';
 
@@ -144,6 +145,14 @@ export interface MarketplaceViewProps {
   initialInstalled: readonly InstalledAppDto[];
   /** Called after any lifecycle change (refresh the lists). */
   onChanged: () => void;
+  /**
+   * Whether the caller holds `marketplace.manage` — gates the install /
+   * update / uninstall controls (browsing the catalog stays open to any
+   * workspace member). Presentation only: the backend re-checks the same
+   * capability on every lifecycle route. When omitted, it is resolved from
+   * the caller's trusted role context.
+   */
+  canManage?: boolean;
 }
 
 /** The pure marketplace content (exported for smoke tests). */
@@ -157,7 +166,10 @@ export function MarketplaceView({
   // truth). Marked `_` for the no-unused-vars rule.
   initialInstalled: _initialInstalled,
   onChanged,
+  canManage,
 }: MarketplaceViewProps): JSX.Element {
+  const { current } = useRoleTheme();
+  const canManageApps = canManage ?? current?.permissions.includes('marketplace.manage') ?? false;
   const [apps, setApps] = useState<MarketplaceAppDto[]>(() => [...initialApps]);
   const [reviewing, setReviewing] = useState<MarketplaceAppDto | null>(null);
   const [query, setQuery] = useState('');
@@ -209,7 +221,14 @@ export function MarketplaceView({
     <Stack gap={8} style={{ maxWidth: 960, margin: '0 auto' }}>
       <Stack direction="row" gap={4} align="center" justify="space-between">
         <Stack gap={1}>
-          <h1 style={{ fontSize: typography.sizes['3xl'], fontWeight: typography.weights.bold, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
+          <h1
+            style={{
+              fontSize: typography.sizes['3xl'],
+              fontWeight: typography.weights.bold,
+              letterSpacing: '-0.03em',
+              lineHeight: 1.1,
+            }}
+          >
             Apps
           </h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
@@ -220,6 +239,27 @@ export function MarketplaceView({
           {installedCount} installed
         </Badge>
       </Stack>
+
+      {!canManageApps ? (
+        <Card style={{ background: 'var(--nexora-surfaceMuted)' }}>
+          <Stack direction="row" gap={3} align="flex-start">
+            <span aria-hidden style={{ fontSize: 16, lineHeight: 1.2 }}>
+              🔒
+            </span>
+            <Stack gap={1} style={{ minWidth: 0 }}>
+              <div
+                style={{ fontSize: typography.sizes.sm, fontWeight: typography.weights.semibold }}
+              >
+                Installing apps requires an administrator
+              </div>
+              <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+                You can browse the catalogue. An administrator (with the marketplace.manage
+                permission) can install, update, or uninstall apps for this workspace.
+              </div>
+            </Stack>
+          </Stack>
+        </Card>
+      ) : null}
 
       <input
         id="marketplace-search"
@@ -259,6 +299,7 @@ export function MarketplaceView({
               app={app}
               organizationId={organizationId}
               workspaceId={workspaceId}
+              canManage={canManageApps}
               onInstall={handleInstalled}
               onUninstall={handleUninstalled}
               onReview={() => setReviewing(app)}
@@ -277,6 +318,7 @@ function AppCard({
   app,
   organizationId,
   workspaceId,
+  canManage,
   onInstall,
   onUninstall,
   onReview,
@@ -286,6 +328,8 @@ function AppCard({
   app: MarketplaceAppDto;
   organizationId: string;
   workspaceId: string;
+  /** Gates install / update / uninstall (backend re-checks marketplace.manage). */
+  canManage: boolean;
   onInstall: (app: MarketplaceAppDto, version: string) => void;
   onUninstall: (appId: string) => void;
   onReview: () => void;
@@ -400,36 +444,42 @@ function AppCard({
               ))}
             </Stack>
           </Stack>
-          <Stack direction="row" gap={3} align="center">
-            {!app.installed ? (
-              <Button size="sm" onClick={onReview}>
-                Install
-              </Button>
-            ) : (
-              <>
-                {app.installedVersion !== app.version ? (
+          {canManage ? (
+            <Stack direction="row" gap={3} align="center">
+              {!app.installed ? (
+                <Button size="sm" onClick={onReview}>
+                  Install
+                </Button>
+              ) : (
+                <>
+                  {app.installedVersion !== app.version ? (
+                    <Button
+                      size="sm"
+                      onClick={() => void handleUpdate()}
+                      disabled={busy}
+                      loading={busy}
+                    >
+                      Update to v{app.version}
+                    </Button>
+                  ) : (
+                    <Badge>Up to date</Badge>
+                  )}
                   <Button
                     size="sm"
-                    onClick={() => void handleUpdate()}
+                    variant="ghost"
+                    onClick={() => void handleUninstall()}
                     disabled={busy}
-                    loading={busy}
                   >
-                    Update to v{app.version}
+                    Uninstall
                   </Button>
-                ) : (
-                  <Badge>Up to date</Badge>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => void handleUninstall()}
-                  disabled={busy}
-                >
-                  Uninstall
-                </Button>
-              </>
-            )}
-          </Stack>
+                </>
+              )}
+            </Stack>
+          ) : (
+            <span style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+              {app.installed ? 'Installed · managed by an administrator' : 'Administrator required'}
+            </span>
+          )}
         </Stack>
 
         {error !== null ? (
@@ -438,7 +488,7 @@ function AppCard({
           </div>
         ) : null}
 
-        {reviewing ? (
+        {canManage && reviewing ? (
           <PermissionReview
             app={app}
             onConfirm={() => void handleInstall()}

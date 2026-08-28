@@ -67,8 +67,14 @@ export class InMemoryWorkflowStepExecutionRepository implements WorkflowStepExec
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  async listByTenant(tenantId: TenantId): Promise<readonly WorkflowStepExecution[]> {
-    return [...this.executions.values()].filter((execution) => execution.tenantId === tenantId);
+  async listByTenant(
+    tenantId: TenantId,
+    limit?: number,
+  ): Promise<readonly WorkflowStepExecution[]> {
+    return [...this.executions.values()]
+      .filter((execution) => execution.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit ?? 500);
   }
 
   async save(execution: WorkflowStepExecution): Promise<void> {

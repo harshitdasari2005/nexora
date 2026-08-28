@@ -53,6 +53,7 @@ describe('MarketplaceView (S19)', () => {
         initialApps={[HR]}
         initialInstalled={[]}
         onChanged={noop}
+        canManage
       />,
     );
     expect(html).toContain('Apps');
@@ -71,6 +72,7 @@ describe('MarketplaceView (S19)', () => {
         initialApps={[HR]}
         initialInstalled={[]}
         onChanged={noop}
+        canManage
       />,
     );
     expect(html).toContain('Install');
@@ -89,6 +91,7 @@ describe('MarketplaceView (S19)', () => {
         initialApps={[HR_UPDATABLE]}
         initialInstalled={[INSTALLED_HR]}
         onChanged={noop}
+        canManage
       />,
     );
     // SSR splits interpolated text: `Installed v<!-- -->0.9.0`, `Update to v<!-- -->1.0.0`.
@@ -107,8 +110,48 @@ describe('MarketplaceView (S19)', () => {
         initialApps={[]}
         initialInstalled={[]}
         onChanged={noop}
+        canManage
       />,
     );
     expect(html).toContain('No apps in the catalog');
+  });
+});
+
+describe('MarketplaceView — capability-aware management controls (P2-3)', () => {
+  it('hides install/update/uninstall for a caller without marketplace.manage', () => {
+    const html = renderToString(
+      <MarketplaceView
+        organizationId="org_1"
+        workspaceId="wsp_1"
+        initialApps={[HR_UPDATABLE]}
+        initialInstalled={[INSTALLED_HR]}
+        onChanged={noop}
+        canManage={false}
+      />,
+    );
+    // No misleading active controls.
+    expect(html).not.toContain('Uninstall');
+    expect(html).not.toContain('Update to v');
+    // A clear read-only explanation instead.
+    expect(html).toContain('Installing apps requires an administrator');
+    expect(html).toContain('managed by an administrator');
+    // The catalogue itself still renders (browse stays open).
+    expect(html).toContain('HR Suite');
+  });
+
+  it('keeps the full management surface for a caller WITH marketplace.manage', () => {
+    const html = renderToString(
+      <MarketplaceView
+        organizationId="org_1"
+        workspaceId="wsp_1"
+        initialApps={[HR_UPDATABLE]}
+        initialInstalled={[INSTALLED_HR]}
+        onChanged={noop}
+        canManage
+      />,
+    );
+    expect(html).toContain('Uninstall');
+    expect(html).toContain('Update to v');
+    expect(html).not.toContain('Installing apps requires an administrator');
   });
 });
