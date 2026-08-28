@@ -110,6 +110,27 @@ const DEMO_ARTICLE_BODY =
   'When active projects need attention: review the project attention queue, ' +
   'check what needs attention, and clear the notification backlog. This is ' +
   'the standard project attention remediation.';
+
+/**
+ * Published, indexed knowledge articles for the demo workspace. The first is
+ * the known-solution playbook the hero/remediation flow depends on. The
+ * second carries a handful of specific, checkable facts (which projects are
+ * at risk, why, and the dates) so a retrieval question has a substantive,
+ * verifiable answer — used to demonstrate that provider narration reports
+ * only what the retrieved source actually says.
+ */
+const DEMO_ARTICLES: readonly { title: string; body: string }[] = [
+  { title: DEMO_ARTICLE_TITLE, body: DEMO_ARTICLE_BODY },
+  {
+    title: 'Portfolio risk review — Q3',
+    body:
+      'Mobile Banking is at risk: the vendor payments integration slipped and the ' +
+      '30 June go-live is now uncertain. Customer Onboarding is on track for its ' +
+      'August milestone. Atlas Migration is blocked pending a security sign-off ' +
+      'from the platform team. No other active project is currently flagged.',
+  },
+];
+
 const DEMO_NOTIFICATION_SOURCE_EVENT = 'demo-seed:project-attention';
 
 function log(message: string): void {
@@ -368,25 +389,31 @@ async function main(): Promise<void> {
     log(`Created employee ${name} (${created.value.employee.id})`);
   }
 
-  // --- 4. the known-solution knowledge article (published + indexed) --------
+  // --- 4. knowledge articles (published + indexed) -------------------------
   const existingArticles = await repositories.knowledgeArticles.listByWorkspace(
     tenantId,
     workspaceIdBranded,
   );
-  const existingArticle = existingArticles.find((article) => article.title === DEMO_ARTICLE_TITLE);
-  if (existingArticle === undefined || existingArticle.status.value !== 'published') {
+  for (const article of DEMO_ARTICLES) {
+    const existingArticle = existingArticles.find((entry) => entry.title === article.title);
+    if (existingArticle !== undefined && existingArticle.status.value === 'published') {
+      log(`Reusing published knowledge article "${article.title}"`);
+      continue;
+    }
     let articleId = existingArticle?.id;
     if (articleId === undefined) {
       const created = await container.createArticle.handle({
         tenantId,
         workspaceId: workspaceIdBranded,
         actorId: userId,
-        title: DEMO_ARTICLE_TITLE,
-        body: DEMO_ARTICLE_BODY,
-        correlationId: 'demo-seed:create-article',
+        title: article.title,
+        body: article.body,
+        correlationId: `demo-seed:create-article:${article.title}`,
       });
       if (!created.ok) {
-        throw new Error(`Could not create the demo knowledge article: ${created.error.message}`);
+        throw new Error(
+          `Could not create knowledge article "${article.title}": ${created.error.message}`,
+        );
       }
       articleId = created.value.article.id;
     }
@@ -395,10 +422,12 @@ async function main(): Promise<void> {
       workspaceId: workspaceIdBranded,
       actorId: userId,
       articleId,
-      correlationId: 'demo-seed:publish-article',
+      correlationId: `demo-seed:publish-article:${article.title}`,
     });
     if (!published.ok) {
-      throw new Error(`Could not publish the demo knowledge article: ${published.error.message}`);
+      throw new Error(
+        `Could not publish knowledge article "${article.title}": ${published.error.message}`,
+      );
     }
     const indexed = await container.indexArticle.handle({
       tenantId,
@@ -409,11 +438,11 @@ async function main(): Promise<void> {
       version: published.value.article.contentVersion,
     });
     if (!indexed.ok) {
-      throw new Error(`Could not index the demo knowledge article: ${indexed.error.message}`);
+      throw new Error(
+        `Could not index knowledge article "${article.title}": ${indexed.error.message}`,
+      );
     }
-    log(`Published + indexed knowledge article "${DEMO_ARTICLE_TITLE}"`);
-  } else {
-    log(`Reusing published knowledge article "${DEMO_ARTICLE_TITLE}"`);
+    log(`Published + indexed knowledge article "${article.title}"`);
   }
 
   // --- 5. RESET: clear any stale problem/plan state for the demo tenant -----
