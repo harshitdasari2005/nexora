@@ -1,8 +1,6 @@
-# Nexora — CI pipeline (placeholder scaffold)
+# Nexora — CI pipeline
 # Architecture reference: ROADMAP.md §7 Wave A (tooling/ci), ENGINEERING_PLAYBOOK.md §8.
-#
-# NOTE: this workflow is a placeholder. It becomes enforceable once the first
-# packages are scaffolded and pnpm-lock.yaml is committed (Roadmap S1–S2).
+
 name: CI
 
 on:
@@ -16,7 +14,46 @@ concurrency:
 
 jobs:
   quality:
-    name: Quality gates
+    name: Quality gates (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Run the full gate on the CI baseline (22) and the lowest version
+        # `engines.node` claims to support (20), so a 20-incompatible API
+        # never lands green.
+        node: [20, 22]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm format:check
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit + integration tests
+        run: pnpm test
+      - name: Secret scan
+        run: pnpm scan:secrets
+
+  boot:
+    name: Boot check (real infra)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -36,19 +73,35 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Stabilization (2026-08): baseline quality gates enabled — all green
-      # locally on the known-good baseline.
-      - name: Format check
-        run: pnpm format:check
-      - name: Lint
-        run: pnpm lint
-      - name: Typecheck
-        run: pnpm typecheck
-      - name: Unit + integration tests
-        run: pnpm test
-      # TODO(S1): contract tests are already covered by `pnpm test`
-      # (@nexora/contracts runs its own suite); a standalone contract-test
-      # runner lands with tooling/ci. Security scan (audit-ci) is pending
-      # dependency ratification (ENGINEERING_PLAYBOOK.md §8.3).
-      # - name: Security scan (secrets + dependencies)
-      #   run: pnpm exec audit-ci --high
+      - name: Start infrastructure (Postgres, Redis, MinIO, Keycloak)
+        run: |
+          cp .env.example .env
+          docker compose -f infrastructure/compose/docker-compose.yml up -d
+          # Wait for Postgres — the only hard dependency for API boot.
+          for i in $(seq 1 30); do
+            if docker exec nexora-postgres pg_isready -U nexora -d nexora >/dev/null 2>&1; then
+              echo "postgres ready"; break
+            fi
+            sleep 2
+          done
+
+      - name: Build
+        run: pnpm build
+
+      - name: Boot the API and probe /api/health
+        run: |
+          DATABASE_AUTO_MIGRATE=true node apps/api/dist/src/server.js &
+          API_PID=$!
+          ok=0
+          for i in $(seq 1 45); do
+            if curl -fsS --max-time 2 http://localhost:3001/api/health | grep -q '"status":"ok"'; then
+              echo "API healthy"; ok=1; break
+            fi
+            sleep 2
+          done
+          kill "$API_PID" 2>/dev/null || true
+          test "$ok" = "1"
+
+      - name: Tear down infrastructure
+        if: always()
+        run: docker compose -f infrastructure/compose/docker-compose.yml down -v
