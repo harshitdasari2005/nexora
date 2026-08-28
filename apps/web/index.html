@@ -11,6 +11,16 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <script>
+      // Apply the persisted color-scheme before first paint (no flash of
+      // light on a dark-mode reload). Kept in sync afterwards by
+      // src/lib/ThemeMode.tsx.
+      try {
+        if (localStorage.getItem('nexora-theme') === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

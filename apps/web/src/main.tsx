@@ -7,6 +7,7 @@ import { createRoot } from 'react-dom/client';
 import { GlobalStyles } from '@nexora/design-system';
 
 import { App } from './App.js';
+import { ThemeModeProvider } from './lib/ThemeMode.js';
 
 const container = document.getElementById('root');
 if (container === null) {
@@ -16,6 +17,8 @@ if (container === null) {
 createRoot(container).render(
   <StrictMode>
     <GlobalStyles />
-    <App />
+    <ThemeModeProvider>
+      <App />
+    </ThemeModeProvider>
   </StrictMode>,
 );

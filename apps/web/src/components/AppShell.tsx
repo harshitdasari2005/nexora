@@ -6,10 +6,14 @@
  * constant across every app view. The top bar hosts the Notification
  * Center (Notification + Activity Feed vertical slice).
  *
- * S44: the shell runs the light enterprise theme (`:root` default tokens,
- * no `data-theme` override) — warm-white page, white cards, a hair of
- * surface differentiation for the sidebar/topbar, role color used only for
- * badges/active-nav/icons rather than as an ambient wash. The S39–S41
+ * S44: the shell runs the light enterprise theme by default (`:root`
+ * tokens) — warm-white page, white cards, a hair of surface
+ * differentiation for the sidebar/topbar, role color used only for
+ * badges/active-nav/icons rather than as an ambient wash. A signed-in user
+ * can opt into the design system's dark palette from the top-bar toggle
+ * (`ThemeToggle` → `useThemeMode` → `<html data-theme="dark">`), persisted
+ * per browser and applied before first paint by a script in `index.html`.
+ * The S39–S41
  * cinematic 3D ambient background (`DigitalHeadquarters`/
  * `IntelligenceNetwork`) was retired from the authenticated shell entirely
  * — it stays on Login only, which keeps its own separate composition.
@@ -36,6 +40,7 @@ import {
 } from '../lib/rolePersonas.js';
 import { RoleThemeProvider, useRoleTheme } from '../lib/RoleThemeContext.js';
 import type { RoleTheme } from '../lib/roleThemes.js';
+import { useThemeMode } from '../lib/ThemeMode.js';
 import type { UserDto } from '../lib/types.js';
 import { CommandPalette } from './CommandPalette.js';
 import { NotificationCenter } from './NotificationCenter.js';
@@ -264,6 +269,36 @@ function renderNavItem(
     <div key={item.label} className={className} style={style}>
       {content}
     </div>
+  );
+}
+
+/** The top-bar light ⇄ dark switch. Persists via {@link useThemeMode}. */
+function ThemeToggle(): JSX.Element {
+  const { mode, toggle } = useThemeMode();
+  const nextLabel = mode === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+  return (
+    <button
+      type="button"
+      className="nexora-icon-btn"
+      onClick={toggle}
+      aria-label={nextLabel}
+      title={nextLabel}
+      style={{
+        width: 34,
+        height: 34,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 8,
+        border: '1px solid var(--nexora-border)',
+        background: 'var(--nexora-surface)',
+        color: 'var(--nexora-textSecondary)',
+        cursor: 'pointer',
+        transition: 'background 130ms ease, color 130ms ease, border-color 130ms ease',
+      }}
+    >
+      <NavIcon name={mode === 'dark' ? 'sun' : 'moon'} size={16} />
+    </button>
   );
 }
 
@@ -677,6 +712,7 @@ function AppShellChrome({
                 {roleLabel}
               </Badge>
             </span>
+            <ThemeToggle />
             <NotificationCenter organizationId={organizationId} workspaceId={workspaceId} />
           </div>
         </header>
