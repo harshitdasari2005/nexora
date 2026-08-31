@@ -42,7 +42,7 @@ The specs are the source of truth; code references them by section (e.g. `BACKEN
 
 ## Status — what is actually built
 
-This repo is **well past the MVP scaffold**. Broad strokes (see `CLAUDE.md` for the current
+This repo is **well past the MVP scaffold**. Broad strokes (see `DEVELOPMENT.md` for the current
 "what's real" table and `ROADMAP.md` for the plan):
 
 - **Platform**: Fastify modular monolith (`apps/api`), Vite + React SPA (`apps/web`), Keycloak

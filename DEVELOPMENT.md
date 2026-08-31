@@ -1,6 +1,6 @@
-# CLAUDE.md
+# Development Guide
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This document covers the architecture, local commands, and conventions for working in this repository.
 
 ## What Nexora is
 
@@ -64,8 +64,7 @@ pnpm demo:reset              # seed demo data (apps/api/scripts/seed-demo.ts)
 pnpm scan:secrets            # scripts/scan-secrets.mjs
 ```
 
-Ports can be overridden: `NEXORA_API_PORT=3100 NEXORA_WEB_PORT=5174 pnpm dev:local`. The
-`.claude/launch.json` config (`nexora-dev`) runs `pnpm dev:local` with Web :5180 / API :3010.
+Ports can be overridden: `NEXORA_API_PORT=3100 NEXORA_WEB_PORT=5174 pnpm dev:local`.
 Copy `.env.example` to `.env` first — Postgres is mapped to host port **5433** (not 5432).
 
 ### Scoped / single-package / single-test
