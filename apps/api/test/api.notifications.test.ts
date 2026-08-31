@@ -14,10 +14,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { chatClient, currentUserId, onboardOrgAndWorkspace } from './helpers.js';
-import {
-  isActivityInScope,
-  isNotificationForRecipient,
-} from '../src/routes/notifications.js';
+import { isActivityInScope, isNotificationForRecipient } from '../src/routes/notifications.js';
 
 /** The notification payload returned by GET /api/notifications. */
 interface NotificationListResponse {

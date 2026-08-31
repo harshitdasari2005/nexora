@@ -25,7 +25,11 @@ export interface EmptyStateProps {
 /** Renders an empty-state panel. */
 export function EmptyState({ icon, title, description, action }: EmptyStateProps): JSX.Element {
   return (
-    <Stack gap={3} align="center" style={{ textAlign: 'center', padding: `${spacing[10]} ${spacing[6]}` }}>
+    <Stack
+      gap={3}
+      align="center"
+      style={{ textAlign: 'center', padding: `${spacing[10]} ${spacing[6]}` }}
+    >
       {icon !== undefined ? (
         <span
           aria-hidden

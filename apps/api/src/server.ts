@@ -6,10 +6,22 @@
  * `pnpm --filter @nexora/app-api dev` or `pnpm dev:api`.
  */
 
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { config as loadEnv } from 'dotenv';
 
-loadEnv({ path: fileURLToPath(new URL('../../../.env', import.meta.url)) });
+// The repo-root `.env` is `../../../.env` relative to this file when it runs
+// from source (`tsx src/server.ts`), but `../../../../.env` when it runs as
+// the compiled `dist/src/server.js` (one directory deeper). Try both and
+// load whichever exists; if neither does (e.g. a real deployment injecting
+// real env vars), dotenv is simply a no-op — same as before.
+for (const relative of ['../../../.env', '../../../../.env']) {
+  const candidate = fileURLToPath(new URL(relative, import.meta.url));
+  if (existsSync(candidate)) {
+    loadEnv({ path: candidate });
+    break;
+  }
+}
 
 import { createDatabase, runMigrations } from '@nexora/persistence';
 

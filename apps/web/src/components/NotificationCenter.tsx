@@ -285,8 +285,7 @@ export function NotificationCenter({
             background: 'var(--nexora-surface)',
             border: '1px solid var(--nexora-border)',
             borderRadius: 12,
-            boxShadow:
-              '0 12px 32px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.04)',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.04)',
             overflow: 'hidden',
             zIndex: 40,
           }}

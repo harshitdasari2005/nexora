@@ -171,33 +171,30 @@ export function Landing(): JSX.Element {
   // (works with JS disabled); `goToLogin` only intercepts a plain click to
   // play the cinematic fade-out before the redirect.
   const SSO_LOGIN_URL = '/api/auth/login';
-  const goToLogin = useCallback(
-    (event: React.MouseEvent<HTMLAnchorElement>) => {
-      // Preserve modifier-key / middle-click "open in new tab" — only
-      // intercept a plain click to play the transition.
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey
-      ) {
-        return;
-      }
-      event.preventDefault();
-      if (reducedMotion()) {
-        window.location.assign(SSO_LOGIN_URL);
-        return;
-      }
-      setTransitioning(true);
-      timeoutRef.current = window.setTimeout(
-        () => window.location.assign(SSO_LOGIN_URL),
-        TRANSITION_MS,
-      );
-    },
-    [],
-  );
+  const goToLogin = useCallback((event: React.MouseEvent<HTMLAnchorElement>) => {
+    // Preserve modifier-key / middle-click "open in new tab" — only
+    // intercept a plain click to play the transition.
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    if (reducedMotion()) {
+      window.location.assign(SSO_LOGIN_URL);
+      return;
+    }
+    setTransitioning(true);
+    timeoutRef.current = window.setTimeout(
+      () => window.location.assign(SSO_LOGIN_URL),
+      TRANSITION_MS,
+    );
+  }, []);
 
   const cta = (size: 'sm' | 'lg' = 'lg'): JSX.Element => (
     <a href={SSO_LOGIN_URL} onClick={goToLogin} style={{ textDecoration: 'none' }}>

@@ -95,7 +95,10 @@ export function ThemeModeProvider({ children }: ThemeModeProviderProps): JSX.Ele
   }, []);
 
   const setMode = useCallback((next: ThemeMode) => setModeState(next), []);
-  const toggle = useCallback(() => setModeState((prev) => (prev === 'dark' ? 'light' : 'dark')), []);
+  const toggle = useCallback(
+    () => setModeState((prev) => (prev === 'dark' ? 'light' : 'dark')),
+    [],
+  );
 
   const value = useMemo<ThemeModeValue>(() => ({ mode, setMode, toggle }), [mode, setMode, toggle]);
 

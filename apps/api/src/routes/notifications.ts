@@ -94,10 +94,7 @@ export interface NotificationRoutesDependencies {
  * Whether a stream notification event belongs to this SSE connection — the
  * recipient is always the authenticated user (never a client-supplied id).
  */
-export function isNotificationForRecipient(
-  recipientId: string,
-  connectionUserId: string,
-): boolean {
+export function isNotificationForRecipient(recipientId: string, connectionUserId: string): boolean {
   return recipientId === connectionUserId;
 }
 

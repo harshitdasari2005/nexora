@@ -1,0 +1,5 @@
+# Generated / vendored — not hand-authored, must not be reformatted.
+pnpm-lock.yaml
+**/dist/**
+**/.turbo/**
+**/coverage/**
