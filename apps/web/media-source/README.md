@@ -1,10 +1,11 @@
 # Landing cinematic video — encode pipeline
 
-`nexora-hq-journey-master.mp4` is the supplied source (h264, 1280×720, 8s,
-24fps, ~6.0 Mbps, with an unused audio track — the video is always
-rendered muted). It is the archival master: never served to the browser
-directly, kept here so renditions can be regenerated without re-supplying
-the source.
+`nexora-hq-journey-master.mp4` is the archival master (h264, **2560×1440**,
+8s, 24fps, ~21.6 Mbps, with an unused audio track — the video is always
+rendered muted). It is never served to the browser directly; it is kept
+here so renditions can be regenerated without re-supplying the source.
+It carries a small generative-tool watermark in the bottom-right corner
+that the encode below removes with `delogo` before anything is shipped.
 
 The delivery renditions in `apps/web/public/media/` were produced with:
 
@@ -12,25 +13,37 @@ The delivery renditions in `apps/web/public/media/` were produced with:
 SRC=apps/web/media-source/nexora-hq-journey-master.mp4
 OUT=apps/web/public/media
 
-# Desktop — upscaled to 1920×1080 (Lanczos + a mild unsharp pass), NOT a
-# 1:1 copy of the 1280×720 master — see "Desktop is upscaled" below.
-ffmpeg -y -i "$SRC" -an -vf "scale=1920:1080:flags=lanczos,unsharp=5:5:0.5:5:5:0.0" \
-  -c:v libx264 -profile:v high -preset slow -crf 26 \
-  -g 12 -keyint_min 12 -sc_threshold 0 -pix_fmt yuv420p -movflags +faststart \
+# Strip the bottom-right corner watermark from the 2560×1440 master. The
+# region sits over a smooth sky/wall gradient, so delogo interpolates it
+# away with no visible smear. Prepended to every rendition's filter chain.
+DL="delogo=x=2450:y=1360:w=100:h=60"
+
+# Desktop — a genuine DOWNSCALE 1440p → 1920×1080 (Lanczos). No unsharp:
+# downscaling already yields a crisp result, unlike the previous 720p
+# master which had to be upscaled. bt709 tagging since the master is
+# untagged and the target is web SDR.
+ffmpeg -y -i "$SRC" -an -vf "$DL,scale=1920:1080:flags=lanczos" \
+  -c:v libx264 -profile:v high -preset slow -crf 25 \
+  -g 12 -keyint_min 12 -sc_threshold 0 -pix_fmt yuv420p \
+  -color_primaries bt709 -color_trc bt709 -colorspace bt709 -movflags +faststart \
   "$OUT/nexora-hq-desktop.mp4"
 
-ffmpeg -y -i "$SRC" -an -vf "scale=1920:1080:flags=lanczos,unsharp=5:5:0.5:5:5:0.0" \
-  -c:v libvpx-vp9 -crf 40 -b:v 0 -g 12 -row-mt 1 -cpu-used 2 -pix_fmt yuv420p \
+ffmpeg -y -i "$SRC" -an -vf "$DL,scale=1920:1080:flags=lanczos" \
+  -c:v libvpx-vp9 -crf 36 -b:v 0 -g 12 -keyint_min 12 -row-mt 1 -cpu-used 2 \
+  -pix_fmt yuv420p -color_primaries bt709 -color_trc bt709 -colorspace bt709 \
   "$OUT/nexora-hq-desktop.webm"
 
-# Mobile — 640×360 (unchanged: a real phone viewport at typical device
-# pixel ratios isn't stretching this the way desktop was — see below).
-ffmpeg -y -i "$SRC" -an -vf scale=640:360 -c:v libx264 -profile:v main \
-  -preset slow -crf 27 -g 12 -keyint_min 12 -sc_threshold 0 -pix_fmt yuv420p \
-  -movflags +faststart "$OUT/nexora-hq-mobile.mp4"
+# Mobile — 640×360, a real re-encode (huge downscale from 1440p, very clean).
+ffmpeg -y -i "$SRC" -an -vf "$DL,scale=640:360:flags=lanczos" \
+  -c:v libx264 -profile:v main -preset slow -crf 27 \
+  -g 12 -keyint_min 12 -sc_threshold 0 -pix_fmt yuv420p \
+  -color_primaries bt709 -color_trc bt709 -colorspace bt709 -movflags +faststart \
+  "$OUT/nexora-hq-mobile.mp4"
 
-ffmpeg -y -i "$SRC" -an -vf scale=640:360 -c:v libvpx-vp9 -crf 42 -b:v 0 \
-  -g 12 -row-mt 1 -cpu-used 2 -pix_fmt yuv420p "$OUT/nexora-hq-mobile.webm"
+ffmpeg -y -i "$SRC" -an -vf "$DL,scale=640:360:flags=lanczos" \
+  -c:v libvpx-vp9 -crf 42 -b:v 0 -g 12 -keyint_min 12 -row-mt 1 -cpu-used 2 \
+  -pix_fmt yuv420p -color_primaries bt709 -color_trc bt709 -colorspace bt709 \
+  "$OUT/nexora-hq-mobile.webm"
 
 # Posters (first frame)
 ffmpeg -y -i "$OUT/nexora-hq-desktop.mp4" -vframes 1 -q:v 2 -update 1 \
@@ -41,54 +54,39 @@ ffmpeg -y -i "$OUT/nexora-hq-mobile.mp4" -vframes 1 -q:v 4 -update 1 \
 
 Notes on the choices:
 
+- **Watermark removal** (`delogo`): the master carries a small corner
+  watermark from the generative tool. It is over a near-flat gradient, so
+  a single static delogo box (the watermark never moves) removes it
+  cleanly for the whole clip. Done at encode time so the shipped assets
+  are clean and nothing changes at runtime.
 - **Audio stripped** (`-an`): the video is always `muted`, decorative —
   the AAC track was pure dead weight.
 - **`-g 12 -keyint_min 12 -sc_threshold 0`**: a keyframe every 12 frames
   (0.5s at 24fps), uniform (no scene-cut-adaptive placement). Scroll
   scrubbing seeks to arbitrary timestamps constantly; a short, regular
   GOP keeps every seek's worst case (decode from the nearest preceding
-  keyframe) cheap. The source's default ~10s keyint would have meant
-  some seeks decoding most of the clip.
-- **WebM/VP9 before MP4/H.264** in the `<source>` order: VP9 came out
-  ~13% smaller than H.264 at a comparable quality target for this
-  footage (2.57MB vs 2.96MB desktop; 755KB vs 841KB mobile) and decodes
-  with less CPU than AV1 would — for a background video that's seeked
-  dozens of times per second while scrolling, decode cost per seek
-  matters more than shaving a further few hundred KB off the download.
-  H.264 remains as the universal fallback for browsers without VP9
-  support.
+  keyframe) cheap.
+- **WebM/VP9 before MP4/H.264** in the `<source>` order: VP9 is smaller at
+  a comparable quality target and decodes with less CPU than AV1 — for a
+  background video seeked dozens of times per second while scrolling,
+  decode cost per seek matters more than shaving a few hundred KB off the
+  download. H.264 remains the universal fallback.
 - **AV1 was evaluated and deliberately not used**: `libsvtav1` produces
-  smaller files still, but AV1 decode is materially heavier without
-  hardware acceleration, which is a real risk on exactly the
-  lower-end/mobile devices this pipeline also has to serve — for a
-  background video scrubbed continuously, that trade works against the
-  smoothness requirement more than the extra download savings are worth.
+  smaller files, but AV1 decode is materially heavier without hardware
+  acceleration — a real risk on the lower-end/mobile devices this
+  pipeline also serves. For a continuously-scrubbed background video that
+  trade works against the smoothness requirement.
+- **Desktop is now a real 2560×1440 → 1920×1080 downscale.** The previous
+  master was 1280×720 and had to be _upscaled_ to 1080p (Lanczos +
+  unsharp) just to narrow the browser's runtime upscale ratio — it could
+  never add detail the 720p source lacked. This master is genuine 2K, so
+  1080p delivery is a downscale: it preserves real high-frequency detail
+  and needs no sharpening pass. Quality vs. the 1440p master at the
+  chosen CRFs measures VMAF ~98 (mean). Desktop renditions land ~6.5MB
+  each (up from ~5MB) — the cost of real detail, still inside a sane
+  budget for a landing hero whose entire job is first impression.
 - **Mobile is a real re-encode at 640×360**, not the desktop file scaled
-  down by CSS — half the pixels to decode per seek, not just a smaller
-  display size.
-- **Desktop is upscaled to 1920×1080**, not served at the master's native
-  1280×720. `CinematicJourney` renders the video full-bleed
-  (`object-fit: cover` across `100vw × 100vh`), and desktop viewports are
-  routinely wider than 1280 CSS px before even accounting for
-  `devicePixelRatio` (2 on most modern laptop/desktop displays) — a
-  1280×720 source was being upscaled well over 2× by the browser at
-  render time, which is what read as visible blur. Encoding at 1920×1080
-  with a Lanczos scaler (sharper than the browser's own runtime video
-  scaler) plus a mild `unsharp` pass measurably reduces that gap — CRF is
-  unchanged (still 26/40), but the same CRF spent on 2.25× the pixels
-  allocates more total bits, so less is lost to quantization per unit
-  area than the original 720p encode had. It cannot manufacture detail
-  the 720p master never had — a genuinely
-  sharp result at 4K/high-DPR displays would need a higher-resolution
-  master — but it materially narrows the browser's upscale ratio for
-  every viewport up to 1920 CSS px wide, and softens it beyond that.
-  Desktop file sizes roughly doubled (2.96MB→5.85MB MP4, 2.57MB→4.89MB
-  WebM) as the direct cost of this — an accepted trade for a page whose
-  entire job is a strong first impression.
-- **Mobile stays at 640×360, not upscaled**: a phone viewport (~375–430
-  CSS px) at typical mobile `devicePixelRatio` (2–3) needs roughly
-  750–1290 real pixels of width — 640 source pixels is close enough to
-  that range that the same blur problem doesn't apply anywhere near as
-  visibly, so it wasn't re-encoded.
+  down by CSS — far fewer pixels to decode per seek. Downscaling from
+  1440p makes this tier cleaner than before at the same size.
 
 Regenerating: replace the master file and re-run the commands above.
