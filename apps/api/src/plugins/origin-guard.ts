@@ -111,7 +111,10 @@ export function registerOriginGuard(
   const trusted = trustedOrigins(dependencies.config);
 
   app.addHook('onRequest', async (request, reply) => {
-    const path = request.url.split('?')[0] ?? '';
+    // Decide on the MATCHED route, never on the raw URL string: the router
+    // percent-decodes the path (`/api/auth/%6Cogout` reaches the logout
+    // handler), so comparing `request.url` let an encoded path skip the guard.
+    const path = request.routeOptions.url ?? '';
     const guarded =
       (STATE_CHANGING.has(request.method) && !SIGNED_MACHINE_ROUTES.has(path)) ||
       (request.method === 'GET' && STATE_CHANGING_GETS.has(path));

@@ -415,9 +415,17 @@ export class PgApprovalEngine implements ApprovalEngine {
 
   async listByTenant(
     tenantId: string,
-    options: { workspaceId?: string; limit: number },
+    options: {
+      workspaceId?: string;
+      limit: number;
+      statuses?: readonly ApprovalRequestRecord['status'][];
+    },
   ): Promise<readonly ApprovalRequestRecord[]> {
     const conditions = [eq(approvalRequests.tenantId, tenantId)];
+    if (options.statuses !== undefined) {
+      if (options.statuses.length === 0) return [];
+      conditions.push(inArray(approvalRequests.status, [...options.statuses]));
+    }
     if (options.workspaceId !== undefined) {
       conditions.push(eq(approvalRequests.workspaceId, options.workspaceId));
     }

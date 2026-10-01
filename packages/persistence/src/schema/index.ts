@@ -12,6 +12,7 @@
 import { sql } from 'drizzle-orm';
 import { desc } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   doublePrecision,
   index,
@@ -882,7 +883,8 @@ export const budgets = pgTable(
     workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
     createdBy: varchar('created_by', { length: 64 }).notNull(),
     name: varchar('name', { length: 120 }).notNull(),
-    allocatedMinorUnits: integer('allocated_minor_units').notNull(),
+    // bigint: the domain allows up to 1e11 minor units, past int4's 2 147 483 647.
+    allocatedMinorUnits: bigint('allocated_minor_units', { mode: 'number' }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
     periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
@@ -914,7 +916,7 @@ export const expenses = pgTable(
     budgetId: varchar('budget_id', { length: 64 }).notNull(),
     submittedBy: varchar('submitted_by', { length: 64 }).notNull(),
     description: varchar('description', { length: 120 }).notNull(),
-    amountMinorUnits: integer('amount_minor_units').notNull(),
+    amountMinorUnits: bigint('amount_minor_units', { mode: 'number' }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     status: varchar('status', { length: 32 }).notNull(),
     decidedBy: varchar('decided_by', { length: 64 }),

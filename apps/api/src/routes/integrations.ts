@@ -93,7 +93,8 @@ export async function registerIntegrationsRoutes(
         enabled: endpoint.enabled,
         createdAt: endpoint.createdAt,
         updatedAt: endpoint.updatedAt,
-        secretMasked: `${endpoint.secret.slice(0, 8)}…`,
+        // Constant mask: no byte of the signing secret is ever returned after creation.
+        secretMasked: '••••••••…',
       })),
       subscribableEvents: IntegrationApplicationService.subscribableEvents(),
     };
@@ -431,10 +432,27 @@ export async function registerIntegrationsRoutes(
         error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
       });
     }
-    const records = await dependencies.integrations.listEmailOutbox(
-      query.organizationId as TenantId,
-      { workspaceId: query.workspaceId as WorkspaceId, limit: 50 },
-    );
+    // The outbox holds every recipient's subject and body. Anyone may read their
+    // OWN emails; seeing other people's needs the integration administrator capability.
+    const canSeeAll = (
+      await authorizePermission(
+        dependencies.permissions,
+        {
+          userId: auth.userId,
+          tenantId: query.organizationId,
+          workspaceId: query.workspaceId,
+        },
+        'integrations.manage',
+      )
+    ).ok;
+    const records = (
+      await dependencies.integrations.listEmailOutbox(query.organizationId as TenantId, {
+        workspaceId: query.workspaceId as WorkspaceId,
+        limit: canSeeAll ? 50 : 500,
+      })
+    )
+      .filter((record) => canSeeAll || record.recipientId === auth.userId)
+      .slice(0, 50);
     return {
       emails: records.map((record) => ({
         id: record.id,

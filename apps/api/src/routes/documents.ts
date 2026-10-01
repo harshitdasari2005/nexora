@@ -316,7 +316,8 @@ export function registerDocumentRoutes(
   app.post('/api/documents/:id/archive', async (request, reply) => {
     const auth = requireAuth(request);
     const params = request.params as { id: string };
-    const body = request.body as { organizationId?: string; workspaceId?: string };
+    // A body-less POST is a 400 (missing fields), not a TypeError → 500.
+    const body = (request.body ?? {}) as { organizationId?: string; workspaceId?: string };
     if (body.organizationId === undefined || body.workspaceId === undefined) {
       return reply.code(400).send({
         error: {

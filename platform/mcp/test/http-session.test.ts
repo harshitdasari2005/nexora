@@ -12,7 +12,7 @@
  */
 
 import http from 'node:http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
@@ -123,6 +123,27 @@ async function rawListTools(url: URL, sessionId: string): Promise<number> {
   await response.text();
   return response.status;
 }
+
+describe('HTTP MCP session ids come from a CSPRNG', () => {
+  it('two sessions get different, unguessable ids even when Date.now and Math.random are frozen', async () => {
+    // The old id was sha256(`${Date.now()}:${Math.random()}`): with both inputs
+    // fixed it collapses to one value, i.e. the id carried no real entropy.
+    vi.spyOn(Date, 'now').mockReturnValue(1_700_000_000_000);
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    try {
+      const h = await harness();
+      const first = await h.connect();
+      const second = await h.connect();
+      const a = first.transport.sessionId as string;
+      const b = second.transport.sessionId as string;
+      expect(a).toMatch(/^mcp_[A-Za-z0-9_-]{24}$/);
+      expect(b).toMatch(/^mcp_[A-Za-z0-9_-]{24}$/);
+      expect(a).not.toBe(b);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+});
 
 describe('HTTP MCP session authority (F-006)', () => {
   it('control: unchanged authority keeps the session alive across requests', async () => {

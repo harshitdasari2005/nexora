@@ -46,6 +46,14 @@ function readString(body: unknown, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+/**
+ * An owner / repository name: GitHub's own character set, and never the dot
+ * segments `.` / `..` — `encodeURIComponent('..')` is `..`, which the URL parser
+ * would collapse (`/repos/../user` → `/user`) and so reach other API paths
+ * with the tenant's token.
+ */
+const GITHUB_NAME_PATTERN = '^(?!\\.{1,2}$)[A-Za-z0-9_.-]+$';
+
 function readNumber(body: unknown, key: string): number | undefined {
   if (body === null || typeof body !== 'object') {
     return undefined;
@@ -125,8 +133,8 @@ export class GitHubConnector implements ExternalConnector {
         description: 'Gets one GitHub repository by owner and repository name',
         inputSchema: objectSchema(
           {
-            owner: { type: 'string', minLength: 1, maxLength: 100 },
-            repo: { type: 'string', minLength: 1, maxLength: 100 },
+            owner: { type: 'string', minLength: 1, maxLength: 100, pattern: GITHUB_NAME_PATTERN },
+            repo: { type: 'string', minLength: 1, maxLength: 100, pattern: GITHUB_NAME_PATTERN },
           },
           ['owner', 'repo'],
         ),
@@ -142,8 +150,8 @@ export class GitHubConnector implements ExternalConnector {
         description: 'Lists the issues of a GitHub repository (optionally by state)',
         inputSchema: objectSchema(
           {
-            owner: { type: 'string', minLength: 1, maxLength: 100 },
-            repo: { type: 'string', minLength: 1, maxLength: 100 },
+            owner: { type: 'string', minLength: 1, maxLength: 100, pattern: GITHUB_NAME_PATTERN },
+            repo: { type: 'string', minLength: 1, maxLength: 100, pattern: GITHUB_NAME_PATTERN },
             state: { type: 'string', enum: ['open', 'closed', 'all'] },
           },
           ['owner', 'repo'],
@@ -160,8 +168,8 @@ export class GitHubConnector implements ExternalConnector {
         description: 'Creates an issue in a GitHub repository and verifies it was created',
         inputSchema: objectSchema(
           {
-            owner: { type: 'string', minLength: 1, maxLength: 100 },
-            repo: { type: 'string', minLength: 1, maxLength: 100 },
+            owner: { type: 'string', minLength: 1, maxLength: 100, pattern: GITHUB_NAME_PATTERN },
+            repo: { type: 'string', minLength: 1, maxLength: 100, pattern: GITHUB_NAME_PATTERN },
             title: { type: 'string', minLength: 1, maxLength: 200 },
             body: { type: 'string', maxLength: 4000 },
           },

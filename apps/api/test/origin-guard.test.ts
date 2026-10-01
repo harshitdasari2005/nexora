@@ -429,3 +429,41 @@ describe('AUTH-008 follow-up — same-site, different-origin pages cannot force 
     }
   });
 });
+
+describe('AUTH-008 follow-up — the guard decides on the matched route, not the raw URL', () => {
+  it('percent-encoded / trailing-slash spellings of the logout path cannot skip the same-origin rule', async () => {
+    for (const url of [
+      '/api/auth/%6Cogout', // %6C = "l": the router decodes it to the logout route
+      '/api/auth/logo%75t',
+      '/%61pi/auth/logout',
+      '/api/auth/logout/',
+    ]) {
+      const s = await session();
+      const forged = await s.app.inject({
+        method: 'GET',
+        url,
+        headers: { cookie: s.cookie, 'sec-fetch-site': 'same-site', 'sec-fetch-mode': 'navigate' },
+      });
+      expect(forged.statusCode, url).not.toBe(302);
+      expect([403, 404], url).toContain(forged.statusCode);
+      // Whatever the spelling, the victim's session survives.
+      const me = await s.app.inject({
+        method: 'GET',
+        url: '/api/me',
+        headers: { cookie: s.cookie },
+      });
+      expect(me.statusCode, url).toBe(200);
+    }
+  });
+
+  it('an encoded spelling of a mutating route is still origin-guarded', async () => {
+    const s = await session();
+    const res = await s.app.inject({
+      method: 'POST',
+      url: '/api/notifications/read-%61ll',
+      headers: { cookie: s.cookie, origin: ATTACKER, 'content-type': 'application/json' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});

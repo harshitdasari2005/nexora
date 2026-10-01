@@ -674,7 +674,11 @@ export class EnterpriseAIOrchestrator {
           ? ((await this.#approvals?.decisionStatus(approval.id)) ?? undefined) === 'granted'
           : approvalRequired
             ? this.#requestMayAutoApprove(request)
-            : true;
+            : // Not gated at this moment: nothing was approved, so none is claimed. The executor
+              // re-evaluates policy; if that flips to REQUIRE_APPROVAL between this precheck and
+              // the executor's own evaluation (budget goes under review, org config added), a
+              // `true` here would let the step run with no human approval.
+              false;
 
       if (approvalRequired) {
         const disposition =

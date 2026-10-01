@@ -77,7 +77,9 @@ export function registerDemoRoutes(
   // While a reset runs, every other request is refused (the world is being
   // rebuilt); otherwise requests are tracked so a reset can wait for them.
   app.addHook('onRequest', async (request, reply) => {
-    const path = request.url.split('?')[0] ?? '';
+    // The MATCHED route, not the raw URL: an encoded path (`/api/demo/%72eset`) is
+    // routed to the same handler, so the raw string must not decide the gating.
+    const path = request.routeOptions.url ?? '';
     if (!path.startsWith('/api/') || path === '/api/demo/reset' || path === '/api/health') return;
     // The notification stream is a passive, open-ended subscription that the app
     // shell holds open for the whole session: it is neither gated nor counted as

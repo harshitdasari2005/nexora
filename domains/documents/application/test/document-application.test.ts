@@ -537,6 +537,37 @@ describe('DocumentApplicationService.restoreDocumentVersion (S17 restore)', () =
     );
     expect(foreign.ok).toBe(false);
   });
+
+  it('an ARCHIVED document no longer serves any version content (history is not a way around archiving)', async () => {
+    const { service } = buildService();
+    const updated = await seededDocument(service);
+    const before = await service.getDocumentVersionContent(
+      TENANT,
+      WORKSPACE,
+      updated.document.id,
+      1,
+    );
+    expect(before.ok).toBe(true);
+
+    const archived = await service.archiveDocument({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: UPLOADER,
+      documentId: updated.document.id,
+      correlationId: 'corr_arch',
+    });
+    expect(archived.ok).toBe(true);
+
+    for (const version of [1, 2]) {
+      const after = await service.getDocumentVersionContent(
+        TENANT,
+        WORKSPACE,
+        updated.document.id,
+        version,
+      );
+      expect(after.ok, `v${version}`).toBe(false);
+    }
+  });
 });
 
 describe('DocumentApplicationService templates (S17)', () => {
@@ -657,5 +688,51 @@ describe('DocumentApplicationService templates (S17)', () => {
     expect(foreign.ok).toBe(false);
     if (foreign.ok) return;
     expect(foreign.error.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('PDF extraction — decompression-bomb bounds', () => {
+  const pdfWith = (streams: Buffer[]): Buffer =>
+    Buffer.from(
+      '%PDF-1.4\n' +
+        streams
+          .map(
+            (stream, index) =>
+              `${index + 1} 0 obj\n<< /Filter /FlateDecode >>\nstream\n${stream.toString('latin1')}\nendstream\nendobj\n`,
+          )
+          .join('') +
+        '%%EOF',
+      'latin1',
+    );
+
+  it('rejects a stream that inflates past the per-stream cap (a tiny file, hundreds of MB inflated)', async () => {
+    const { deflateSync } = await import('node:zlib');
+    const bomb = deflateSync(Buffer.alloc(300 * 1024 * 1024, 0x20)); // ~300 KB deflated
+    expect(bomb.length).toBeLessThan(1024 * 1024);
+    const extractor = new DefaultDocumentTextExtractor();
+    const started = Date.now();
+    await expect(extractor.extract('application/pdf', pdfWith([bomb]))).rejects.toThrow(
+      /expands beyond the supported size/,
+    );
+    expect(Date.now() - started).toBeLessThan(2000); // bounded work, no multi-hundred-MB inflate
+  });
+
+  it('rejects many individually-allowed streams whose inflated total passes the overall cap', async () => {
+    const { deflateSync } = await import('node:zlib');
+    const stream = deflateSync(Buffer.alloc(1.5 * 1024 * 1024, 0x20)); // under the per-stream cap
+    const extractor = new DefaultDocumentTextExtractor();
+    await expect(
+      extractor.extract('application/pdf', pdfWith(Array.from({ length: 8 }, () => stream))),
+    ).rejects.toThrow(/expands beyond the supported size/);
+  });
+
+  it('still extracts a normal PDF', async () => {
+    const { deflateSync } = await import('node:zlib');
+    const stream = deflateSync(Buffer.from('BT (Quarterly plan) Tj ET', 'latin1'));
+    const text = await new DefaultDocumentTextExtractor().extract(
+      'application/pdf',
+      pdfWith([stream]),
+    );
+    expect(text).toContain('Quarterly plan');
   });
 });

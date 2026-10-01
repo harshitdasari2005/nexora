@@ -460,10 +460,14 @@ export interface ApprovalEngine {
    * first — the read side for cross-conversation governance views (e.g. an
    * Audit Center). Purely additive to the engine's read surface; never
    * touches how a request is opened, decided, claimed, or resolved.
+   *
+   * `statuses` narrows the rows BEFORE `limit` applies, so a view that only
+   * wants one lifecycle state (e.g. the pending-approvals list) is not crowded
+   * out by the newest `limit` rows of every other state.
    */
   listByTenant(
     tenantId: string,
-    options: { workspaceId?: string; limit: number },
+    options: { workspaceId?: string; limit: number; statuses?: readonly ApprovalLifecycle[] },
   ): readonly ApprovalRequestRecord[] | Promise<readonly ApprovalRequestRecord[]>;
 }
 
@@ -682,7 +686,7 @@ export class InMemoryApprovalEngine implements ApprovalEngine {
 
   listByTenant(
     tenantId: string,
-    options: { workspaceId?: string; limit: number },
+    options: { workspaceId?: string; limit: number; statuses?: readonly ApprovalLifecycle[] },
   ): readonly ApprovalRequestRecord[] {
     return [...this.#requests.values()]
       .filter(
@@ -691,6 +695,9 @@ export class InMemoryApprovalEngine implements ApprovalEngine {
           (options.workspaceId === undefined || request.workspaceId === options.workspaceId),
       )
       .map((request) => this.#view(request))
+      .filter(
+        (request) => options.statuses === undefined || options.statuses.includes(request.status),
+      )
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, options.limit);
   }

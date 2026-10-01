@@ -28,7 +28,7 @@
  * the tool implementations and the trusted context.
  */
 
-import { createHash } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -540,5 +540,5 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
 
 /** A short opaque session token (cryptographic, URL-safe). */
 function sessionToken(): string {
-  return createHash('sha256').update(`${Date.now()}:${Math.random()}`).digest('hex').slice(0, 24);
+  return randomBytes(18).toString('base64url');
 }

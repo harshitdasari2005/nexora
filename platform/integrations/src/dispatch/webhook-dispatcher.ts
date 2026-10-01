@@ -76,6 +76,9 @@ export interface WebhookDispatcherDependencies {
  * payloads to subscribed endpoints. Attached to the EventPublisher seam at
  * the composition root — domains never call it directly.
  */
+/** The only error text recorded for a transport-level delivery failure. */
+const TRANSPORT_FAILURE = 'Delivery failed';
+
 export class WebhookDispatcher {
   readonly #endpoints: WebhookEndpointRepository;
   readonly #deliveries: WebhookDeliveryRepository;
@@ -148,8 +151,12 @@ export class WebhookDispatcher {
           return;
         }
         lastError = `HTTP ${response.status}`;
-      } catch (caught) {
-        lastError = caught instanceof Error ? caught.message : String(caught);
+      } catch {
+        // One generic outcome for EVERY transport failure (blocked destination,
+        // DNS failure, refused/closed port, TLS, timeout). The receipt is readable
+        // by workspace members, so a specific message would make delivery an oracle
+        // for internal names and open ports.
+        lastError = TRANSPORT_FAILURE;
       }
       if (attempt < this.#maxAttempts) {
         await sleep(this.#backoffMs * attempt);

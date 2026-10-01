@@ -93,6 +93,14 @@ function unescapePdfLiteral(value: string): string {
 }
 
 /**
+ * Decompression-bomb bounds. A few hundred KB of deflate can inflate to GBs and
+ * `inflateSync` blocks the event loop, so each stream and the running total are
+ * capped; exceeding either rejects the document (it is not silently truncated).
+ */
+const PDF_STREAM_INFLATED_MAX_BYTES = 2 * 1024 * 1024;
+const PDF_TOTAL_INFLATED_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
  * Minimal PDF text extraction: inflates every FlateDecode stream and
  * collects text from `(literal) Tj` operators and `[ ... ] TJ` arrays.
  * Deliberately small — a real PDF/OCR provider replaces this implementation
@@ -102,6 +110,7 @@ function extractPdfText(bytes: Buffer): string {
   const source = bytes.toString('latin1');
   const parts: string[] = [];
   let offset = 0;
+  let inflatedTotal = 0;
 
   while (offset < source.length) {
     const streamStart = source.indexOf('stream', offset);
@@ -122,9 +131,17 @@ function extractPdfText(bytes: Buffer): string {
     const raw = Buffer.from(source.slice(dataStart, endMarker), 'latin1');
     let decoded: string | null = null;
     try {
-      decoded = inflateSync(raw).toString('latin1');
-    } catch {
-      decoded = null;
+      const inflated = inflateSync(raw, { maxOutputLength: PDF_STREAM_INFLATED_MAX_BYTES });
+      inflatedTotal += inflated.length;
+      decoded = inflated.toString('latin1');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
+        throw new DocumentExtractionError('The PDF expands beyond the supported size');
+      }
+      decoded = null; // not a Flate stream (images, fonts, …) — skipped
+    }
+    if (inflatedTotal > PDF_TOTAL_INFLATED_MAX_BYTES) {
+      throw new DocumentExtractionError('The PDF expands beyond the supported size');
     }
     if (decoded !== null) {
       // Individual text-showing operators: (literal) Tj

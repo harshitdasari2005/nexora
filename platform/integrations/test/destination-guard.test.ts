@@ -374,7 +374,9 @@ describe('WebhookDispatcher default transport blocks a legacy internal endpoint 
     await dispatcher.handle(event);
 
     expect(hits).toBe(0);
-    expect(receipts).toEqual([{ status: 'failed', error: 'Destination not allowed' }]);
+    // One generic receipt for every transport failure — a blocked destination is indistinguishable
+    // from an unreachable one, so receipts cannot be used to probe internal names.
+    expect(receipts).toEqual([{ status: 'failed', error: 'Delivery failed' }]);
   });
 });
 

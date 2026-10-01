@@ -100,6 +100,14 @@ export function registerRemediationRoutes(
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
     }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+      'problems.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view remediation plans');
+    }
     const listed = await dependencies.remediation.list({
       userId: auth.userId,
       tenantId: scope.tenantId,
@@ -143,6 +151,14 @@ export function registerRemediationRoutes(
     );
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
+      'problems.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view remediation plans');
     }
     const plan = await dependencies.remediation.getById(
       { userId: auth.userId, tenantId: scope.tenantId, workspaceId: scope.workspaceId },
