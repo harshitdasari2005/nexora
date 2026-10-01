@@ -51,6 +51,12 @@ export interface ChatApproval {
   sideEffectClass: string;
   /** The user-controlled action input (e.g. `{ name }`). */
   input?: Record<string, unknown>;
+  /** When the request expires (ISO), when the server reports it. */
+  expiresAt?: string;
+  /** The role required to decide this approval, when policy demands one. */
+  requiredApproverRoleId?: string;
+  /** Whether the requester may not decide their own approval. */
+  separationOfDuties?: boolean;
 }
 
 /** A safe display step of a committed plan (plan card). */
@@ -222,6 +228,7 @@ export async function decideApproval(
   decision: 'approve' | 'reject',
   handlers: ChatHandlers,
   signal?: AbortSignal,
+  reason?: string,
 ): Promise<RejectApprovalResponse | undefined> {
   let response: Response;
   try {
@@ -229,7 +236,7 @@ export async function decideApproval(
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ decision }),
+      body: JSON.stringify(reason === undefined ? { decision } : { decision, reason }),
       signal,
     });
   } catch (error) {

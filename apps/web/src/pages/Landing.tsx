@@ -32,10 +32,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Badge, Button, Stack, typography } from '@nexora/design-system';
 
 import { CinematicJourney, type CinematicSource } from '../components/CinematicJourney.js';
 import { CloudLayer } from '../components/CloudLayer.js';
+import { useDemo } from '../demo/demo-state.js';
 
 const TRANSITION_MS = 650;
 const MOBILE_BREAKPOINT = 768;
@@ -196,10 +198,22 @@ export function Landing(): JSX.Element {
     );
   }, []);
 
+  // "Start Demo" appears ONLY when the backend reports demo mode; it leads to
+  // the gated demo entry (real seeded personas, real sessions).
+  const demo = useDemo();
   const cta = (size: 'sm' | 'lg' = 'lg'): JSX.Element => (
-    <a href={SSO_LOGIN_URL} onClick={goToLogin} style={{ textDecoration: 'none' }}>
-      <Button size={size}>Get started</Button>
-    </a>
+    <Stack direction="row" gap={size === 'lg' ? 3 : 2} align="center">
+      <a href={SSO_LOGIN_URL} onClick={goToLogin} style={{ textDecoration: 'none' }}>
+        <Button size={size}>Get started</Button>
+      </a>
+      {demo.status === 'enabled' ? (
+        <Link to="/demo" style={{ textDecoration: 'none' }} data-testid="start-demo">
+          <Button size={size} variant="secondary">
+            Start demo
+          </Button>
+        </Link>
+      ) : null}
+    </Stack>
   );
 
   // Readability over live footage, applied only where the video actually

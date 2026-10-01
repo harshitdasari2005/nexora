@@ -61,7 +61,8 @@ describe('GET /api/domains', () => {
     // insights/agent/approvals-decide/activity/calendar-read; the Audit
     // Center added audit.read; S35 (Finance vertical) added budgets.read/
     // .manage, expenses.read/.create/.decide; backend RBAC enforcement added
-    // integrations.manage and marketplace.manage).
+    // integrations.manage and marketplace.manage; Prompt 8 added the human-only
+    // policy.read / policy.manage).
     expect(body.capabilities.map((capability) => capability.id)).toEqual([
       'projects.read',
       'projects.create',
@@ -96,6 +97,8 @@ describe('GET /api/domains', () => {
       'activity.read',
       'calendar.read',
       'audit.read',
+      'policy.read',
+      'policy.manage',
       'budgets.read',
       'budgets.manage',
       'expenses.read',
@@ -103,6 +106,7 @@ describe('GET /api/domains', () => {
       'expenses.decide',
       'integrations.manage',
       'marketplace.manage',
+      'agents.manage',
     ]);
   });
 

@@ -18,7 +18,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Result } from '@nexora/shared/result';
 import type { NexoraError } from '@nexora/shared/errors';
-import type { CreateWorkspaceHandler, CreateWorkspaceResult } from '@nexora/application-workspaces';
+import type {
+  CreateWorkspaceHandler,
+  CreateWorkspaceResult,
+  ListMyWorkspacesHandler,
+} from '@nexora/application-workspaces';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 
 import { CreateWorkspaceTool } from '../src/ai/tools/create-workspace-tool.js';
@@ -64,16 +68,36 @@ function orgsHandlerReturning(orgIds: readonly string[]) {
   } as unknown as ListOrganizationsHandler;
 }
 
+/** An honest read-back: the persisted list contains the created workspace (with overrides). */
+function listReturning(rows: readonly Record<string, unknown>[]) {
+  return {
+    handle: vi.fn(async () => ({ ok: true, value: rows })),
+  } as unknown as ListMyWorkspacesHandler;
+}
+
+const persistedRow = (overrides: Record<string, unknown> = {}) => ({
+  id: 'wsp_new',
+  organizationId: 'org_acme',
+  slug: 'engineering',
+  name: 'Engineering',
+  type: 'operations',
+  status: 'active',
+  createdAt: '2026-08-08T00:00:00.000Z',
+  ...overrides,
+});
+
 function tool(
   dependencies: {
     create?: CreateWorkspaceHandler;
     orgs?: ListOrganizationsHandler;
+    list?: ListMyWorkspacesHandler;
   } = {},
 ) {
   return new CreateWorkspaceTool({
     createWorkspace:
       dependencies.create ?? createHandlerReturning({ ok: true, value: createdWorkspace() }),
     listOrganizations: dependencies.orgs ?? orgsHandlerReturning(['org_acme']),
+    listMyWorkspaces: dependencies.list ?? listReturning([persistedRow()]),
   });
 }
 
@@ -270,5 +294,26 @@ describe('CreateWorkspaceTool', () => {
 
     await underTest.execute({ name: '  Engineering  ' }, trustedContext);
     expect(create.handle).toHaveBeenCalledWith(expect.objectContaining({ name: 'Engineering' }));
+  });
+
+  describe('independent read-back (a lying handler is UNVERIFIED)', () => {
+    it('declares state_readback', () => {
+      expect(tool().manifest.verification?.source).toBe('state_readback');
+    });
+
+    it.each([
+      ['missing', []],
+      ['a different name', [persistedRow({ name: 'Marketing' })]],
+      ['a different slug', [persistedRow({ slug: 'other' })]],
+      ['another tenant', [persistedRow({ organizationId: 'org_other' })]],
+      ['archived', [persistedRow({ status: 'archived' })]],
+    ])('handler reports success but the persisted workspace is %s', async (_label, rows) => {
+      const result = await tool({ list: listReturning(rows) }).execute(
+        { name: 'Engineering' },
+        trustedContext,
+      );
+      expect(result.ok).toBe(false);
+      expect(result.readBackFailed).toBe(true);
+    });
   });
 });

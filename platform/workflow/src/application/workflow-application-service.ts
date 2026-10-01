@@ -48,6 +48,11 @@ export interface CancelWorkflowCommand {
 }
 
 /** Query: read a workflow execution record. */
+export interface RecoverWorkflowCommand {
+  workflowId: string;
+  tenantId: TenantId;
+}
+
 export interface GetWorkflowQuery {
   /** The workflow instance id. */
   workflowId: string;
@@ -71,6 +76,17 @@ export class WorkflowApplicationService {
     this.#runtime = runtime;
   }
 
+  /**
+   * The capability ids (and their tool ids) a registered definition's steps
+   * invoke — the set an initiator must hold before the workflow may start.
+   * `undefined` when the definition key is unknown.
+   */
+  requiredCapabilities(
+    definitionKey: string,
+  ): readonly { capabilityId: string; toolId: string }[] | undefined {
+    return this.#runtime.requiredCapabilities(definitionKey);
+  }
+
   /** Starts a workflow and runs it to a terminal state. */
   start(command: StartWorkflowCommand): Promise<Result<WorkflowExecutionRecord, WorkflowError>> {
     return this.#runtime.create(command);
@@ -87,6 +103,12 @@ export class WorkflowApplicationService {
   }
 
   /** Reads a workflow execution record (tenant-scoped). */
+  recover(
+    command: RecoverWorkflowCommand,
+  ): Promise<Result<WorkflowExecutionRecord, WorkflowError>> {
+    return this.#runtime.recover(command);
+  }
+
   get(query: GetWorkflowQuery): Promise<Result<WorkflowExecutionRecord, WorkflowError>> {
     return this.#runtime.get(query);
   }

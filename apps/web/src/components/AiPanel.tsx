@@ -695,6 +695,15 @@ export function ApprovalCard({
         <ApprovalRow label="Organization" value={organizationName ?? 'Current organization'} />
         <ApprovalRow label="Requested by" value={userDisplayName ?? 'You'} />
         <ApprovalRow label="Risk" value={risk} />
+        {approval.expiresAt !== undefined ? (
+          <ApprovalRow label="Expires" value={new Date(approval.expiresAt).toLocaleString()} />
+        ) : null}
+        {approval.requiredApproverRoleId !== undefined ? (
+          <ApprovalRow label="Required approver" value={approval.requiredApproverRoleId} />
+        ) : null}
+        {approval.separationOfDuties === true ? (
+          <ApprovalRow label="Separation of duties" value="Requester cannot approve" />
+        ) : null}
       </dl>
 
       {canDecide ? (

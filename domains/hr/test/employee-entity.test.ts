@@ -128,3 +128,27 @@ describe('Employee snapshot / hydrate', () => {
     ).toThrow();
   });
 });
+
+describe('Employee offboarding', () => {
+  it('walks active → exiting → offboarded and records employee.offboarded', () => {
+    const employee = Employee.create({ organizationId: TENANT, name: 'Rohan Das' }, userContext());
+    employee.hire(userContext());
+    employee.onboard(userContext());
+    employee.activate(userContext());
+    employee.pullDomainEvents();
+
+    employee.startOffboarding(userContext());
+    expect(employee.status.value).toBe('exiting');
+    employee.offboard(userContext(), 'Rolled back');
+    expect(employee.status.value).toBe('offboarded');
+    expect(employee.status.isTerminal()).toBe(true);
+    expect(employee.isActive()).toBe(false);
+    expect(employee.pullDomainEvents().map((event) => event.type)).toEqual(['employee.offboarded']);
+  });
+
+  it('refuses to offboard an employee that is not exiting, and to leave offboarded', () => {
+    const employee = Employee.create({ organizationId: TENANT, name: 'Rohan Das' }, userContext());
+    expect(() => employee.offboard(userContext(), 'x')).toThrow();
+    expect(() => employee.startOffboarding(userContext())).toThrow();
+  });
+});

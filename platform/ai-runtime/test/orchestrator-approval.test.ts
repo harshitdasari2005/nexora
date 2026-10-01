@@ -23,6 +23,7 @@ import { ExecutableToolRegistry } from '../src/registry/executable-tools.js';
 import { InMemoryConversationStore } from '../src/conversation/conversation-store.js';
 import { InMemoryApprovalEngine, type ApprovalEngine } from '../src/approval/engine.js';
 import { SequentialPlanner } from '../src/planner/sequential-planner.js';
+import type { SecurityDecision, SecurityDecisionSink } from '../src/execution/security-decision.js';
 
 interface Harness {
   orchestrator: EnterpriseAIOrchestrator;
@@ -70,7 +71,12 @@ function extractCreateParameters(input: {
 }
 
 /** Builds a harness with a create-workspace tool wired to an approval engine. */
-function harness(): Harness {
+function harness(
+  options: {
+    extractor?: typeof extractCreateParameters;
+    securitySink?: SecurityDecisionSink;
+  } = {},
+): Harness {
   const registry = new RuntimeRegistry();
   const skills = new SkillIndex();
   const tools = new ExecutableToolRegistry();
@@ -190,13 +196,19 @@ function harness(): Harness {
   tools.register(createTool);
 
   const discovery = new CapabilityDiscovery(registry, skills);
-  const executor = new ToolExecutor({ tools });
+  const executor = new ToolExecutor({
+    tools,
+    ...(options.securitySink === undefined ? {} : { securitySink: options.securitySink }),
+  });
   const orchestrator = new EnterpriseAIOrchestrator({
     discovery,
     executor,
     conversations: new ConversationManager(conversations),
     approvals,
-    planner: new SequentialPlanner({ parameterExtractor: extractCreateParameters }),
+    ...(options.securitySink === undefined ? {} : { securitySink: options.securitySink }),
+    planner: new SequentialPlanner({
+      parameterExtractor: options.extractor ?? extractCreateParameters,
+    }),
   });
 
   return {
@@ -210,6 +222,7 @@ function harness(): Harness {
 /** The `done`-level response of a create-workspace run. */
 interface CreateRun {
   status: string;
+  failureCode?: string;
   conversationId: string;
   approvals: { id?: string; status: string; toolId: string; input?: Record<string, unknown> }[];
   steps: { status: string; output?: unknown }[];
@@ -374,7 +387,9 @@ describe('orchestrator approval flow (first AI write)', () => {
       approvalId,
     })) as unknown as CreateRun;
 
-    expect(resumed.status).toBe('blocked');
+    // G2b: an approval that binds to no step fails APPROVAL_NOT_BOUND (was: silently blocked).
+    expect(resumed.status).toBe('failed');
+    expect(resumed.failureCode).toBe('APPROVAL_NOT_BOUND');
     expect(resumed.approvals[0]?.status).toBe('pending');
     expect(createInvocations()).toBe(0);
   });
@@ -397,7 +412,9 @@ describe('orchestrator approval flow (first AI write)', () => {
       approvalId,
     })) as unknown as CreateRun;
 
-    expect(resumed.status).toBe('blocked');
+    // G2b: an approval that binds to no step fails APPROVAL_NOT_BOUND (was: silently blocked).
+    expect(resumed.status).toBe('failed');
+    expect(resumed.failureCode).toBe('APPROVAL_NOT_BOUND');
     expect(createInvocations()).toBe(0);
   });
 
@@ -432,7 +449,9 @@ describe('orchestrator approval flow (first AI write)', () => {
       approvalId: other.id,
     })) as unknown as CreateRun;
 
-    expect(resumed.status).toBe('blocked');
+    // G2b: an approval that binds to no step fails APPROVAL_NOT_BOUND (was: silently blocked).
+    expect(resumed.status).toBe('failed');
+    expect(resumed.failureCode).toBe('APPROVAL_NOT_BOUND');
     expect(createInvocations()).toBe(0);
   });
 
@@ -444,7 +463,9 @@ describe('orchestrator approval flow (first AI write)', () => {
       approvalId: 'apr_unknown',
     })) as unknown as CreateRun;
 
-    expect(resumed.status).toBe('blocked');
+    // G2b: an approval that binds to no step fails APPROVAL_NOT_BOUND (was: silently blocked).
+    expect(resumed.status).toBe('failed');
+    expect(resumed.failureCode).toBe('APPROVAL_NOT_BOUND');
     expect(createInvocations()).toBe(0);
   });
 
@@ -529,30 +550,131 @@ describe('orchestrator approval flow (first AI write)', () => {
     expect(response.approvals[0]?.input).not.toHaveProperty('tenantId');
   });
 
-  it('a missing name still gates the action (approval first, validation after)', async () => {
-    const { orchestrator, approvals, createInvocations } = harness();
+  it('a missing name fails validation BEFORE any approval opens (nobody approves invalid input)', async () => {
+    const { orchestrator, createInvocations } = harness();
     const first = (await orchestrator.run({
       ...baseRequest,
       utterance: 'create a workspace',
     })) as unknown as CreateRun;
 
-    // The plan cannot extract a name; the write is still gated (approval
-    // precedes execution — the tool would reject the empty input).
+    // The plan cannot extract a name; the required-field check runs before
+    // the approval gate, so the step fails and no approval is ever opened.
+    expect(first.status).toBe('failed');
+    expect(first.approvals).toEqual([]);
+    expect(first.steps[0]?.status).toBe('failed');
+    expect(createInvocations()).toBe(0);
+  });
+});
+
+describe('orchestrator approval binding (what runs is what was approved)', () => {
+  it('fails closed when the resumed plan would execute different arguments than were approved', async () => {
+    const decisions: SecurityDecision[] = [];
+    // The extractor returns a DIFFERENT name on the second call — standing in
+    // for any divergence between approval time and execution time (changed
+    // extraction, changed state, tampered replay).
+    let calls = 0;
+    const { orchestrator, approvals, createInvocations } = harness({
+      extractor: () => {
+        calls += 1;
+        return { name: calls === 1 ? 'Reviewed Name' : 'Swapped Name' };
+      },
+      securitySink: (decision) => {
+        decisions.push(decision);
+      },
+    });
+    const first = (await orchestrator.run({
+      ...baseRequest,
+      utterance: 'create a workspace called Reviewed Name',
+    })) as unknown as CreateRun;
     expect(first.status).toBe('blocked');
+    expect(first.approvals[0]?.input).toEqual({ name: 'Reviewed Name' });
     const approvalId = first.approvals[0]?.id as string;
     approvals.decide(approvalId, { decision: 'grant', decidedBy: 'usr_alice' });
 
     const resumed = (await orchestrator.run({
       ...baseRequest,
-      utterance: 'create a workspace',
+      utterance: 'create a workspace called Reviewed Name',
       conversationId: first.conversationId,
       approvalId,
     })) as unknown as CreateRun;
 
-    // The tool validates the empty input and fails without creating anything
-    // (the counter counts successful creations — validation happens first).
     expect(resumed.status).toBe('failed');
-    expect(resumed.steps[0]?.output).toBeUndefined();
+    expect(createInvocations()).toBe(0); // nothing ran
+    expect(decisions).toEqual([
+      expect.objectContaining({
+        reasonCode: 'APPROVAL_ARGUMENTS_MISMATCH',
+        action: 'approval.resume',
+        origin: 'approval',
+        policyDecision: 'deny',
+        outcome: 'blocked',
+        toolId: 'workspaces.create_workspace',
+        actorId: 'usr_alice',
+        organizationId: 'org_acme',
+      }),
+    ]);
+    // Structured metadata only — the argument VALUES are never recorded.
+    expect(JSON.stringify(decisions)).not.toContain('Swapped Name');
+    expect(JSON.stringify(decisions)).not.toContain('Reviewed Name');
+  });
+
+  it('executes the approved arguments when the re-plan matches (the normal path)', async () => {
+    const { orchestrator, approvals, createInvocations } = harness();
+    const first = (await orchestrator.run({
+      ...baseRequest,
+      utterance: 'create a workspace called Finance',
+    })) as unknown as CreateRun;
+    const approvalId = first.approvals[0]?.id as string;
+    approvals.decide(approvalId, { decision: 'grant', decidedBy: 'usr_alice' });
+    const resumed = (await orchestrator.run({
+      ...baseRequest,
+      utterance: 'create a workspace called Finance',
+      conversationId: first.conversationId,
+      approvalId,
+    })) as unknown as CreateRun;
+    expect(resumed.status).toBe('completed');
+    expect(createInvocations()).toBe(1);
+  });
+
+  it('never opens an approval for forged scope arguments, and audits the attempt', async () => {
+    const decisions: SecurityDecision[] = [];
+    const { orchestrator, createInvocations } = harness({
+      // A (future, model-driven) extractor that tries to smuggle scope in.
+      extractor: () => ({ name: 'Ops', workspaceId: 'wsp_attacker', approvalState: 'approved' }),
+      securitySink: (decision) => {
+        decisions.push(decision);
+      },
+    });
+    const run = (await orchestrator.run({
+      ...baseRequest,
+      utterance: 'create a workspace called Ops',
+    })) as unknown as CreateRun;
+    expect(run.status).toBe('failed');
+    expect(run.approvals).toEqual([]);
+    expect(createInvocations()).toBe(0);
+    expect(decisions).toEqual([
+      expect.objectContaining({ reasonCode: 'RESERVED_ARGUMENT', action: 'tool.execute' }),
+    ]);
+    expect(decisions[0]?.reason).toContain('workspaceId');
+    expect(decisions[0]?.reason).toContain('approvalState');
+    expect(JSON.stringify(decisions)).not.toContain('wsp_attacker');
+  });
+
+  it('rejects a resumed approval opened in a different workspace', async () => {
+    const { orchestrator, approvals, createInvocations } = harness();
+    const first = (await orchestrator.run({
+      ...baseRequest,
+      utterance: 'create a workspace called Finance',
+    })) as unknown as CreateRun;
+    const approvalId = first.approvals[0]?.id as string;
+    approvals.decide(approvalId, { decision: 'grant', decidedBy: 'usr_alice' });
+    const resumed = (await orchestrator.run({
+      ...baseRequest,
+      workspaceId: 'wsp_other',
+      utterance: 'create a workspace called Finance',
+      conversationId: first.conversationId,
+      approvalId,
+    })) as unknown as CreateRun;
+    expect(resumed.status).not.toBe('completed');
     expect(createInvocations()).toBe(0);
   });
 });

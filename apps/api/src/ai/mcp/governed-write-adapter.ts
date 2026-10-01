@@ -40,8 +40,19 @@ import type { ApprovalEngine, ApprovalRequestRecord } from '@nexora/ai-runtime';
 import type { ToolExecutionResult, ToolExecutor } from '@nexora/ai-runtime/execution';
 import type { NexoraMCPContext, NexoraMCPToolResult } from '@nexora/mcp';
 import { toolError } from '@nexora/mcp';
+import { mcpRunKeyField } from './mcp-run-scope.js';
+
+/** How many attempt keys (`<base>`, `<base>:2`, …) a resume lookup walks. */
+const MAX_RESUME_ATTEMPTS = 50;
 
 /** A stable serialization of the user-controlled arguments (approval key). */
+/** Executor error codes that are policy refusals (surfaced verbatim over MCP). */
+const POLICY_ERROR_CODES = new Set([
+  'POLICY_DENIED',
+  'POLICY_UNAVAILABLE',
+  'POLICY_CHANGED_AFTER_APPROVAL',
+]);
+
 function stableKey(value: Record<string, unknown>): string {
   const sorted: Record<string, unknown> = {};
   for (const key of Object.keys(value).sort()) {
@@ -56,9 +67,21 @@ function stableKey(value: Record<string, unknown>): string {
  * never from a correlation id (which changes across restarts) and never
  * from any client claim.
  */
-function resumeKeyFor(userId: string, toolId: string, args: Record<string, unknown>): string {
+function resumeKeyFor(
+  userId: string,
+  workspaceId: string | undefined,
+  agentId: string | undefined,
+  toolId: string,
+  args: Record<string, unknown>,
+): string {
+  // Prompt 4: the resume key binds the approval to the workspace AND the
+  // principal (agent or human) it was opened for — an approval authorized in
+  // one workspace, or for one agent, can never be located (and executed)
+  // from another.
   return createHash('sha256')
-    .update(`${userId}\u0000${toolId}\u0000${stableKey(args)}`)
+    .update(
+      `${userId}\u0000${workspaceId ?? ''}\u0000${agentId ?? ''}\u0000${toolId}\u0000${stableKey(args)}`,
+    )
     .digest('hex');
 }
 
@@ -109,15 +132,34 @@ export class GovernedWriteAdapter {
     context: NexoraMCPContext,
   ): Promise<NexoraMCPToolResult> {
     const memoryKey = `${context.correlationId}:${this.#toolId}:${stableKey(args)}`;
-    const resumeKey = resumeKeyFor(context.userId, this.#toolId, args);
+    const baseResumeKey = resumeKeyFor(
+      context.userId,
+      context.workspaceId,
+      context.agent?.agentId,
+      this.#toolId,
+      args,
+    );
 
     // Resume resolution: the DURABLE store first (same key across process
     // restarts), then the in-memory fallback for engines without resume-by-key.
-    const existing =
-      (this.#approvals.byResumeKey === undefined
-        ? undefined
-        : await this.#approvals.byResumeKey(context.tenantId, resumeKey)) ??
-      this.#pending.get(memoryKey);
+    //
+    // Attempts (Prompt 9): a TERMINAL approval (rejected / expired / failed)
+    // opened by an EARLIER run never blocks a new request — the next attempt
+    // uses the key `<base>:<n>` and opens a brand-new approval (a terminal
+    // approval is never re-used or resurrected). A terminal approval opened by
+    // THIS run is reported to it (the caller learns the outcome) below.
+    let resumeKey = baseResumeKey;
+    let existing: ApprovalRequestRecord | undefined;
+    if (this.#approvals.byResumeKey !== undefined) {
+      for (let attempt = 1; attempt <= MAX_RESUME_ATTEMPTS; attempt += 1) {
+        resumeKey = attempt === 1 ? baseResumeKey : `${baseResumeKey}:${attempt}`;
+        existing = await this.#approvals.byResumeKey(context.tenantId, resumeKey);
+        if (existing === undefined) break;
+        const settled = await this.#isTerminal(existing);
+        if (!settled || existing.runId === context.correlationId) break;
+      }
+    }
+    existing ??= this.#pending.get(memoryKey);
 
     if (existing !== undefined) {
       const status = await this.#approvals.decisionStatus(existing.id);
@@ -128,7 +170,38 @@ export class GovernedWriteAdapter {
           { approvalId: existing.id },
         );
       }
+      if (status === 'expired') {
+        // An expired approval never authorizes anything (granted-but-unclaimed
+        // included). The transition/audit event belongs to the sweeper or the
+        // decision route — nothing extra is published here.
+        return toolError(
+          'APPROVAL_EXPIRED',
+          'The approval for this action expired — nothing was executed; request it again',
+          { approvalId: existing.id },
+        );
+      }
+      if (existing.status === 'failed') {
+        // The approved action ran and failed: reported to the run that owns it
+        // (a later run requesting the same action gets a fresh approval).
+        return toolError(
+          'EXECUTION_FAILED',
+          'The approved action failed — nothing further was executed',
+          { approvalId: existing.id },
+        );
+      }
       if (status === 'granted') {
+        // Defense in depth: the approval must belong to THIS workspace and
+        // principal, whatever located it.
+        if (
+          (existing.workspaceId ?? undefined) !== (context.workspaceId ?? undefined) ||
+          (existing.agentId ?? undefined) !== (context.agent?.agentId ?? undefined)
+        ) {
+          return toolError(
+            'APPROVAL_DENIED',
+            'This approval belongs to a different workspace or principal — nothing was executed',
+            { approvalId: existing.id },
+          );
+        }
         return this.#execute(existing, context);
       }
       return toolError('APPROVAL_REQUIRED', existing.reason, { approvalId: existing.id });
@@ -156,11 +229,47 @@ export class GovernedWriteAdapter {
         input: args,
         // The deterministic cross-process resume handle (durable dedupe).
         resumeKey,
+        // The policy's approval governance (POLICY_APPROVAL_AUTHORITY): who may
+        // decide, separation of duties and TTL. Tighten-only; absent = legacy.
+        ...(first.policy?.approval === undefined
+          ? {}
+          : {
+              separationOfDuties: first.policy.approval.separationOfDuties,
+              ...(first.policy.approval.requiredApproverRoleId === undefined
+                ? {}
+                : { requiredApproverRoleId: first.policy.approval.requiredApproverRoleId }),
+              ...(first.policy.approval.ttlMinutes === undefined
+                ? {}
+                : { ttlMs: first.policy.approval.ttlMinutes * 60_000 }),
+            }),
+        ...(context.agent === undefined ? {} : { agentId: context.agent.agentId }),
+        ...(first.delegationId === undefined ? {} : { delegationId: first.delegationId }),
+        // The policy decision the approval is opened under (Prompt 5) — a
+        // resumed execution must still be governed by the same rules.
+        ...(first.policy === undefined
+          ? {}
+          : {
+              policy: {
+                outcome: first.policy.outcome,
+                policyId: first.policy.policyId,
+                version: first.policy.version,
+                reasonCode: first.policy.reasonCode,
+                reason: first.policy.reason,
+                fingerprint: first.policy.fingerprint,
+                rules: first.policy.matchedRules.map(
+                  (m) => `${m.policyId}@${m.version}=${m.outcome}`,
+                ),
+              },
+            }),
       });
       this.#pending.set(memoryKey, approval);
       return toolError('APPROVAL_REQUIRED', first.error?.message ?? 'Approval required', {
         approvalId: approval.id,
       });
+    }
+    if (first.error !== undefined && POLICY_ERROR_CODES.has(first.error.code)) {
+      // A policy refusal is reported as itself (not a generic failure).
+      return toolError(first.error.code, first.error.message);
     }
     return toolError(
       'EXECUTION_FAILED',
@@ -186,11 +295,29 @@ export class GovernedWriteAdapter {
       if (current?.status === 'completed') {
         return { ok: true, output: this.#toOutput(current.result) };
       }
+      if (current?.status === 'expired') {
+        return toolError(
+          'APPROVAL_EXPIRED',
+          'The approval for this action expired — nothing was executed',
+          {
+            approvalId: approval.id,
+          },
+        );
+      }
       return toolError('EXECUTION_FAILED', 'This approval is already being executed', {
         approvalId: approval.id,
       });
     }
-    const result = await this.#executor.execute(this.#invocation(approval.input, context), true);
+    const result = await this.#executor.execute(
+      {
+        ...this.#invocation(approval.input, context),
+        approvalId: approval.id,
+        // The executor refuses to run under a policy other than the one the
+        // human approved (POLICY_CHANGED_AFTER_APPROVAL).
+        ...(approval.policy === undefined ? {} : { approvedPolicy: approval.policy.fingerprint }),
+      },
+      true,
+    );
     await this.#approvals.recordOutcome(
       approval.id,
       result.ok
@@ -200,11 +327,21 @@ export class GovernedWriteAdapter {
     if (result.ok) {
       return { ok: true, output: this.#output(result) };
     }
+    if (result.error !== undefined && POLICY_ERROR_CODES.has(result.error.code)) {
+      return toolError(result.error.code, result.error.message, { approvalId: approval.id });
+    }
     return toolError(
       'EXECUTION_FAILED',
       result.error?.message ?? 'The action could not be executed',
       { approvalId: approval.id },
     );
+  }
+
+  /** Whether an approval ended without an execution to replay (rejected / expired / failed). */
+  async #isTerminal(approval: ApprovalRequestRecord): Promise<boolean> {
+    if (approval.status === 'failed') return true;
+    const status = await this.#approvals.decisionStatus(approval.id);
+    return status === 'rejected' || status === 'expired';
   }
 
   #invocation(
@@ -218,7 +355,11 @@ export class GovernedWriteAdapter {
       tenantId: context.tenantId,
       workspaceId: context.workspaceId,
       runId: context.correlationId,
+      ...mcpRunKeyField(),
       autonomyTier: 'supervised',
+      capabilityId: this.#capabilityId,
+      origin: 'mcp',
+      ...(context.agent === undefined ? {} : { agent: context.agent }),
       // S34: the MCP surface bypasses discovery entirely (direct tool
       // invocation by name) — the executor's own RBAC ceiling check is the
       // ONLY enforcement point for it, so the trusted context's capability

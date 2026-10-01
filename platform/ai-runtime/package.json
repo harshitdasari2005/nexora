@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Nexora Enterprise AI Runtime (AIR.md) — the orchestration layer between the UI and every business capability. Enterprise AI Orchestrator, planner, capability discovery, tool execution, verification, conversation, memory, prompting, providers, telemetry. Provider-independent; no business logic; no domains.",
+  "description": "Nexora Enterprise AI Runtime (AIR.md) \u2014 the orchestration layer between the UI and every business capability. Enterprise AI Orchestrator, planner, capability discovery, tool execution, verification, conversation, memory, prompting, providers, telemetry. Provider-independent; no business logic; no domains.",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
   "exports": {
@@ -90,8 +90,12 @@
     "@nexora/agent-sdk": "workspace:*",
     "@nexora/config": "workspace:*",
     "@nexora/contracts": "workspace:*",
+    "@nexora/module-lineage": "workspace:*",
+    "@nexora/module-observability": "workspace:*",
+    "@nexora/module-policy": "workspace:*",
     "@nexora/plugin-sdk": "workspace:*",
-    "@nexora/shared": "workspace:*"
+    "@nexora/shared": "workspace:*",
+    "ajv": "^8.17.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

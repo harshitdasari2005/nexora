@@ -10,3 +10,4 @@
 export * from './capability-discovery.js';
 export * from './capability-matcher.js';
 export * from './capability-resolver.js';
+export * from './intent-classifier.js';

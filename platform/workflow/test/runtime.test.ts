@@ -312,6 +312,33 @@ describe('WorkflowRuntime.create', () => {
     expect(executor.calls.map((call) => call.stepId)).toEqual(['a']);
   });
 
+  it('fails without mutation when a required approval expired (never executes)', async () => {
+    const { runtime, approvals, executor } = harness(
+      new WorkflowDefinitionRegistry([approvalDefinition()]),
+    );
+    const first = await runtime.create({
+      definitionKey: 'test.with_approval',
+      context: testContext(),
+      input: { x: 42 },
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) {
+      return;
+    }
+    const approvalId = first.value.steps[1]?.approvalId as string;
+    approvals.decide(approvalId, 'grant');
+    approvals.expire(approvalId);
+
+    const resumed = await runtime.resume({ workflowId: first.value.instance.id, approvalId });
+    expect(resumed.ok).toBe(true);
+    if (!resumed.ok) {
+      return;
+    }
+    expect(resumed.value.instance.status).toBe('failed');
+    expect(resumed.value.instance.error).toContain('expired');
+    expect(executor.calls.map((call) => call.stepId)).toEqual(['a']);
+  });
+
   it('never resumes a workflow with a foreign approval (tenant isolation)', async () => {
     const { runtime, approvals } = harness(new WorkflowDefinitionRegistry([approvalDefinition()]));
     const first = await runtime.create({

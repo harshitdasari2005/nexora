@@ -338,7 +338,94 @@ describe('Finance API — expenses', () => {
       amountMinorUnits: 1_000,
       currency: 'INR',
     });
-    expect(response.statusCode).toBe(422);
+    // Prompt 8: the central policy (origin `rest`) denies it before the domain
+    // is consulted — a direct human REST call is never a way around a DENY.
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      error: { code: 'POLICY_DENIED', policy: { policyId: 'POLICY_FINANCE_BUDGET_STATE' } },
+    });
+  });
+
+  it('rejects an expense in a currency other than the budget currency (422, nothing stored)', async () => {
+    const { client, organizationId, workspaceId } = await cfoClient();
+    const budgetId = await createOpenBudget(client, organizationId, workspaceId);
+    const mismatch = await client.post('/api/finance/expenses', {
+      organizationId,
+      workspaceId,
+      budgetId,
+      description: 'Foreign-currency claim',
+      amountMinorUnits: 1_000,
+      currency: 'USD',
+    });
+    expect(mismatch.statusCode).toBe(422);
+    const listed = await client.get(
+      `/api/finance/expenses?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+    );
+    expect((listed.json() as { expenses: unknown[] }).expenses).toHaveLength(0);
+    // Control: the same claim in the budget currency is accepted.
+    const accepted = await client.post('/api/finance/expenses', {
+      organizationId,
+      workspaceId,
+      budgetId,
+      description: 'Foreign-currency claim',
+      amountMinorUnits: 1_000,
+      currency: 'INR',
+    });
+    expect(accepted.statusCode).toBe(201);
+  });
+
+  it('a budget closed after submission cannot receive the approval (refused, spend unchanged); control: an open budget approves', async () => {
+    const { submitter, approverCookie, organizationId, workspaceId } = await cfoDecisionPair();
+    const decideAsApprover = (expenseId: string) =>
+      submitter.app.inject({
+        method: 'POST',
+        url: `/api/finance/expenses/${expenseId}/decide`,
+        headers: { cookie: approverCookie, 'content-type': 'application/json' },
+        payload: { organizationId, workspaceId, decision: 'approve' },
+      });
+    const submit = async (budgetId: string, amountMinorUnits: number) =>
+      (
+        (
+          await submitter.post('/api/finance/expenses', {
+            organizationId,
+            workspaceId,
+            budgetId,
+            description: 'Travel',
+            amountMinorUnits,
+            currency: 'INR',
+          })
+        ).json() as { expense: { id: string } }
+      ).expense.id;
+    const spentOf = async (budgetId: string) => {
+      const utilization = await submitter.get(
+        `/api/finance/budgets/utilization?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+      );
+      return (
+        utilization.json() as { utilization: { budgetId: string; spentMinorUnits: number }[] }
+      ).utilization.find((u) => u.budgetId === budgetId)?.spentMinorUnits;
+    };
+
+    const openBudgetId = await createOpenBudget(submitter, organizationId, workspaceId);
+    const closedBudgetId = await createOpenBudget(submitter, organizationId, workspaceId);
+    const openExpense = await submit(openBudgetId, 7_000);
+    const lateExpense = await submit(closedBudgetId, 9_000);
+    await submitter.post(`/api/finance/budgets/${closedBudgetId}/close`, {
+      organizationId,
+      workspaceId,
+    });
+
+    const refused = await decideAsApprover(lateExpense);
+    expect([403, 422]).toContain(refused.statusCode);
+    expect(await spentOf(closedBudgetId)).toBe(0);
+
+    // Control: the expense on the still-open budget is approved and equals the utilization delta.
+    const before = await spentOf(openBudgetId);
+    const approved = await decideAsApprover(openExpense);
+    expect(approved.statusCode).toBe(200);
+    expect(
+      (approved.json() as { expense: { amountMinorUnits: number } }).expense.amountMinorUnits,
+    ).toBe(7_000);
+    expect(((await spentOf(openBudgetId)) ?? 0) - (before ?? 0)).toBe(7_000);
   });
 
   it('a rejected expense never counts as spend', async () => {

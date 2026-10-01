@@ -314,6 +314,14 @@ export interface AuditEventDto {
   };
   detail?: string;
   error?: string;
+  /** The policy that decided (recorded at decision time), when present. */
+  policy?: {
+    id: string;
+    version: string;
+    outcome?: string;
+    reason?: string;
+    rules?: readonly string[];
+  };
   references?: Record<string, string>;
 }
 
@@ -326,6 +334,40 @@ export interface DashboardResponse {
   recentActivity: never[];
 }
 
+/**
+ * The composite workflow state vocabulary (server-derived; see
+ * `platform/workflow/README.md`). Only `verified` and `completed_unverified`
+ * describe a succeeded instance — failed / compensated / partial never do.
+ */
+export type WorkflowStateKey =
+  | 'planned'
+  | 'waiting_for_approval'
+  | 'approved'
+  | 'executing'
+  | 'failed'
+  | 'compensated'
+  | 'partial'
+  | 'verified'
+  | 'completed_unverified'
+  | 'rejected'
+  | 'expired'
+  | 'cancelled';
+
+/** How one inner step's success was checked. */
+export interface WorkflowStepVerificationDto {
+  status: 'verified' | 'self_reported' | 'unverified' | 'missing' | 'not_applicable';
+  source?: string;
+  limitation?: string;
+}
+
+/** Verification summary of a workflow instance. */
+export interface WorkflowVerificationSummaryDto {
+  status: 'verified' | 'not_independently_verified' | 'not_applicable';
+  limitations: readonly string[];
+  countedSteps: number;
+  verifiedSteps: number;
+}
+
 /** A workflow instance as seen by the client (read-only execution view). */
 export interface WorkflowInstanceDto {
   id: string;
@@ -335,36 +377,72 @@ export interface WorkflowInstanceDto {
   userId: string;
   workspaceId?: string;
   correlationId: string;
+  /** The raw engine status; render {@link state} instead. */
   status: string;
   currentStepId?: string;
   error?: string;
   startedAt: string;
   finishedAt?: string;
+  origin?: string;
+  approvalId?: string;
+  initiator?: string;
+  compensation?: {
+    status: string;
+    compensatedSteps: readonly string[];
+    outstanding: readonly { stepId: string; name: string; reason: string }[];
+  };
+  /** The truthful composite state (absent only on a legacy payload). */
+  state?: WorkflowStateKey;
+  stateDetail?: string;
+  rollbackSummary?: string;
+  errorCode?: string;
+  verification?: WorkflowVerificationSummaryDto;
 }
 
-/** A workflow step execution (the journal). */
+/** A workflow step execution (sanitized: never raw inputs or outputs). */
 export interface WorkflowStepExecutionDto {
   id: string;
-  workflowId: string;
-  tenantId: string;
   stepId: string;
   name: string;
   capabilityId: string;
   toolId: string;
+  purpose?: 'step' | 'compensation';
+  compensatesStepId?: string;
   status: string;
   attempt: number;
-  input: Record<string, unknown>;
-  output?: unknown;
   error?: string;
+  errorCode?: string;
   approvalId?: string;
   startedAt: string;
   finishedAt?: string;
+  verification?: WorkflowStepVerificationDto;
+}
+
+/** A composite whose unit approval exists but has NO workflow instance. */
+export interface CompositeApprovalDto {
+  approvalId: string;
+  capabilityId: string;
+  definitionKey?: string;
+  initiator: string;
+  workspaceId?: string;
+  state: WorkflowStateKey;
+  stateDetail: string;
+  createdAt: string;
+  expiresAt: string;
+  decidedAt?: string;
 }
 
 /** A full workflow execution record (detail view). */
 export interface WorkflowExecutionRecordDto {
   instance: WorkflowInstanceDto;
   steps: readonly WorkflowStepExecutionDto[];
+  approval?: {
+    id: string;
+    status: string;
+    decidedBy?: string;
+    decidedAt?: string;
+    expiresAt: string;
+  };
 }
 
 /** A notification as seen by the client (Notification vertical slice). */
@@ -934,4 +1012,270 @@ export interface CommandCenterDto {
   actions: readonly CommandCenterActionDto[];
   /** Widget id → widget data. */
   data: Readonly<Record<string, CommandCenterWidgetDataDto>>;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime observability (operator "Runtime Runs" page)
+// ---------------------------------------------------------------------------
+
+/** The runtime stages, in pipeline order (mirrors the observability contract). */
+export const RUNTIME_STAGES = [
+  'REQUEST',
+  'PLANNING',
+  'RETRIEVAL',
+  'AUTHORIZATION',
+  'POLICY',
+  'APPROVAL',
+  'EXECUTION',
+  'VERIFICATION',
+  'NARRATION',
+] as const;
+
+/** A runtime stage. */
+export type RuntimeStage = (typeof RUNTIME_STAGES)[number];
+
+/** How a run ended. */
+export type RuntimeStatus = 'completed' | 'failed' | 'blocked' | 'clarification';
+
+/** WHERE and WHY a run failed (codes only, never messages). */
+export interface RuntimeRunFailure {
+  stage: RuntimeStage;
+  code: string;
+  class: string;
+  toolId?: string;
+  invocationId?: string;
+}
+
+/** One model call of a run (safe fields only). */
+export interface RuntimeModelCall {
+  callId: string;
+  provider: string;
+  model?: string;
+  execution: 'local' | 'cloud' | 'unknown';
+  durationMs: number;
+  status: 'succeeded' | 'failed';
+  errorCode?: string;
+  usageAvailable: boolean;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  cost: number | null;
+  currency?: string;
+}
+
+/** One tool call of a run (safe fields only). */
+export interface RuntimeToolCall {
+  invocationId: string;
+  toolId: string;
+  status: 'succeeded' | 'failed' | 'unverified';
+  durationMs: number;
+  errorCode?: string;
+}
+
+/** A policy decision referenced by a run. */
+export interface RuntimePolicyRef {
+  policyId: string;
+  version: string;
+  outcome: 'ALLOW' | 'DENY' | 'REQUIRE_APPROVAL';
+}
+
+/** Approval facts of a run; the human wait is separate from the run's duration. */
+export interface RuntimeApprovalTiming {
+  approvalId: string;
+  state: 'opened' | 'resumed' | 'expired';
+  waitMs?: number;
+  decision?: 'grant' | 'reject';
+}
+
+export type GovernanceExecutionAuthority = 'requester_rbac' | 'agent_delegation';
+export type GovernanceVerificationSource =
+  'state_readback' | 'provider_readback' | 'response_shape' | 'handler_result' | 'redetection';
+
+/** Who requested, acted, approved and executed (all optional but requester/executor). */
+export interface GovernanceActors {
+  requester: { userId: string; name?: string };
+  agent?: { agentId: string; delegationId?: string };
+  approver?: { userId: string; name?: string; decidedAt: string };
+  executor: { kind: 'user' | 'agent'; userId: string; agentId?: string };
+  executionAuthority: GovernanceExecutionAuthority;
+}
+
+/** Governance block of a run detail; absent on old servers / runs. */
+export interface RuntimeGovernanceDto {
+  actors: GovernanceActors;
+  approval?: {
+    id: string;
+    status: string;
+    requesterId: string;
+    approverId?: string;
+    requiredApproverRoleId?: string;
+    separationOfDuties: boolean;
+    decidedAt?: string;
+    approvedInputFingerprint?: string;
+  };
+  policies: readonly { policyId: string; version: string; outcome: string; phase?: string }[];
+  executions: readonly {
+    invocationId: string;
+    toolId: string;
+    status: string;
+    inputFingerprint?: string;
+    matchesApproved?: boolean;
+    verification: {
+      verified: boolean;
+      source: GovernanceVerificationSource;
+      limitation?: string;
+    };
+  }[];
+  links: { auditEventId: string | null };
+}
+
+/** A persisted runtime run (the fields this page renders). */
+export interface RuntimeRunDto {
+  id: string;
+  actorId: string;
+  agentId?: string;
+  origin: string;
+  startedAt: string;
+  endedAt: string;
+  /** End-to-end latency excluding any human approval wait. */
+  durationMs: number;
+  status: RuntimeStatus;
+  failure?: RuntimeRunFailure;
+  models: readonly RuntimeModelCall[];
+  tools: readonly RuntimeToolCall[];
+  policies: readonly RuntimePolicyRef[];
+  approval?: RuntimeApprovalTiming;
+  provider?: string;
+  model?: string;
+  modelExecution?: 'local' | 'cloud' | 'unknown';
+  tokenUsage: {
+    available: boolean;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  cost: { estimated: number | null; currency?: string };
+}
+
+/**
+ * One timeline row. `items` are loosely typed by the server; the page reads
+ * only a fixed allow-list of safe keys from them (never a raw dump).
+ */
+export interface RuntimeTimelineEntry {
+  stage: RuntimeStage;
+  durationMs: number;
+  count: number;
+  status: 'ok' | 'failed';
+  items: readonly Readonly<Record<string, unknown>>[];
+}
+
+/** `GET /ops/runtime/runs/:runId` response. */
+export interface RuntimeRunDetailDto {
+  run: RuntimeRunDto;
+  timeline: readonly RuntimeTimelineEntry[];
+  governance?: RuntimeGovernanceDto;
+  bottleneck: {
+    stage?: { stage: RuntimeStage; durationMs: number; share: number };
+    tool?: { invocationId: string; toolId: string; durationMs: number; share: number };
+    model?: { callId: string; provider: string; durationMs: number; share: number };
+  };
+}
+
+/** `GET /ops/runtime/metrics` response. */
+export interface RuntimeMetricsDto {
+  window: { from: string; to: string };
+  truncated: boolean;
+  summary: {
+    runs: number;
+    failureRate: number;
+    denied: number;
+    latencyMs: { p50: number | null; p95: number | null };
+    tools: { calls: number; failed: number };
+    models: { calls: number; failed: number };
+    policyDenials: number;
+    /** Approval counters (absent on servers that predate approval governance). */
+    approvals?: { opened: number; resumed: number; rejected: number; expired: number };
+  };
+}
+
+/* ---------------------------------------------------------------- Policy admin */
+
+/** How a policy behaves when it applies. */
+export type PolicyBehavior = 'ALLOW' | 'DENY' | 'REQUIRE_APPROVAL' | 'CONFIGURABLE';
+
+/** Approval governance requirement carried by a policy (server-derived). */
+export interface PolicyApprovalRequirement {
+  separationOfDuties: boolean;
+  requiredApproverRoleIds: readonly string[];
+  ttlMinutes: number;
+}
+
+/** `GET /api/policy/policies` item. */
+export interface PolicyAdminDto {
+  policyId: string;
+  title: string;
+  description: string;
+  scope: 'organization';
+  configurable: boolean;
+  managedBy: 'platform' | 'organization';
+  ruleVersion: string | number;
+  currentVersion?: number;
+  enabled: boolean;
+  config?: Record<string, unknown>;
+  effectiveAt?: string;
+  updatedBy?: string;
+  updatedByName?: string;
+  fingerprint?: string;
+  behavior: PolicyBehavior;
+  approval?: PolicyApprovalRequirement;
+}
+
+/** How a policy version came to exist. */
+export type PolicyChangeType = 'created' | 'version' | 'enabled' | 'disabled';
+
+/** `GET /api/policy/policies/:id/history` item (newest first). */
+export interface PolicyVersionDto {
+  policyId: string;
+  version: number;
+  enabled: boolean;
+  config: Record<string, unknown>;
+  reason?: string;
+  changeType: PolicyChangeType;
+  createdBy: string;
+  createdAt: string;
+  fingerprint: string;
+}
+
+/** Body of `POST /api/policy/policies/:id/versions` (structured only). */
+export interface PolicyVersionRequest {
+  config?: Record<string, unknown>;
+  enabled?: boolean;
+  reason?: string;
+  expectedVersion?: number;
+}
+
+/** One approval-authority rule (structured). */
+export interface ApprovalAuthorityRule {
+  capabilityPrefix: string;
+  separationOfDuties?: boolean;
+  requiredApproverRoleId?: string;
+  ttlMinutes?: number;
+}
+
+/** `GET /api/approvals/pending` item. */
+export interface ApprovalGovernanceDto {
+  id: string;
+  capabilityId: string;
+  toolId: string;
+  requesterId: string;
+  requesterName?: string;
+  status: string;
+  createdAt: string;
+  expiresAt: string;
+  requiredApproverRoleId?: string;
+  separationOfDuties: boolean;
+  policy?: { policyId: string; version: number | string; outcome: string };
+  canDecide: boolean;
+  denyReason?: string;
+  reason: string;
 }

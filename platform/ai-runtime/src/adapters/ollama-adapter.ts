@@ -46,6 +46,7 @@ export interface OllamaAdapterOptions {
 /** The local-model provider adapter (chat capability). */
 export class OllamaAdapter implements ModelProvider {
   readonly id = 'ollama';
+  readonly execution = 'local' as const;
   readonly name = 'Ollama (local)';
   // Only `chat` is declared: token streaming is not implemented here, and
   // claiming the capability would let `resolveByCapability('streaming')`

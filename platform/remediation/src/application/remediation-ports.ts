@@ -142,6 +142,12 @@ export interface RemediationExecutionRecorder {
     proposalAction?: string;
     status: string;
     runId?: string;
+    /** The approval the step ran under, when it was approval-gated. */
+    approvalId?: string;
+    /** The agent identity (`agt_…`), when the execution ran as one. */
+    agentIdentityId?: string;
+    /** The delegations that authorized the executed steps. */
+    delegationIds?: readonly string[];
     reason?: string;
     createdAt: string;
   }): Promise<void>;
@@ -169,10 +175,14 @@ export interface RemediationApprovalEngine {
     intent: string;
     input: Record<string, unknown>;
     resumeKey: string;
+    /** The routed approver role (authoritative: only that role may decide). */
+    requiredApproverRoleId?: string;
+    /** True whenever a required approver role exists (decider must differ from requester). */
+    separationOfDuties?: boolean;
   }): Promise<{ id: string }>;
   byResumeKey(
     tenantId: string,
     resumeKey: string,
   ): Promise<{ id: string; status: string } | undefined>;
-  decisionStatus(id: string): Promise<'pending' | 'granted' | 'rejected' | undefined>;
+  decisionStatus(id: string): Promise<'pending' | 'granted' | 'rejected' | 'expired' | undefined>;
 }

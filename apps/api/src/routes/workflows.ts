@@ -39,6 +39,7 @@ import type {
   StartWorkflowHandler,
 } from '@nexora/module-workflow';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
+import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 
 import { requireAuth } from '../plugins/auth.js';
 import {
@@ -46,6 +47,27 @@ import {
   type PermissionResolverDependencies,
 } from '../business-context/permissions.js';
 import { sendForbidden } from './permission-response.js';
+import type { SideEffectClass } from '@nexora/contracts/ai';
+import {
+  authorizeWorkflowInitiator,
+  type InitiatorCapabilityResolver,
+} from '../ai/workflow-initiator.js';
+import type { ApprovalEngine } from '@nexora/ai-runtime';
+import type { LineageRepository } from '@nexora/module-lineage';
+import {
+  approvalOnlyView,
+  buildWorkflowRecordView,
+  isWorkflowApproval,
+  readRunLineage,
+  type CompositeApprovalViewDto,
+  type WorkflowInstanceViewDto,
+} from './workflow-read-model.js';
+import {
+  enforceRestPolicy,
+  governingApprovalPolicy,
+  sendRestPolicyRefusal,
+  type RestPolicyDependencies,
+} from '../policy/rest-policy.js';
 
 /** Request body schema for POST /api/workflows. */
 const createWorkflowSchema: FastifySchema = {
@@ -68,9 +90,35 @@ export interface WorkflowRoutesDependencies {
   getWorkflow: GetWorkflowHandler;
   listWorkflows: ListWorkflowsHandler;
   listOrganizations: ListOrganizationsHandler;
+  /** Workspace memberships: scope of who may cancel another user's instance (Prompt 9). */
+  listMyWorkspaces: ListMyWorkspacesHandler;
   /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
   permissions: PermissionResolverDependencies;
+  /** The capabilities/tools a registered definition's steps invoke (`undefined` = unknown key). */
+  requiredCapabilities: (
+    definitionKey: string,
+  ) => readonly { capabilityId: string; toolId: string }[] | undefined;
+  /** Resolves the initiator's RBAC-granted executable capabilities (trusted). */
+  initiatorCapabilities: InitiatorCapabilityResolver;
+  /** The side-effect class of a tool (from the canonical manifest), when registered. */
+  sideEffectOf: (toolId: string) => SideEffectClass | undefined;
+  /** The central policy stack a REST mutation consults (lazy: composed after routes). */
+  restPolicy: () => RestPolicyDependencies;
+  /**
+   * Read model inputs (all optional so a minimal composition still serves the
+   * sanitized read model): the append-only lineage (inner-step verification),
+   * the approval engine (composite unit approvals, which exist BEFORE any
+   * instance) and the lazy expiry sweep.
+   */
+  lineage?: LineageRepository;
+  approvals?: ApprovalEngine;
+  sweepExpiredApprovals?: () => Promise<unknown>;
 }
+
+/** How many of the newest approvals the composite listing scans. */
+const COMPOSITE_APPROVAL_SCAN_LIMIT = 200;
+/** How many instances get a lineage-derived verification summary per listing. */
+const LIST_VERIFICATION_LIMIT = 50;
 
 /** Registers the workflow routes. */
 export function registerWorkflowRoutes(
@@ -106,12 +154,65 @@ export function registerWorkflowRoutes(
       return sendForbidden(reply, request.id, 'start a workflow');
     }
 
+    // Initiator authority: `workflows.execute` alone grants none of the
+    // capabilities the inner steps use. The initiator must hold EVERY one
+    // (trusted membership -> role -> RBAC), and that ceiling is bound to the
+    // instance, where it bounds every inner step and compensation.
+    let ceiling: readonly string[] = [];
+    const required = dependencies.requiredCapabilities(body.definitionKey);
+    if (required !== undefined) {
+      const authority = await authorizeWorkflowInitiator({
+        resolver: dependencies.initiatorCapabilities,
+        scope: { userId: auth.userId, tenantId: body.organizationId },
+        required: required.map((step) => step.capabilityId),
+      });
+      if (!authority.ok) {
+        return sendForbidden(reply, request.id, 'run every step of this workflow');
+      }
+      ceiling = authority.ceiling;
+
+      // Central policy (origin `rest`) over the inner steps, BEFORE anything
+      // starts: a policy DENY is final for a human too; an approval that
+      // policy requires beyond the baseline side-effect gate is NOT
+      // silently satisfied by a REST start — it must go through the governed
+      // AI/approval path (409). The baseline gate alone (BR-13) is satisfied
+      // by this direct, RBAC-authorized human start.
+      for (const step of required) {
+        const policy = await enforceRestPolicy(dependencies.restPolicy(), {
+          capabilityId: step.capabilityId,
+          organizationId: body.organizationId,
+          userId: auth.userId,
+          requestId: request.id,
+          input: {},
+          sideEffectClass: dependencies.sideEffectOf(step.toolId) ?? 'consequential',
+        });
+        if (!policy.ok) {
+          return sendRestPolicyRefusal(reply, request.id, policy);
+        }
+        if (policy.decision.outcome === 'REQUIRE_APPROVAL' && !policy.baselineApprovalOnly) {
+          return reply.code(409).send({
+            error: {
+              code: 'APPROVAL_REQUIRED',
+              message:
+                'Policy requires approval for a step of this workflow; start it through the governed AI/approval path',
+              requestId: request.id,
+              policy: governingApprovalPolicy(policy.decision) ?? policy.record,
+            },
+          });
+        }
+      }
+    }
+
     const result = await dependencies.startWorkflow.handle({
       definitionKey: body.definitionKey,
       context: {
         userId: auth.userId,
         tenantId: body.organizationId as TenantId,
         correlationId: request.id,
+        // Human operator path (no agent principal) — Prompt 4 attribution.
+        origin: 'rest',
+        // The initiator's RBAC ceiling — bounds every inner step + compensation.
+        allowedCapabilityIds: ceiling,
       },
       input: body.input,
     });
@@ -124,7 +225,17 @@ export function registerWorkflowRoutes(
         },
       });
     }
-    return reply.code(201).send({ workflow: result.value });
+    return reply.code(201).send({
+      workflow: buildWorkflowRecordView({
+        record: result.value,
+        lineage: await readRunLineage(
+          dependencies.lineage,
+          body.organizationId,
+          result.value.instance.correlationId,
+        ),
+        sideEffectOf: dependencies.sideEffectOf,
+      }),
+    });
   });
 
   app.get('/api/workflows', async (request, reply) => {
@@ -173,7 +284,76 @@ export function registerWorkflowRoutes(
         },
       });
     }
-    return { workflows: result.value };
+
+    // The truthful composite state of each instance (sanitized: no inputs or
+    // outputs). Verification is lineage-derived, so it needs the journal.
+    const instances: WorkflowInstanceViewDto[] = [];
+    let index = 0;
+    for (const instance of result.value) {
+      const detail =
+        index < LIST_VERIFICATION_LIMIT || instance.status === 'failed'
+          ? await dependencies.getWorkflow.handle({
+              workflowId: instance.id,
+              tenantId: organizationId as TenantId,
+            })
+          : undefined;
+      index += 1;
+      if (detail === undefined || !detail.ok) {
+        // Beyond the scan cap: derive from the instance alone (a succeeded
+        // instance without a checked journal can never read "verified").
+        instances.push(
+          buildWorkflowRecordView({
+            record: { instance, steps: [] },
+            lineage: [],
+            sideEffectOf: dependencies.sideEffectOf,
+          }).instance,
+        );
+        continue;
+      }
+      const lineage = await readRunLineage(
+        dependencies.lineage,
+        organizationId,
+        detail.value.instance.correlationId,
+      );
+      instances.push(
+        buildWorkflowRecordView({
+          record: detail.value,
+          lineage,
+          sideEffectOf: dependencies.sideEffectOf,
+        }).instance,
+      );
+    }
+
+    // Composite unit approvals that have NO instance (yet, or ever): the
+    // pending / rejected / expired / refused ones. Scoped to the caller's own
+    // approvals and to workspaces they belong to.
+    const composites: CompositeApprovalViewDto[] = [];
+    if (dependencies.approvals !== undefined) {
+      await dependencies.sweepExpiredApprovals?.();
+      const mine = await dependencies.listMyWorkspaces.handle({
+        userId: auth.userId,
+        organizationId: organizationId as TenantId,
+      });
+      const workspaceIds = new Set(mine.ok ? mine.value.map((workspace) => workspace.id) : []);
+      const linked = new Set(
+        result.value.map((instance) => instance.approvalId).filter((id) => id !== undefined),
+      );
+      const records = await dependencies.approvals.listByTenant(organizationId, {
+        limit: COMPOSITE_APPROVAL_SCAN_LIMIT,
+      });
+      for (const approval of records) {
+        if (!isWorkflowApproval(approval) || linked.has(approval.id)) continue;
+        const visible =
+          approval.userId === auth.userId ||
+          (approval.workspaceId !== undefined && workspaceIds.has(approval.workspaceId));
+        if (!visible) continue;
+        composites.push({
+          ...approvalOnlyView(approval),
+          definitionKey: approval.capabilityId.slice('workflow.'.length),
+        });
+      }
+    }
+    return { workflows: instances, composites };
   });
 
   app.get('/api/workflows/:workflowId', async (request, reply) => {
@@ -224,7 +404,22 @@ export function registerWorkflowRoutes(
         },
       });
     }
-    return { workflow: result.value };
+    const lineage = await readRunLineage(
+      dependencies.lineage,
+      organizationId,
+      result.value.instance.correlationId,
+    );
+    const approvalId = result.value.instance.approvalId;
+    const approval =
+      approvalId === undefined ? undefined : await dependencies.approvals?.byId(approvalId);
+    return {
+      workflow: buildWorkflowRecordView({
+        record: result.value,
+        lineage,
+        sideEffectOf: dependencies.sideEffectOf,
+        ...(approval === undefined || approval.tenantId !== organizationId ? {} : { approval }),
+      }),
+    };
   });
 
   app.post('/api/workflows/:workflowId/cancel', async (request, reply) => {
@@ -260,6 +455,35 @@ export function registerWorkflowRoutes(
     );
     if (!authz.ok) {
       return sendForbidden(reply, request.id, 'cancel a workflow');
+    }
+
+    // Ownership scope (Prompt 9): `workflows.execute` is an organization-level
+    // capability, so it alone must not let one member cancel ANOTHER user's
+    // instance in a workspace they are not part of. The caller must be the
+    // initiator, or a member of the instance's workspace. Anything else is
+    // indistinguishable from a missing instance (404 — no existence leak).
+    const existing = await dependencies.getWorkflow.handle({
+      workflowId: params.workflowId,
+      tenantId: organizationId as TenantId,
+    });
+    if (existing.ok && existing.value.instance.userId !== auth.userId) {
+      const workspaceId = existing.value.instance.workspaceId;
+      const mine =
+        workspaceId === undefined
+          ? undefined
+          : await dependencies.listMyWorkspaces.handle({
+              userId: auth.userId,
+              organizationId: organizationId as TenantId,
+            });
+      const sharesWorkspace =
+        mine !== undefined &&
+        mine.ok &&
+        mine.value.some((workspace) => workspace.id === workspaceId);
+      if (!sharesWorkspace) {
+        return reply.code(404).send({
+          error: { code: 'NOT_FOUND', message: 'Workflow not found', requestId: request.id },
+        });
+      }
     }
 
     const result = await dependencies.cancelWorkflow.handle({

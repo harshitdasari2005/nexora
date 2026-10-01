@@ -60,7 +60,25 @@ export interface NexoraMCPServerOptions {
    * context per session via {@link NexoraMCPServerHandleHttpInput}.
    */
   context?: NexoraMCPContext;
+  /**
+   * An optional deterministic argument policy evaluated BEFORE schema
+   * validation, for rules the schema cannot express as security decisions —
+   * e.g. rejecting (and auditing) identity/scope/authority fields a client
+   * tries to pass as tool arguments. Tool arguments are untrusted client
+   * input; trusted scope always comes from the session context.
+   */
+  argumentPolicy?: NexoraMCPArgumentPolicy;
 }
+
+/** A pre-validation argument policy (see {@link NexoraMCPServerOptions.argumentPolicy}). */
+export type NexoraMCPArgumentPolicy = (input: {
+  /** The MCP tool name. */
+  toolName: string;
+  /** The untrusted arguments. */
+  args: Record<string, unknown>;
+  /** The trusted session context. */
+  context: NexoraMCPContext;
+}) => Promise<{ ok: true } | { ok: false; code: string; message: string }>;
 
 /** The server name/version advertised in `initialize`. */
 export interface NexoraMCPImplementation {
@@ -76,6 +94,8 @@ export interface NexoraMCPHandleHttpIdentity {
   tenantId: string;
   /** The membership-validated workspace scope, when selected (trusted). */
   workspaceId?: string;
+  /** The validated agent principal the session operates as, when any (Prompt 4). */
+  agentId?: string;
 }
 
 /** Inputs of {@link NexoraMCPServer.handleHttpRequest}. */
@@ -249,7 +269,7 @@ export class NexoraMCPServer {
     return this.#sessions.size;
   }
 
-  #callWithContext(
+  async #callWithContext(
     name: string,
     args: Record<string, unknown>,
     context: NexoraMCPContext,
@@ -269,6 +289,13 @@ export class NexoraMCPServer {
           message: `Tool not found: ${name}`,
         },
       });
+    }
+
+    if (this.#options.argumentPolicy !== undefined) {
+      const policy = await this.#options.argumentPolicy({ toolName: name, args, context });
+      if (!policy.ok) {
+        return { ok: false, error: { code: policy.code, message: policy.message } };
+      }
     }
 
     const valid = this.#validate(tool, args);
@@ -412,7 +439,10 @@ function sameIdentity(a: NexoraMCPHandleHttpIdentity, b: NexoraMCPHandleHttpIden
   return (
     a.userId === b.userId &&
     a.tenantId === b.tenantId &&
-    (a.workspaceId ?? '') === (b.workspaceId ?? '')
+    (a.workspaceId ?? '') === (b.workspaceId ?? '') &&
+    // An agent session can never be driven as a human session (or as a
+    // different agent), and vice versa.
+    (a.agentId ?? '') === (b.agentId ?? '')
   );
 }
 

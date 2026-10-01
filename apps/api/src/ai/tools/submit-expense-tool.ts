@@ -75,6 +75,8 @@ export const SUBMIT_EXPENSE_MANIFEST: ToolManifest = {
   sideEffectClass: 'consequential',
   idempotent: false,
   timeoutMs: 15_000,
+  // Read-back: the created record is re-read from persisted state.
+  verification: { source: 'state_readback' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -189,7 +191,7 @@ export class SubmitExpenseTool implements Tool<SubmitExpenseInput, SubmitExpense
     // 5. Verify the authoritative result against the trusted scope.
     const expense = result.value.expense;
     if (expense.organizationId !== context.tenantId || expense.workspaceId !== workspaceId) {
-      return this.#failure('Expense verification failed: unexpected scope');
+      return this.#verificationFailure('Expense verification failed: unexpected scope');
     }
 
     // 6. Read-back verification: read the persisted state back and confirm
@@ -207,7 +209,7 @@ export class SubmitExpenseTool implements Tool<SubmitExpenseInput, SubmitExpense
           item.organizationId === context.tenantId,
       );
     if (!persisted) {
-      return this.#failure(
+      return this.#verificationFailure(
         'Expense verification failed: submitted expense not found in the workspace',
       );
     }
@@ -230,6 +232,11 @@ export class SubmitExpenseTool implements Tool<SubmitExpenseInput, SubmitExpense
     };
   }
 
+  /** A failed read-back / result verification: failed AND unverified with the declared source. */
+  #verificationFailure(error: string): ToolResult<SubmitExpenseOutput> {
+    return { ...this.#failure(error), readBackFailed: true };
+  }
+
   #failure(error: string): ToolResult<SubmitExpenseOutput> {
     return { ok: false, error, completedAt: new Date().toISOString() };
   }
@@ -245,6 +252,9 @@ function submitExpenseErrorMessage(error: { code?: string; message?: string }): 
       return 'The expense details are invalid';
     case 'NOT_FOUND':
       return 'The referenced budget could not be found';
+    case 'BUSINESS_RULE_VIOLATION':
+      // e.g. a closed budget, or an expense currency that differs from the budget's.
+      return 'The expense violates a budget rule (the budget must be open and in the same currency)';
     default:
       return 'Could not submit the expense';
   }

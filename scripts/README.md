@@ -2,15 +2,16 @@
 
 Development scripts (invoked via `pnpm run` at the root or directly).
 
-| Script                                         | Purpose                                          | Status                                                   |
-| ---------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------- |
-| `dev`                                          | Start all dev tasks (turbo)                      | configured (root package.json)                           |
-| `dev:local` (`scripts/dev-local.sh`)           | One-command start: infra + API + Web (see below) | configured (root package.json)                           |
-| `dev:local:down` (`scripts/dev-local-down.sh`) | One-command stop: API/Web + infra (volumes kept) | configured                                               |
-| `test`                                         | Run all tests (turbo)                            | configured                                               |
-| `gen:module` (`scripts/gen-module.mjs`)        | Scaffold a new module skeleton                   | placeholder — Roadmap S1                                 |
-| `db:migrate`                                   | Database migrations                              | placeholder — Roadmap S3+ (PERSISTENCE.md §4)            |
-| `eval:run`                                     | Run AI evaluation suites                         | placeholder — Roadmap S13 (ENGINEERING_PLAYBOOK.md §7.4) |
+| Script                                         | Purpose                                          | Status                                            |
+| ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------- |
+| `dev`                                          | Start all dev tasks (turbo)                      | configured (root package.json)                    |
+| `dev:local` (`scripts/dev-local.sh`)           | One-command start: infra + API + Web (see below) | configured (root package.json)                    |
+| `dev:local:down` (`scripts/dev-local-down.sh`) | One-command stop: API/Web + infra (volumes kept) | configured                                        |
+| `test`                                         | Run all tests (turbo)                            | configured                                        |
+| `gen:module` (`scripts/gen-module.mjs`)        | Scaffold a new module skeleton                   | placeholder — Roadmap S1                          |
+| `db:migrate`                                   | Database migrations                              | placeholder — Roadmap S3+ (PERSISTENCE.md §4)     |
+| `eval:run` (`apps/api/evaluation/cli.ts`)      | Run the scenario evaluation → JSON report        | configured — see `packages/evaluation/README.md`  |
+| `scenarios:seed` / `scenarios:reset`           | Deterministic scenario seed / reset (PostgreSQL) | configured (`apps/api/scripts/seed-scenarios.ts`) |
 
 ## `pnpm dev:local` / `pnpm dev:local:down`
 

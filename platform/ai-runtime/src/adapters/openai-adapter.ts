@@ -30,6 +30,7 @@ export interface OpenAIAdapterOptions {
  */
 export class OpenAIAdapter implements ModelProvider {
   readonly id = 'openai';
+  readonly execution = 'cloud' as const;
   readonly name = 'OpenAI';
   readonly capabilities = ['chat', 'embedding', 'streaming'] as const;
   readonly models: readonly string[];

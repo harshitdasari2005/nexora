@@ -33,6 +33,7 @@ import {
   GetBusinessAgentHandler,
   INITIAL_AGENTS,
   type AgentExecutionRecorder,
+  type AgentPrincipalResolver,
   type AgentProblemProvider,
 } from '@nexora/module-agents';
 
@@ -72,6 +73,14 @@ export interface BuildAgentOptions {
    * execution path. Absent when the detection surface is not wired.
    */
   problems?: AgentProblemProvider;
+  /**
+   * The ONE agent-definition registry (Prompt 4) — shared with delegation
+   * management and the execution-time authority check. Built from the
+   * initial definitions when absent.
+   */
+  registry?: BusinessAgentRegistry;
+  /** Resolves persisted agent principals (Prompt 4); execution fails closed without it. */
+  principals?: AgentPrincipalResolver;
 }
 
 /** The composed business-agent surface (query + execution + capabilities). */
@@ -98,9 +107,11 @@ export interface AgentSurface {
 /** Builds the business-agent surface (generic engine + API implementations). */
 export function buildAgent(options: BuildAgentOptions): AgentSurface {
   const catalog = createInitialCatalog();
-  const registry = new BusinessAgentRegistry(catalog);
-  for (const definition of INITIAL_AGENTS) {
-    registry.register(definition);
+  const registry = options.registry ?? new BusinessAgentRegistry(catalog);
+  if (options.registry === undefined) {
+    for (const definition of INITIAL_AGENTS) {
+      registry.register(definition);
+    }
   }
   const service = new BusinessAgentApplicationService({
     registry,
@@ -137,6 +148,7 @@ export function buildAgent(options: BuildAgentOptions): AgentSurface {
     }),
     recorder: options.executionRecorder,
     problems: options.problems,
+    ...(options.principals === undefined ? {} : { principals: options.principals }),
   });
   return {
     getAgent: new GetBusinessAgentHandler(service),

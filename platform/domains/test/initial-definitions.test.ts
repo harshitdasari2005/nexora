@@ -10,7 +10,9 @@
  * added the RBAC permission vocabulary: organization.read, problems.read/
  * .investigate, insights.read, agent.use/.execute, approvals.decide,
  * activity.read, calendar.read; the Audit Center added audit.read, granted
- * to executive.ceo and both legal roles; S35 (Finance vertical) added
+ * to executive.ceo and both legal roles; policy administration added
+ * policy.read/.manage (manage: executive.ceo + legal.general_counsel; read:
+ * those + legal.compliance_manager + finance.cfo; both non-delegable); S35 (Finance vertical) added
  * budgets.read/.manage, expenses.read/.create/.decide, granted to
  * finance.cfo only; backend RBAC enforcement added integrations.manage and
  * marketplace.manage, granted to executive.ceo, technology.cto/
@@ -77,6 +79,8 @@ const EXPECTED_CAPABILITY_IDS = [
   'activity.read',
   'calendar.read',
   'audit.read',
+  'policy.read',
+  'policy.manage',
   'budgets.read',
   'budgets.manage',
   'expenses.read',
@@ -84,6 +88,7 @@ const EXPECTED_CAPABILITY_IDS = [
   'expenses.decide',
   'integrations.manage',
   'marketplace.manage',
+  'agents.manage',
 ];
 
 describe('initial domain registrations', () => {
@@ -108,6 +113,23 @@ describe('initial domain registrations', () => {
     expect(catalog.capabilities.list().map((capability) => capability.id)).toEqual(
       EXPECTED_CAPABILITY_IDS,
     );
+  });
+
+  it('grants policy.read / policy.manage only to the governance roles', () => {
+    const catalog = createInitialCatalog();
+    const holders = (capability: string): string[] =>
+      catalog.roles
+        .list()
+        .filter((role) => role.capabilityIds.includes(capability))
+        .map((role) => role.id)
+        .sort();
+    expect(holders('policy.manage')).toEqual(['executive.ceo', 'legal.general_counsel']);
+    expect(holders('policy.read')).toEqual([
+      'executive.ceo',
+      'finance.cfo',
+      'legal.compliance_manager',
+      'legal.general_counsel',
+    ]);
   });
 
   it('registers the expected roles per domain', () => {

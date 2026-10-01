@@ -22,6 +22,7 @@
  * influenced by the request. The client is authoritative for NOTHING.
  */
 
+import type { LineageRepository } from '@nexora/module-lineage';
 import { prefixedId } from '@nexora/shared/ids';
 import { nowIso } from '@nexora/shared/time';
 import type {
@@ -43,6 +44,7 @@ import type {
 import { PlanStep, RemediationPlan } from '../domain/plan.js';
 import type { ApprovalRoutingPolicy } from './approval-routing.js';
 import { PlanBuilder, stepToDto } from './plan-builder.js';
+import { RemediationLineageWriter } from './remediation-lineage.js';
 import type { PlanStore } from './plan-store.js';
 import type {
   RemediationAgent,
@@ -88,6 +90,12 @@ export interface RemediationApplicationServiceDependencies {
   execution?: RemediationExecutionPort;
   /** The EXISTING execution journal (one journal, plan-linked records). */
   recorder?: RemediationExecutionRecorder;
+  /**
+   * The append-only lineage store (Prompt 6). Optional: when absent nothing
+   * is recorded. Evidence informs; it never grants authority — nothing
+   * written here is read by any authorization decision.
+   */
+  lineage?: LineageRepository;
 }
 
 /** The generic remediation application service. */
@@ -102,6 +110,7 @@ export class RemediationApplicationService {
   readonly #approvals: RemediationApprovalEngine;
   readonly #execution?: RemediationExecutionPort;
   readonly #recorder?: RemediationExecutionRecorder;
+  readonly #lineage?: RemediationLineageWriter;
   readonly #builder = new PlanBuilder();
 
   constructor(dependencies: RemediationApplicationServiceDependencies) {
@@ -115,6 +124,9 @@ export class RemediationApplicationService {
     this.#approvals = dependencies.approvals;
     this.#execution = dependencies.execution;
     this.#recorder = dependencies.recorder;
+    if (dependencies.lineage !== undefined) {
+      this.#lineage = new RemediationLineageWriter(dependencies.lineage);
+    }
   }
 
   /**
@@ -192,6 +204,12 @@ export class RemediationApplicationService {
       await this.#store.saveStep(step.record());
       steps.push(step);
     }
+    await this.#lineage?.recordBasis(this.#lineageScope(context, plan.id), {
+      problem,
+      solution,
+      planVersion: plan.version,
+      trigger: 'CREATE',
+    });
 
     if (!blueprint.ok) {
       // The server validated the plan and determined it CANNOT execute:
@@ -303,6 +321,12 @@ export class RemediationApplicationService {
       const approval = await this.#openApproval(context, plan, step);
       step.markAwaitingApproval(approval.id, nowIso());
       await this.#store.saveStep(step.record());
+      await this.#lineage?.recordLink(this.#lineageScope(context, plan.id), {
+        stepId: step.id,
+        problemId: plan.problemId,
+        relation: 'STEP_APPROVAL',
+        approvalId: approval.id,
+      });
       if (plan.status !== 'AWAITING_APPROVAL') {
         plan.transitionTo('AWAITING_APPROVAL', nowIso());
       }
@@ -324,15 +348,29 @@ export class RemediationApplicationService {
           stepId: step.id,
         };
       }
-      if (decision === 'rejected') {
+      if (decision === 'rejected' || decision === 'expired') {
+        // A rejected OR expired approval is a terminal NOT-granted outcome:
+        // the step never executes (an expired approval must be re-requested
+        // through a new plan).
         step.transitionTo('FAILED', nowIso());
         step.recordResult(
-          { evidence: ['The approval was rejected — the step never executed.'] },
+          {
+            evidence: [
+              decision === 'expired'
+                ? 'The approval expired before it was granted — the step never executed.'
+                : 'The approval was rejected — the step never executed.',
+            ],
+          },
           nowIso(),
         );
         await this.#store.saveStep(step.record());
         plan.transitionTo('FAILED', nowIso());
-        plan.setReason('A required approval was rejected — remediation stopped.', nowIso());
+        plan.setReason(
+          decision === 'expired'
+            ? 'A required approval expired — remediation stopped; request a new plan.'
+            : 'A required approval was rejected — remediation stopped.',
+          nowIso(),
+        );
         await this.#store.savePlan(plan.record());
         return {
           ok: true,
@@ -541,7 +579,20 @@ export class RemediationApplicationService {
     planId: string,
   ): Promise<RemediationPlan | undefined> {
     const record = await this.#store.findPlanById(context.tenantId, planId);
-    return record === undefined ? undefined : RemediationPlan.hydrate(record);
+    if (record === undefined) {
+      return undefined;
+    }
+    // Workspace scope (Prompt 9): a plan that belongs to a workspace is visible
+    // ONLY to a caller whose trusted (membership-verified) scope IS that
+    // workspace. Any other caller — another workspace of the same tenant, or
+    // one that named no workspace — sees it exactly like a missing plan, so
+    // get / advance / replan / cancel can never reach across workspaces and
+    // never reveal that the plan exists. (Plans without a workspace are
+    // tenant-scoped, as before.)
+    if (record.workspaceId !== undefined && record.workspaceId !== context.workspaceId) {
+      return undefined;
+    }
+    return RemediationPlan.hydrate(record);
   }
 
   /** Selects the grounding solution (client choice bounded to the problem's own). */
@@ -602,6 +653,12 @@ export class RemediationApplicationService {
       intent: `${step.snapshot().action}: ${step.snapshot().rationale}`,
       input: {},
       resumeKey,
+      // The routed approver is AUTHORITATIVE (Prompt 8): the decision route
+      // enforces that the decider holds this role, and separation of duties
+      // applies whenever a required role exists.
+      ...(step.requiredApproverRoleId === undefined
+        ? {}
+        : { requiredApproverRoleId: step.requiredApproverRoleId, separationOfDuties: true }),
     });
     return approval;
   }
@@ -642,9 +699,26 @@ export class RemediationApplicationService {
     if (outcome === undefined) {
       throw new Error('Remediation execution port is not configured');
     }
+    // Lineage: connect the step (and its approval) to the governed run. The
+    // orchestrator run id is the runId the ToolExecutor records EXECUTION
+    // lineage under.
+    await this.#lineage?.recordLink(this.#lineageScope(context, plan.id), {
+      stepId: step.id,
+      problemId: plan.problemId,
+      relation: 'STEP_RUN',
+      ...(snapshot.approvalId === undefined ? {} : { approvalId: snapshot.approvalId }),
+      ...(outcome.runId === undefined ? {} : { executionRunId: outcome.runId }),
+    });
     // Journal through the SAME execution journal (problem → plan → step →
     // execution traceability, Phase 10 §11).
     if (this.#recorder !== undefined) {
+      const delegationIds = [
+        ...new Set(
+          outcome.steps
+            .map((outcomeStep) => outcomeStep.delegationId)
+            .filter((id): id is string => id !== undefined),
+        ),
+      ].sort();
       await this.#recorder.record({
         id: prefixedId('agx'),
         agentId: plan.snapshot().agentId,
@@ -660,11 +734,23 @@ export class RemediationApplicationService {
         proposalAction: snapshot.action,
         status: outcome.status,
         runId: outcome.runId,
+        ...(snapshot.approvalId === undefined ? {} : { approvalId: snapshot.approvalId }),
+        ...(delegationIds.length === 0 ? {} : { delegationIds }),
         reason: outcome.status === 'completed' ? undefined : outcome.response.slice(0, 500),
         createdAt: nowIso(),
       });
     }
     return outcome;
+  }
+
+  /** The trusted lineage scope of a plan. */
+  #lineageScope(context: RemediationContext, planId: string) {
+    return {
+      tenantId: context.tenantId,
+      ...(context.workspaceId === undefined ? {} : { workspaceId: context.workspaceId }),
+      userId: context.userId,
+      planId,
+    };
   }
 
   /** Final verification: the plan completed when the problem is resolved. */
@@ -849,6 +935,12 @@ export class RemediationApplicationService {
       await this.#store.saveStep(step.record());
       steps.push(step);
     }
+    await this.#lineage?.recordBasis(this.#lineageScope(context, plan.id), {
+      problem,
+      solution,
+      planVersion: plan.version,
+      trigger: 'REPLAN',
+    });
     if (!blueprint.ok) {
       plan.transitionTo('BLOCKED', now);
       plan.setReason(blueprint.reason, now);

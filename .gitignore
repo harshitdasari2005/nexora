@@ -23,9 +23,6 @@ pnpm-debug.log*
 # Editors / OS
 .vscode/
 .idea/
-.claude/
-.claude-flow/
-.swarm/
 .DS_Store
 Thumbs.db
 
@@ -43,3 +40,10 @@ infrastructure/compose/.volumes/
 apps/web/media-source/*.mp4
 apps/web/media-source/*.mov
 apps/web/media-source/*.webm
+
+# Evaluation run reports (pnpm eval:run) — machine-readable output, regenerated per run.
+evaluation-results/
+
+# Agent-tooling artifacts (never committed)
+.claude-flow/
+.claude/

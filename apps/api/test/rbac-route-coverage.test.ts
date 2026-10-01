@@ -54,6 +54,14 @@ const ALLOWLIST: ReadonlySet<string> = new Set([
 /** Tokens that mean "this handler consulted the RBAC seam". */
 const GATE_TOKENS = [
   'authorizePermission(',
+  // The shared approval-decision authorizer (requester + membership +
+  // `approvals.decide` via authorizePermission + capability ceiling).
+  'authorizeApprovalDecision(',
+  // The agent identity routes' gate (strict scope + authorizePermission).
+  'authorizeAgentRoute(',
+  // The policy administration gate (scope membership + authorizePermission with
+  // the exact capability, audited on denial).
+  'authorizePolicyRoute(',
   'requireDocumentCapability(',
   'requireKnowledgeCapability(',
 ];
@@ -126,6 +134,64 @@ describe('RBAC route coverage — COMPLETENESS (static)', () => {
     const live = new Set(routes.map((route) => `${route.method} ${route.path}`));
     const stale = [...ALLOWLIST].filter((entry) => !live.has(entry));
     expect(stale).toEqual([]);
+  });
+});
+
+describe('RBAC route coverage — runtime observability (read routes)', () => {
+  // The enumerator above only covers mutating verbs; the runtime telemetry
+  // routes are GET-only, so their `audit.read` gate is pinned explicitly.
+  const source = readFileSync(`${ROUTES_DIR}runtime-ops.ts`, 'utf8');
+  const paths = [
+    '/api/ops/runtime/runs',
+    '/api/ops/runtime/runs/:runId',
+    '/api/ops/runtime/metrics',
+  ];
+
+  it('registers exactly the three GET routes and no mutating route', () => {
+    for (const path of paths) {
+      expect(source).toContain(`app.get('${path}'`);
+    }
+    expect(source).not.toMatch(/\bapp\.(post|put|patch|delete)\s*\(/i);
+  });
+
+  it('every route runs the shared authorizer, which gates on audit.read via authorizePermission', () => {
+    const handlers = source.split(/app\.get\(/).slice(1);
+    expect(handlers).toHaveLength(3);
+    for (const handler of handlers) {
+      expect(handler).toContain('authorize(request, reply, query)');
+    }
+    expect(source).toContain('authorizePermission(');
+    expect(source).toContain("'audit.read'");
+  });
+});
+
+describe('RBAC route coverage — policy administration (static)', () => {
+  const source = readFileSync(`${ROUTES_DIR}policy.ts`, 'utf8');
+  const handlers = source.split(/app\.(?=get\(|post\()/).slice(1);
+
+  it('registers exactly the documented routes', () => {
+    expect(handlers).toHaveLength(3);
+    expect(source).toContain("app.get('/api/policy/policies'");
+    expect(source).toContain("app.get('/api/policy/policies/:policyId/history'");
+    expect(source).toContain("app.post('/api/policy/policies/:policyId/versions'");
+    expect(source).not.toMatch(/\bapp\.(put|patch|delete)\s*\(/i);
+  });
+
+  it('gates reads on policy.read and the mutating POST on policy.manage (exact names)', () => {
+    for (const handler of handlers) {
+      if (handler.startsWith('post(')) {
+        expect(handler).toContain(
+          "authorizePolicyRoute(request, reply, auth.userId, 'policy.manage')",
+        );
+        expect(handler).not.toContain("'policy.read'");
+      } else {
+        expect(handler).toContain(
+          "authorizePolicyRoute(request, reply, auth.userId, 'policy.read')",
+        );
+        expect(handler).not.toContain("'policy.manage'");
+      }
+    }
+    expect(source).toContain('authorizePermission(');
   });
 });
 

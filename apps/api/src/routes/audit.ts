@@ -28,6 +28,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
+import type { DecisionTraceService } from '../audit/decision-trace.js';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
@@ -54,6 +55,8 @@ const VALID_SOURCES: readonly AuditEventSource[] = [
 /** Dependencies of the audit routes. */
 export interface AuditRoutesDependencies {
   auditQuery: AuditQueryService;
+  /** The decision-trace read model (Prompt 6). */
+  decisionTrace?: DecisionTraceService;
   listOrganizations: ListOrganizationsHandler;
   listMyWorkspaces: ListMyWorkspacesHandler;
   /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
@@ -108,6 +111,7 @@ export function registerAuditRoutes(
       source?: string;
       status?: string;
       actorId?: string;
+      agentId?: string;
       from?: string;
       to?: string;
       q?: string;
@@ -166,6 +170,7 @@ export function registerAuditRoutes(
       source: readSourceFilter(query.source),
       status: query.status,
       actorId: query.actorId,
+      ...(query.agentId === undefined ? {} : { agentId: query.agentId }),
       from: query.from,
       to: query.to,
       q: query.q,
@@ -180,5 +185,56 @@ export function registerAuditRoutes(
       limit,
     );
     return { events };
+  });
+
+  /**
+   * `GET /api/audit/events/:eventId/trace` — the structured decision trace
+   * (request → evidence → authorization → policy → approval → planned vs
+   * executed → verification → lineage) of one Audit Center event.
+   *
+   * The SAME authorization as the event list: organization + workspace
+   * membership and `audit.read`. The trace is tenant-scoped; an id from another
+   * tenant is indistinguishable from a missing one (404). It exposes ids,
+   * versions, fingerprints and statuses only.
+   */
+  app.get('/api/audit/events/:eventId/trace', async (request, reply) => {
+    const auth = requireAuth(request);
+    const query = request.query as { organizationId?: string; workspaceId?: string };
+    const { eventId } = request.params as { eventId: string };
+    if (query.organizationId === undefined || query.workspaceId === undefined) {
+      return reply.code(400).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Missing required query parameters: organizationId, workspaceId',
+          requestId: request.id,
+        },
+      });
+    }
+    const denial = await authorizeScope(
+      dependencies,
+      auth.userId,
+      query.organizationId,
+      query.workspaceId,
+    );
+    if (denial !== undefined) {
+      return reply.code(403).send({
+        error: { code: 'AUTHORIZATION_ERROR', message: denial, requestId: request.id },
+      });
+    }
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      { userId: auth.userId, tenantId: query.organizationId, workspaceId: query.workspaceId },
+      'audit.read',
+    );
+    if (!authz.ok) {
+      return sendForbidden(reply, request.id, 'view the audit trail');
+    }
+    const trace = await dependencies.decisionTrace?.trace(query.organizationId, eventId);
+    if (trace === undefined) {
+      return reply.code(404).send({
+        error: { code: 'NOT_FOUND', message: 'No trace for this event', requestId: request.id },
+      });
+    }
+    return { trace };
   });
 }

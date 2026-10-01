@@ -1,0 +1,27 @@
+{
+  "name": "@nexora/evaluation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexora enterprise scenario dataset + evaluation framework — versioned, deterministic application/evaluation scenarios (not model-training data), scenario factories, and pure metric/grounding/report evaluation (ENGINEERING_PLAYBOOK.md §7.4; ROADMAP.md §3.13). The app-bound runner lives in @nexora/app-api (apps/api/evaluation).",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0"
+  }
+}

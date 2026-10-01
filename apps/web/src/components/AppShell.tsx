@@ -45,6 +45,7 @@ import type { UserDto } from '../lib/types.js';
 import { CommandPalette } from './CommandPalette.js';
 import { NotificationCenter } from './NotificationCenter.js';
 import { RoleSwitcher } from './RoleSwitcher.js';
+import { DemoPanel } from './DemoPanel.js';
 
 /** Props of {@link AppShell}. */
 export interface AppShellProps {
@@ -82,6 +83,7 @@ interface NavItem {
 const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'Command Center', icon: 'command-center', to: '/app/command-center' },
   { label: 'Agent', icon: 'agent', to: '/app/agent' },
+  { label: 'Agents', icon: 'agent', to: '/app/agents' },
   { label: 'Problems', icon: 'problems', to: '/app/problems' },
   { label: 'Projects', icon: 'projects', to: '/app/projects' },
   { label: 'Employees', icon: 'employees', to: '/app/employees' },
@@ -91,6 +93,9 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'Calendar', icon: 'calendar', to: '/app/calendar' },
   { label: 'Finance', icon: 'finance', to: '/app/finance' },
   { label: 'Audit', icon: 'audit', to: '/app/audit' },
+  { label: 'Runtime', icon: 'audit', to: '/app/runtime' },
+  { label: 'Policy', icon: 'audit', to: '/app/policy' },
+  { label: 'Approval Queue', icon: 'problems', to: '/app/approvals' },
   { label: 'Apps', icon: 'apps', to: '/app/apps' },
   { label: 'Integrations', icon: 'integrations', to: '/app/integrations' },
   { label: 'Insights', icon: 'insights', to: '/app/insights' },
@@ -98,6 +103,23 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'Search', icon: 'search', action: 'search' },
   { label: 'Settings', icon: 'settings', to: '/app/settings' },
 ];
+
+/** The demo persona panel, in the same sidebar card style (renders nothing outside demo mode). */
+function DemoPanelSlot(): JSX.Element {
+  return (
+    <DemoPanelFrame>
+      <DemoPanel />
+    </DemoPanelFrame>
+  );
+}
+
+function DemoPanelFrame({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <div className="nexora-demo-panel" style={{ margin: `0 ${spacing[3]} ${spacing[4]}` }}>
+      {children}
+    </div>
+  );
+}
 
 /** The nav catalog split into primary (leading) and secondary (deprioritized) tiers. */
 interface TieredNav {
@@ -505,6 +527,7 @@ function AppShellChrome({
             workspaceName={workspaceName}
           />
         </div>
+        <DemoPanelSlot />
 
         {/* Navigation — remounts (and fades in) on a resolved-role change,
             the "sidebar module visibility" half of the role-transition

@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Badge, Button, Card, EmptyState, Stack, typography } from '@nexora/design-system';
+import { Badge, Button, Card, EmptyState, Select, Stack, typography } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
@@ -31,6 +31,7 @@ import {
 import { api, ApiError } from '../lib/api.js';
 import { decideApproval, type ChatDone } from '../lib/chat.js';
 import { executeAgentIntent, executeProposal, fetchAgent } from '../lib/agent.js';
+import { listAgents, type AgentIdentityDto } from '../lib/agents.js';
 import { humanizeIdentifier, humanizeProblemText, humanizeProblemTitle } from '../lib/humanize.js';
 import type {
   AgentExecutionOutcome,
@@ -148,6 +149,8 @@ export interface AgentViewProps {
   userDisplayName: string;
   /** Optional preloaded agent (server-rendered smoke tests). */
   initialAgent?: BusinessAgentDto | null;
+  /** Optional preloaded workspace agent identities (server-rendered smoke tests). */
+  initialAgents?: readonly AgentIdentityDto[];
 }
 
 /** The pure agent content (exported for smoke tests). */
@@ -157,6 +160,7 @@ export function AgentView({
   organizationName,
   userDisplayName,
   initialAgent,
+  initialAgents,
 }: AgentViewProps): JSX.Element {
   const scope = { organizationId, workspaceId };
   const [agent, setAgent] = useState<BusinessAgentDto | null>(initialAgent ?? null);
@@ -167,6 +171,40 @@ export function AgentView({
   const [draft, setDraft] = useState('');
   const [deciding, setDeciding] = useState(false);
   const [executionError, setExecutionError] = useState<string | null>(null);
+  // The agent identities of the workspace (null while loading). Runs are
+  // always AS one ACTIVE identity — the server refuses a run without one.
+  const [identities, setIdentities] = useState<readonly AgentIdentityDto[] | null>(
+    initialAgents ?? null,
+  );
+  const [identitiesError, setIdentitiesError] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const activeIdentities = (identities ?? []).filter((identity) => identity.status === 'active');
+  const runAgentId =
+    activeIdentities.find((identity) => identity.id === selectedAgentId)?.id ??
+    activeIdentities[0]?.id ??
+    null;
+  const noActiveAgent = identities !== null && activeIdentities.length === 0;
+
+  useEffect(() => {
+    if (initialAgents !== undefined) {
+      return;
+    }
+    let cancelled = false;
+    listAgents({ organizationId, workspaceId })
+      .then((agents) => {
+        if (!cancelled) setIdentities(agents);
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) {
+          setIdentitiesError(
+            caught instanceof ApiError ? caught.message : 'Could not load the workspace agents',
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, workspaceId, initialAgents]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -191,10 +229,13 @@ export function AgentView({
   /** Executes a governed proposal; the server re-derives + validates it. */
   const runProposal = useCallback(
     async (proposalId: string) => {
+      if (runAgentId === null) {
+        return;
+      }
       setExecutingId(proposalId);
       setExecutionError(null);
       try {
-        setExecution(await executeProposal(scope, proposalId));
+        setExecution(await executeProposal(scope, proposalId, runAgentId));
         // Refresh the proposal set + recent runs after the run.
         void load();
       } catch (caught) {
@@ -205,20 +246,20 @@ export function AgentView({
         setExecutingId(null);
       }
     },
-    [organizationId, workspaceId, load],
+    [organizationId, workspaceId, load, runAgentId],
   );
 
   /** Executes a free-form intent bound to the agent's capability set. */
   const runIntent = useCallback(
     async (raw: string) => {
       const utterance = raw.trim();
-      if (utterance.length === 0) {
+      if (utterance.length === 0 || runAgentId === null) {
         return;
       }
       setExecutingId('free-form');
       setExecutionError(null);
       try {
-        setExecution(await executeAgentIntent(scope, utterance));
+        setExecution(await executeAgentIntent(scope, utterance, runAgentId));
         setDraft('');
         void load();
       } catch (caught) {
@@ -229,7 +270,7 @@ export function AgentView({
         setExecutingId(null);
       }
     },
-    [organizationId, workspaceId, load],
+    [organizationId, workspaceId, load, runAgentId],
   );
 
   /** Approves the pending write through the EXISTING approval surface. */
@@ -340,22 +381,54 @@ export function AgentView({
       ) : (
         <Stack gap={6}>
           <AgentIdentity agent={agent} />
-          <ProblemList
-            problems={agent.problems}
-            executingId={executingId}
-            onExecute={(proposal) => void runProposal(proposal.id)}
-          />
-          <ProposalList
-            agent={agent}
-            executingId={executingId}
-            onExecute={(proposal) => void runProposal(proposal.id)}
-          />
-          <FreeFormComposer
-            draft={draft}
-            setDraft={setDraft}
-            disabled={executingId !== null}
-            onRun={(utterance) => void runIntent(utterance)}
-          />
+          {identitiesError !== null ? (
+            <Card>
+              <div
+                role="alert"
+                style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-danger)' }}
+              >
+                {identitiesError}
+              </div>
+            </Card>
+          ) : null}
+          {noActiveAgent ? (
+            <Card>
+              <EmptyState
+                icon="✦"
+                title="No active agent to run as"
+                description="Runs execute as an agent identity of this workspace, and none is active. Create or reactivate one first."
+                action={
+                  <Link to={`/app/agents${scopeQuery(organizationId, workspaceId)}`}>
+                    Manage agents
+                  </Link>
+                }
+              />
+            </Card>
+          ) : (
+            <>
+              <RunAsSelector
+                identities={activeIdentities}
+                value={runAgentId}
+                onChange={setSelectedAgentId}
+              />
+              <ProblemList
+                problems={agent.problems}
+                executingId={executingId}
+                onExecute={(proposal) => void runProposal(proposal.id)}
+              />
+              <ProposalList
+                agent={agent}
+                executingId={executingId}
+                onExecute={(proposal) => void runProposal(proposal.id)}
+              />
+              <FreeFormComposer
+                draft={draft}
+                setDraft={setDraft}
+                disabled={executingId !== null || runAgentId === null}
+                onRun={(utterance) => void runIntent(utterance)}
+              />
+            </>
+          )}
           {executionError !== null ? (
             <Card>
               <div
@@ -380,6 +453,48 @@ export function AgentView({
         </Stack>
       )}
     </Stack>
+  );
+}
+
+/** The scope querystring for in-app links. */
+function scopeQuery(organizationId: string, workspaceId: string): string {
+  return `?${new URLSearchParams({ organizationId, workspaceId }).toString()}`;
+}
+
+/** Chooses which ACTIVE agent identity a run executes as. */
+function RunAsSelector({
+  identities,
+  value,
+  onChange,
+}: {
+  identities: readonly AgentIdentityDto[];
+  value: string | null;
+  onChange: (agentId: string) => void;
+}): JSX.Element | null {
+  if (identities.length === 0) {
+    return null;
+  }
+  return (
+    <Card padding={4}>
+      <Stack direction="row" gap={3} align="center" style={{ flexWrap: 'wrap' }}>
+        <span style={{ fontSize: typography.sizes.sm, fontWeight: typography.weights.medium }}>
+          Run as
+        </span>
+        <div style={{ minWidth: 220 }}>
+          <Select
+            aria-label="Run as agent"
+            value={value ?? ''}
+            onChange={(event) => onChange(event.currentTarget.value)}
+          >
+            {identities.map((identity) => (
+              <option key={identity.id} value={identity.id}>
+                {identity.name} ({identity.definitionId})
+              </option>
+            ))}
+          </Select>
+        </div>
+      </Stack>
+    </Card>
   );
 }
 

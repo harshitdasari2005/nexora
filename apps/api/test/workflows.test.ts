@@ -23,10 +23,13 @@ import type {
 } from './fakes.js';
 import {
   buildTestApp,
+  currentUserId,
   login,
   onboardOrgAndWorkspace,
   seedEmployee,
+  seedOrganizationMembership,
   seedProject,
+  seedWorkspaceMembership,
   type ChatClient,
 } from './helpers.js';
 
@@ -292,6 +295,40 @@ describe('workflow REST routes', () => {
     await client.app.close();
   });
 
+  it('rejects undeclared input keys (step-id / reserved keys cannot shadow workflow state) with 400', async () => {
+    const client = await workflowClient();
+    const { organizationId } = await onboardOrgAndWorkspace(client);
+    await seedEmployee(client.repos, { id: 'emp_sarah', organizationId, name: 'Sarah Chen' });
+    const projectsBefore = (client.repos.projects as FakeProjectRepository).projects.size;
+
+    // A REST caller trying to pre-seed a step's output (so a later step
+    // would consume attacker-chosen data) or the reserved compensation
+    // ledger key is refused before any instance or step exists.
+    for (const forged of [
+      { create_project: { projectId: 'prj_attacker' } },
+      { hire_employee: { employeeId: 'emp_attacker' } },
+      { __compensations: [{ toolId: 'projects.assign_employee' }] },
+    ]) {
+      const refused = await client.post('/api/workflows', {
+        organizationId,
+        definitionKey: WORKFLOW_KEY,
+        input: { projectName: 'Mobile Banking', employeeName: 'Sarah Chen', ...forged },
+      });
+      expect(refused.statusCode).toBe(400);
+      expect(JSON.stringify(refused.json())).toContain('undeclared');
+    }
+    expect((client.repos.projects as FakeProjectRepository).projects.size).toBe(projectsBefore);
+
+    // Positive control: exactly the declared keys start the workflow.
+    const accepted = await client.post('/api/workflows', {
+      organizationId,
+      definitionKey: WORKFLOW_KEY,
+      input: { projectName: 'Mobile Banking', employeeName: 'Sarah Chen' },
+    });
+    expect(accepted.statusCode).toBe(201);
+    await client.app.close();
+  });
+
   it('rejects missing workflow input with 400', async () => {
     const client = await workflowClient();
     const { organizationId } = await onboardOrgAndWorkspace(client);
@@ -440,5 +477,80 @@ describe('workflow REST routes', () => {
     });
     expect(response.statusCode).toBe(401);
     await app.close();
+  });
+});
+
+describe('workflow cancel ownership scope (Prompt 9)', () => {
+  it('an org admin outside the instance workspace cannot cancel another user’s instance; sharing the workspace can', async () => {
+    const { WorkflowInstance } = await import('@nexora/module-workflow');
+    const client = await workflowClient();
+    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);
+    const alice = currentUserId(client);
+    const bobUser = [
+      ...(
+        client.repos.users as unknown as {
+          users: Map<string, { id: string; email: { value: string } }>;
+        }
+      ).users.values(),
+    ].find((user) => user.email.value === 'bob@nexora.dev');
+    const bobId = (bobUser as { id: string }).id;
+    await seedOrganizationMembership(client.repos, {
+      organizationId,
+      userId: bobId,
+      role: 'admin',
+    });
+    const cancelAsBob = (id: string) =>
+      client.app.inject({
+        method: 'POST',
+        url: `/api/workflows/${id}/cancel?organizationId=${organizationId}`,
+        headers: { cookie: client.bob, 'content-type': 'application/json' },
+        payload: {},
+      });
+    const running = async () => {
+      const context = {
+        actor: { kind: 'user', id: alice },
+        correlationId: 'corr_seed',
+        tenantId: organizationId,
+      } as never;
+      const instance = WorkflowInstance.create(
+        {
+          definitionId: 'wfd_scope',
+          definitionKey: 'scope.test',
+          definitionVersion: 1,
+          tenantId: organizationId as never,
+          userId: alice,
+          workspaceId: workspaceId as never,
+          correlationId: `corr_${Math.random().toString(16).slice(2)}` as never,
+          input: {},
+        },
+        context,
+      );
+      instance.plan();
+      instance.ready();
+      instance.start(context);
+      await client.repos.workflowInstances.save(instance);
+      return instance.id;
+    };
+
+    // Bob holds workflows.execute at the organization level but is not in the workspace.
+    const foreign = await running();
+    const denied = await cancelAsBob(foreign);
+    expect(denied.statusCode).toBe(404);
+    // Control: the initiator can cancel it (the instance really was cancellable).
+    const own = await client.post(
+      `/api/workflows/${foreign}/cancel?organizationId=${organizationId}`,
+      {},
+    );
+    expect(own.statusCode).toBe(200);
+
+    // Control: once Bob shares the instance's workspace he may cancel another user's instance.
+    await seedWorkspaceMembership(client.repos, {
+      workspaceId,
+      userId: bobId,
+      role: 'admin',
+      organizationId,
+    });
+    expect((await cancelAsBob(await running())).statusCode).toBe(200);
+    await client.app.close();
   });
 });

@@ -16,7 +16,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Result } from '@nexora/shared/result';
 import type { TenantId } from '@nexora/contracts/common';
 import { Employee, type EmployeeEventContext } from '@nexora/domain-hr';
-import type { CreateEmployeeHandler, CreateEmployeeResult } from '@nexora/application-hr';
+import type {
+  CreateEmployeeHandler,
+  CreateEmployeeResult,
+  ListEmployeesByIdsHandler,
+} from '@nexora/application-hr';
 import type { ListOrganizationsHandler, OrganizationDto } from '@nexora/application-organizations';
 
 import { CreateEmployeeTool } from '../src/ai/tools/create-employee-tool.js';
@@ -83,14 +87,30 @@ function buildTool(
   options: {
     createEmployee?: CreateEmployeeHandler;
     listOrganizations?: ListOrganizationsHandler;
+    listEmployeesByIds?: ListEmployeesByIdsHandler;
   } = {},
 ) {
   const createEmployee =
     options.createEmployee ?? createEmployeeHandlerReturning({ ok: true, value: employeeResult() });
   const listOrganizations =
     options.listOrganizations ?? listOrganizationsHandlerReturning([organizationDto()]);
+  // Default read-back: the persisted state agrees with the handler.
+  const listEmployeesByIds =
+    options.listEmployeesByIds ??
+    ({
+      handle: vi.fn(async (query: { ids: readonly string[] }) => ({
+        ok: true,
+        value: query.ids.map((id) => ({
+          id,
+          organizationId: TENANT,
+          name: 'Sarah Chen',
+          status: 'active',
+          createdAt: '2026-08-08T00:00:00.000Z',
+        })),
+      })),
+    } as unknown as ListEmployeesByIdsHandler);
   return {
-    tool: new CreateEmployeeTool({ createEmployee, listOrganizations }),
+    tool: new CreateEmployeeTool({ createEmployee, listOrganizations, listEmployeesByIds }),
     createEmployee,
     listOrganizations,
   };
@@ -108,6 +128,18 @@ describe('CreateEmployeeTool manifest', () => {
     expect(tool.manifest.id).toBe('hr.create_employee');
     expect(tool.manifest.sideEffectClass).toBe('consequential');
     expect(tool.manifest.idempotent).toBe(false);
+  });
+
+  it('declares state_readback verification and fails when the read-back disagrees', async () => {
+    const { tool } = buildTool({
+      listEmployeesByIds: {
+        handle: vi.fn(async () => ({ ok: true, value: [] })),
+      } as unknown as ListEmployeesByIdsHandler,
+    });
+    expect(tool.manifest.verification).toEqual({ source: 'state_readback' });
+    const result = await tool.execute({ name: 'Sarah Chen' }, trustedContext);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('verification failed');
   });
 
   it('accepts ONLY the name in the input schema', () => {

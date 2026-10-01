@@ -36,6 +36,7 @@ export interface GroqAdapterOptions {
 /** The Groq provider adapter (chat capability). */
 export class GroqAdapter implements ModelProvider {
   readonly id = 'groq';
+  readonly execution = 'cloud' as const;
   readonly name = 'Groq';
   readonly capabilities = ['chat'] as const;
   readonly models: readonly string[];

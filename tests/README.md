@@ -20,4 +20,11 @@ Cross-module test suites (unit/integration/contract tests live with their module
   PRD NFR-1/2), the measured baseline (local development measurement), and
   the bottleneck before/after measurements.
 
-`ai-eval/` remains a scaffold placeholder.
+## AI evaluation (scenario dataset)
+
+The AI evaluation harness is implemented as the **Nexora enterprise scenario
+dataset**: `packages/evaluation` (versioned dataset, metrics, and reports) plus
+`apps/api/evaluation` (the runner that drives the real app). Run it with
+`pnpm eval:run`. The regression suite is `apps/api/test/evaluation.scenarios.test.ts`.
+See `packages/evaluation/README.md`. The `ai-eval/` folder listed above was never
+created; golden data lives with the package so that it is typechecked and versioned.

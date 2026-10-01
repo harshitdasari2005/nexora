@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@nexora/contracts": "workspace:*",
+    "@nexora/module-lineage": "workspace:*",
     "@nexora/shared": "workspace:*"
   },
   "devDependencies": {

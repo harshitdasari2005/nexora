@@ -6,6 +6,7 @@
  * the executed steps, and the decision-time explanation (ADR-011).
  */
 
+import type { AgentPrincipalContext } from '@nexora/contracts/agent';
 import type { AutonomyTier } from '@nexora/contracts/ai';
 import type { AIBusinessContext } from '../context/index.js';
 import type { ExecutionPlan } from '../planner/plan.js';
@@ -18,6 +19,17 @@ export interface OrchestratorRequest {
   utterance: string;
   /** The invoking user id. */
   userId: string;
+  /**
+   * The HTTP request id that started this run (Prompt 7 correlation). An id
+   * for tracing only: it is never read by any authorization, policy or
+   * approval decision.
+   */
+  requestId?: string;
+  /**
+   * Where the run came from, for observability only (`remediation` for the
+   * remediation engine). Descriptive: never read by any authorization decision.
+   */
+  runOrigin?: 'remediation';
   /** The tenant (company) id. */
   tenantId: string;
   /** The workspace id, when workspace-scoped. */
@@ -50,6 +62,15 @@ export interface OrchestratorRequest {
    * duplicate the user turn and records the decision as a system turn.
    */
   approvalId?: string;
+  /**
+   * The TRUSTED agent principal this run executes as (Prompt 4). Set ONLY
+   * by server code that resolved a persisted, active agent identity inside
+   * the run's organization + workspace — never from a request body, tool
+   * argument, or model output. Every tool invocation of the run is then
+   * re-authorized against the agent's delegations at execution time, and
+   * approvals it opens are bound to it.
+   */
+  agent?: AgentPrincipalContext;
 }
 
 /** The outcome of one executed plan step. */
@@ -66,8 +87,21 @@ export interface StepOutcome {
   output?: unknown;
   /** The failure/block reason. */
   error?: string;
+  /**
+   * The stable machine code of a failure (e.g. `DELEGATION_EXPIRED`,
+   * `RESERVED_ARGUMENT`) — a policy/reason code only, never argument values.
+   */
+  errorCode?: string;
+  /**
+   * A tool-vetted, user-presentable statement about a failed step (e.g. the
+   * rollback outcome). Safe to show — unlike `error`, which stays out of the
+   * response.
+   */
+  detail?: string;
   /** Whether the result was verified (AI-6). */
   verified: boolean;
+  /** The delegation that authorized the step, when it ran as an agent (Prompt 4). */
+  delegationId?: string;
 }
 
 /** An approval gate outcome. */
@@ -77,7 +111,7 @@ export interface ApprovalOutcome {
   /** The tool id the gate guarded. */
   toolId: string;
   /** The gate disposition. */
-  status: 'granted' | 'pending' | 'rejected';
+  status: 'granted' | 'pending' | 'rejected' | 'expired';
   /** The side-effect class that triggered the gate. */
   sideEffectClass: string;
   /** The recorded approval request id, when the runtime tracks approvals. */
@@ -86,6 +120,12 @@ export interface ApprovalOutcome {
   capabilityId?: string;
   /** The user-controlled action input (card context; never identity). */
   input?: Record<string, unknown>;
+  /** ISO-8601 expiry of the recorded approval (present with `id`). */
+  expiresAt?: string;
+  /** The role a decider must hold, when the policy requires one. */
+  requiredApproverRoleId?: string;
+  /** Whether the decider must differ from the requester (present with `id`). */
+  separationOfDuties?: boolean;
 }
 
 /** The run status. */
@@ -113,4 +153,28 @@ export interface OrchestratorResponse {
   decision: DecisionRecord;
   /** The execution trace. */
   trace: ExecutionTrace;
+  /**
+   * The retrieved sources the narration was given (Prompt 6): structured
+   * provenance — which exact source objects (and versions) the results the
+   * answer rests on came from. It is a description of what was in the
+   * results, not a claim-to-source proof, and never an input to any decision.
+   */
+  sources?: readonly NarratedSource[];
+  /**
+   * The stable failure code of a failure that belongs to no single step
+   * (e.g. `APPROVAL_NOT_BOUND`: a resumed approval no step consumed). Used
+   * for telemetry classification; absent when the failure is a step's own.
+   */
+  failureCode?: string;
+}
+
+/** One retrieved source the narration had available. */
+export interface NarratedSource {
+  /** The step whose tool result carried it. */
+  stepId: string;
+  toolId: string;
+  sourceId: string;
+  kind?: string;
+  version?: number;
+  title?: string;
 }

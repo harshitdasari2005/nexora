@@ -294,7 +294,7 @@ export function ProjectsView({
         ) : (
           <Stack gap={3}>
             {[...projects].sort(byAttentionPriority).map((project) => (
-              <ProjectRow key={project.id} project={project} />
+              <ProjectRow key={project.id} project={project} organizationId={organizationId} />
             ))}
           </Stack>
         )}
@@ -318,8 +318,130 @@ function byAttentionPriority(a: ProjectDto, b: ProjectDto): number {
   return attentionRank(a.status) - attentionRank(b.status);
 }
 
-/** A single project row with status display. */
-export function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
+/** One member of a project, as returned by `GET /api/projects/:id/members`. */
+interface ProjectMemberView {
+  id: string;
+  employeeId: string;
+  employeeName: string | null;
+  assignedAt: string;
+}
+
+/**
+ * The project's team: the real assignments (`GET /api/projects/:id/members`),
+ * joined server-side with the HR employee name — the ONLY source of
+ * project membership. The employee's status comes from the employee list when
+ * the caller may read it; nothing is inferred or invented here.
+ */
+export function ProjectTeam({
+  projectId,
+  organizationId,
+}: {
+  projectId: string;
+  organizationId: string;
+}): JSX.Element {
+  const [state, setState] = useState<
+    | { kind: 'loading' }
+    | { kind: 'error'; message: string }
+    | { kind: 'ready'; members: ProjectMemberView[]; statuses: Map<string, string> }
+  >({ kind: 'loading' });
+
+  useEffect(() => {
+    let cancelled = false;
+    const org = encodeURIComponent(organizationId);
+    void (async () => {
+      try {
+        const listed = await api<{ members: ProjectMemberView[] }>(
+          `/projects/${encodeURIComponent(projectId)}/members?organizationId=${org}`,
+        );
+        const statuses = new Map<string, string>();
+        try {
+          const employees = await api<{ employees: { id: string; status: string }[] }>(
+            `/employees?organizationId=${org}`,
+          );
+          for (const employee of employees.employees) statuses.set(employee.id, employee.status);
+        } catch {
+          // The caller may not read employees: membership still renders.
+        }
+        if (!cancelled) setState({ kind: 'ready', members: listed.members, statuses });
+      } catch (error) {
+        if (!cancelled) {
+          setState({
+            kind: 'error',
+            message: error instanceof ApiError ? error.message : 'Could not load the team.',
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, organizationId]);
+
+  if (state.kind === 'loading') return <Skeleton height={36} />;
+  if (state.kind === 'error') {
+    return (
+      <p role="alert" style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-danger)' }}>
+        {state.message}
+      </p>
+    );
+  }
+  if (state.members.length === 0) {
+    return (
+      <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textMuted)' }}>
+        No one is assigned to this project yet.
+      </p>
+    );
+  }
+  return (
+    <Stack gap={2} data-testid="project-team">
+      {state.members.map((member) => (
+        <Stack
+          key={member.id}
+          direction="row"
+          gap={3}
+          align="center"
+          justify="space-between"
+          style={{ fontSize: typography.sizes.sm }}
+        >
+          <span style={{ fontWeight: typography.weights.medium }}>
+            {member.employeeName ?? member.employeeId}
+          </span>
+          <Stack direction="row" gap={2} align="center">
+            {state.statuses.has(member.employeeId) ? (
+              <Badge tone="success" dot>
+                {humanizeStatus(state.statuses.get(member.employeeId) ?? '')}
+              </Badge>
+            ) : null}
+            <span style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+              Assigned{' '}
+              {new Date(member.assignedAt).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              })}
+            </span>
+          </Stack>
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+
+function humanizeStatus(status: string): string {
+  return status.length === 0
+    ? ''
+    : status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
+}
+
+/** A single project row with status display (and, when scoped, its team). */
+export function ProjectRow({
+  project,
+  organizationId,
+}: {
+  project: ProjectDto;
+  organizationId?: string;
+}): JSX.Element {
+  const [teamOpen, setTeamOpen] = useState(false);
   return (
     <Card style={{ padding: '14px 16px' }}>
       <Stack
@@ -365,8 +487,23 @@ export function ProjectRow({ project }: { project: ProjectDto }): JSX.Element {
               year: 'numeric',
             })}
           </span>
+          {organizationId === undefined ? null : (
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-expanded={teamOpen}
+              onClick={() => setTeamOpen((open) => !open)}
+            >
+              {teamOpen ? 'Hide team' : 'Team'}
+            </Button>
+          )}
         </Stack>
       </Stack>
+      {teamOpen && organizationId !== undefined ? (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--nexora-border)' }}>
+          <ProjectTeam projectId={project.id} organizationId={organizationId} />
+        </div>
+      ) : null}
     </Card>
   );
 }

@@ -30,6 +30,7 @@ import type { TenantId, UserId } from '@nexora/contracts/common';
 import type { Tool, ToolExecutionContext, ToolManifest, ToolResult } from '@nexora/agent-sdk/tools';
 import type { CreateWorkspaceHandler } from '@nexora/application-workspaces';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
+import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 
 /** Input contract: ONLY the user-controlled name (identity is never input). */
 export interface CreateWorkspaceInput {
@@ -66,6 +67,11 @@ export const CREATE_WORKSPACE_MANIFEST: ToolManifest = {
   sideEffectClass: 'consequential',
   idempotent: false,
   timeoutMs: 15_000,
+  verification: {
+    source: 'state_readback',
+    limitation:
+      "the workspace is re-read through the creator's membership-scoped workspace list (tenant, name, slug, status); not a raw repository read",
+  },
   inputSchema: {
     type: 'object',
     properties: {
@@ -91,13 +97,17 @@ export class CreateWorkspaceTool implements Tool<CreateWorkspaceInput, CreateWor
 
   readonly #createWorkspace: CreateWorkspaceHandler;
   readonly #listOrganizations: ListOrganizationsHandler;
+  readonly #listMyWorkspaces: ListMyWorkspacesHandler;
 
   constructor(dependencies: {
     /** The application-layer create-workspace command handler. */
     createWorkspace: CreateWorkspaceHandler;
     /** Resolves the caller's organization memberships (authorization rule). */
     listOrganizations: ListOrganizationsHandler;
+    /** Membership-scoped workspace listing (independent read-back of the created workspace). */
+    listMyWorkspaces: ListMyWorkspacesHandler;
   }) {
+    this.#listMyWorkspaces = dependencies.listMyWorkspaces;
     this.#createWorkspace = dependencies.createWorkspace;
     this.#listOrganizations = dependencies.listOrganizations;
   }
@@ -147,7 +157,35 @@ export class CreateWorkspaceTool implements Tool<CreateWorkspaceInput, CreateWor
     //    source of truth, and this check is defense-in-depth.
     const workspace = result.value.workspace;
     if (workspace.organizationId !== context.tenantId) {
-      return this.#failure('Workspace verification failed: unexpected organization');
+      return {
+        ...this.#failure('Workspace verification failed: unexpected organization'),
+        readBackFailed: true,
+      };
+    }
+
+    // 5. Independent read-back: re-read the workspace from persisted state (the
+    //    creator's membership-scoped list) and require tenant, name, slug and a
+    //    non-archived status to match. A handler that reported a workspace that
+    //    was not persisted is surfaced as UNVERIFIED, never success.
+    const readBack = await this.#listMyWorkspaces.handle({
+      userId: context.userId as UserId,
+      organizationId: context.tenantId as TenantId,
+    });
+    const persisted =
+      readBack.ok &&
+      readBack.value.some(
+        (row) =>
+          row.id === workspace.id &&
+          row.organizationId === context.tenantId &&
+          row.name === workspace.name.value &&
+          row.slug === workspace.slug.value &&
+          row.status !== 'archived',
+      );
+    if (!persisted) {
+      return {
+        ...this.#failure('Workspace verification failed: created workspace not found on read-back'),
+        readBackFailed: true,
+      };
     }
 
     return {

@@ -10,6 +10,8 @@
 
 import type { CapabilityDeclaration } from '@nexora/contracts/ai';
 
+import { classifyIntentKind, isReadOnlyIntent } from './intent-classifier.js';
+
 /** A scored capability match, highest score first. */
 export interface CapabilityScore {
   /** The matched capability id. */
@@ -62,6 +64,15 @@ export interface CapabilityMatcherOptions {
  * capability whose noun is unique needs no verb evidence — "What
  * workspaces do I have?" matches "List workspaces" without the word
  * "list".
+ *
+ * **Intent-kind rule.** Nouns say WHAT an intent is about, not what the user
+ * wants done with it: "What does the expense policy say about approval?" and
+ * "Submit an expense" both mention `expense`. A question or a request for
+ * advice (see {@link classifyIntentKind}) is read-only by definition, so a
+ * state-changing capability can never match it — the noun and verb rules
+ * above still run over every candidate (so their shared-noun accounting is
+ * unchanged), but only read-only capabilities may be returned. Mutations
+ * are matched only for commands.
  */
 export class CapabilityMatcher {
   readonly #minScore: number;
@@ -84,22 +95,42 @@ export class CapabilityMatcher {
       return [];
     }
 
+    const readOnlyIntent = isReadOnlyIntent(classifyIntentKind(intent));
+
     const scored: CapabilityScore[] = [];
     for (const capability of candidates) {
+      if (readOnlyIntent && capability.sideEffectClass !== 'read_only') {
+        continue;
+      }
       // Entity-noun evidence: the capability name's noun must be in the
       // intent. The leading verb is excluded so shared verbs cannot create
       // phantom matches between entity-disjoint capabilities.
       const nameTokens = tokenize(capability.name);
       const [verbToken, ...nounTokens] = nameTokens;
+      const headToken = nounTokens[nounTokens.length - 1];
+      const verbEvidenced = verbToken !== undefined && intentTokens.includes(verbToken);
       const hasEntityEvidence = nounTokens.some((token) => intentTokens.includes(token));
       if (!hasEntityEvidence) {
+        continue;
+      }
+      // Head-noun rule: in a "Verb Qualifier Noun" name ("Flag Over-Budget
+      // Items") only the head (last) noun is the entity acted on; earlier
+      // tokens are qualifiers that appear in unrelated commands ("submit an
+      // expense against budget X" names `budget` but is not a request to flag
+      // budgets). A state-changing capability evidenced ONLY through a
+      // qualifier therefore also needs its own leading verb.
+      if (
+        capability.sideEffectClass !== 'read_only' &&
+        headToken !== undefined &&
+        !intentTokens.includes(headToken) &&
+        !verbEvidenced
+      ) {
         continue;
       }
       // Verb disambiguation: when another candidate shares this capability's
       // noun (e.g. "create project" vs "assign employee to project"), the
       // intent must also evidence THIS capability's leading verb. A unique
       // noun needs no verb evidence ("What workspaces do I have?").
-      const verbEvidenced = verbToken !== undefined && intentTokens.includes(verbToken);
       const nounShared = nounTokens.some((token) =>
         candidates.some((other) => {
           if (other === capability) {

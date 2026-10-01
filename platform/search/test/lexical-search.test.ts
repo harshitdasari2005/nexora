@@ -180,3 +180,52 @@ describe('InMemorySearchIndex', () => {
     expect(results).toEqual([]);
   });
 });
+
+describe('InMemorySearchIndex — each fence stands on its own (Prompt 6)', () => {
+  // The tenant fence must hold even if a workspace id were ever reused across
+  // tenants, and the workspace fence must hold within one tenant: evidence
+  // recorded from retrieval is only as fenced as the retrieval itself.
+  it("never returns another tenant's entry even when the workspace id is identical", async () => {
+    const index = new InMemorySearchIndex();
+    await index.put(
+      entry({ id: 'src_own', tenantId: 'org_acme', workspaceId: 'wsp_shared', title: 'Own plan' }),
+    );
+    await index.put(
+      entry({
+        id: 'src_foreign',
+        tenantId: 'org_other',
+        workspaceId: 'wsp_shared',
+        title: 'Foreign memo',
+      }),
+    );
+
+    const own = await index.query({
+      tenantId: 'org_acme',
+      workspaceId: 'wsp_shared',
+      query: 'mobile banking',
+    });
+    expect(own.map((e) => e.id)).toEqual(['src_own']);
+    const foreign = await index.query({
+      tenantId: 'org_other',
+      workspaceId: 'wsp_shared',
+      query: 'mobile banking',
+    });
+    expect(foreign.map((e) => e.id)).toEqual(['src_foreign']);
+  });
+
+  it("never returns another workspace's entry within the same tenant", async () => {
+    const index = new InMemorySearchIndex();
+    await index.put(entry({ id: 'src_a', workspaceId: WORKSPACE_A }));
+    await index.put(entry({ id: 'src_b', workspaceId: WORKSPACE_B }));
+    expect(
+      (
+        await index.query({ tenantId: TENANT, workspaceId: WORKSPACE_A, query: 'mobile banking' })
+      ).map((e) => e.id),
+    ).toEqual(['src_a']);
+    expect(
+      (
+        await index.query({ tenantId: TENANT, workspaceId: WORKSPACE_B, query: 'mobile banking' })
+      ).map((e) => e.id),
+    ).toEqual(['src_b']);
+  });
+});

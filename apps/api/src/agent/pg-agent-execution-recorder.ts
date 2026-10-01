@@ -41,6 +41,12 @@ function rowToRecord(row: AgentExecutionRow): AgentExecutionRecord {
     planId: row.planId ?? undefined,
     stepId: row.stepId ?? undefined,
     problemId: row.problemId ?? undefined,
+    // Prompt 4: WHICH agent (principal) ran, under which delegations.
+    ...(row.agentIdentityId === null ? {} : { agentIdentityId: row.agentIdentityId }),
+    ...(row.approvalId === null ? {} : { approvalId: row.approvalId }),
+    ...(row.delegationIds === null
+      ? {}
+      : { delegationIds: row.delegationIds as readonly string[] }),
   };
 }
 
@@ -69,6 +75,9 @@ export class PgAgentExecutionRecorder implements AgentExecutionRecorder {
       planId: record.planId ?? null,
       stepId: record.stepId ?? null,
       problemId: record.problemId ?? null,
+      agentIdentityId: record.agentIdentityId ?? null,
+      approvalId: record.approvalId ?? null,
+      delegationIds: record.delegationIds === undefined ? null : [...record.delegationIds],
       createdAt: new Date(record.createdAt),
     });
   }

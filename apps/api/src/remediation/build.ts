@@ -49,6 +49,7 @@ import {
   type RemediationProblemReevaluator,
 } from '@nexora/module-remediation';
 import type { BusinessProblemDto } from '@nexora/contracts/detection';
+import type { LineageRepository } from '@nexora/module-lineage';
 
 /** Everything the API layer needs to compose the remediation surface. */
 export interface BuildRemediationOptions {
@@ -88,6 +89,8 @@ export interface BuildRemediationOptions {
   execution: RemediationExecutionPort;
   /** The EXISTING execution journal (one journal, plan-linked records). */
   recorder?: RemediationExecutionRecorder;
+  /** The append-only lineage store (Prompt 6); optional — nothing is recorded when absent. */
+  lineage?: LineageRepository;
 }
 
 /** The composed remediation surface. */
@@ -102,8 +105,15 @@ export interface RemediationSurface {
   cancel: RemediationApplicationService['cancel'];
   /** Lists the scope's plans (bounded, newest first). */
   list: RemediationApplicationService['list'];
-  /** Resolves one plan by id (tenant-scoped; forged ids resolve to nothing). */
+  /** Resolves one plan by id (tenant + workspace scoped; forged ids resolve to nothing). */
   getById: RemediationApplicationService['getById'];
+  /**
+   * The workspace a plan belongs to (tenant-scoped read; `undefined` for a
+   * missing plan or a tenant-level plan). The route uses it ONLY to derive the
+   * scope to membership-check when the caller named no workspace — the service
+   * still refuses a plan outside the caller's verified workspace.
+   */
+  planWorkspaceId: (tenantId: string, planId: string) => Promise<string | undefined>;
 }
 
 /** Builds the remediation surface (generic engine + API implementations). */
@@ -165,6 +175,7 @@ export function buildRemediation(options: BuildRemediationOptions): RemediationS
     approvals: approvalEngine,
     execution: options.execution,
     recorder: options.recorder,
+    lineage: options.lineage,
   });
   return {
     createPlan: (context, request) => service.createPlan(context, request),
@@ -173,6 +184,8 @@ export function buildRemediation(options: BuildRemediationOptions): RemediationS
     cancel: (context, planId) => service.cancel(context, planId),
     list: (context) => service.list(context),
     getById: (context, planId) => service.getById(context, planId),
+    planWorkspaceId: async (tenantId, planId) =>
+      (await options.store.findPlanById(tenantId, planId))?.workspaceId,
   };
 }
 
@@ -224,6 +237,7 @@ export class ApiRemediationExecutionPort implements RemediationExecutionPort {
       workspaceId: context.workspaceId,
     });
     const response = await this.#deps.orchestrator.run({
+      runOrigin: 'remediation',
       utterance: intent.utterance,
       userId: context.userId,
       tenantId: context.tenantId,
@@ -324,6 +338,9 @@ export class ApiRemediationExecutionRecorder implements RemediationExecutionReco
     proposalAction?: string;
     status: string;
     runId?: string;
+    approvalId?: string;
+    agentIdentityId?: string;
+    delegationIds?: readonly string[];
     reason?: string;
     createdAt: string;
   }): Promise<void> {
@@ -342,6 +359,11 @@ export class ApiRemediationExecutionRecorder implements RemediationExecutionReco
       proposalAction: input.proposalAction,
       status: input.status as AgentExecutionOutcome['status'],
       runId: input.runId,
+      ...(input.approvalId === undefined ? {} : { approvalId: input.approvalId }),
+      ...(input.agentIdentityId === undefined ? {} : { agentIdentityId: input.agentIdentityId }),
+      ...(input.delegationIds === undefined || input.delegationIds.length === 0
+        ? {}
+        : { delegationIds: input.delegationIds }),
       reason: input.reason,
       createdAt: input.createdAt,
     });

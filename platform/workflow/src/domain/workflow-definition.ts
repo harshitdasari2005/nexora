@@ -32,12 +32,26 @@ export const CREATE_PROJECT_AND_ASSIGN_WORKFLOW_KEY = 'projects.create_and_assig
  */
 export const HIRE_AND_ASSIGN_WORKFLOW_KEY = 'hr.hire_and_assign_employee';
 
+/**
+ * The journal step-id prefix of a compensation execution
+ * (`compensate:<stepId>`). Compensations are journaled beside ordinary steps
+ * so they appear in the audit trail, but are never definition steps.
+ */
+export const COMPENSATION_STEP_PREFIX = 'compensate:';
+
 /** The capability ids the templates orchestrate. */
 export const CREATE_PROJECT_CAPABILITY = 'projects.create_project';
 export const FIND_EMPLOYEE_CAPABILITY = 'hr.find_employee';
 export const HIRE_EMPLOYEE_CAPABILITY = 'hr.create_employee';
 export const FIND_PROJECT_CAPABILITY = 'projects.find_project';
 export const ASSIGN_EMPLOYEE_CAPABILITY = 'projects.assign_employee';
+
+/**
+ * The compensating tool of the hire step: offboards the employee the workflow
+ * created (record retained). Workflow-internal — registered for execution,
+ * never a discoverable capability.
+ */
+export const REVOKE_HIRE_CAPABILITY = 'hr.revoke_hire';
 
 /**
  * Builds the CREATE_PROJECT_AND_ASSIGN_EMPLOYEE workflow definition:
@@ -72,6 +86,7 @@ export function createProjectAndAssignWorkflowDefinition(): WorkflowDefinition {
     toolId: FIND_EMPLOYEE_CAPABILITY,
     input: { name: '{{employeeName}}' },
     dependsOn: [],
+    mutatesState: false,
     next: {},
     retryPolicy: { maxAttempts: 1, backoffMs: 0 },
   };
@@ -96,8 +111,12 @@ export function createProjectAndAssignWorkflowDefinition(): WorkflowDefinition {
     // Approval for this workflow happens at the AI-orchestration level (the
     // whole workflow is a gated unit) — no per-step approval points in v1.
     approvalPoints: {},
-    // No compensation in v1: a failed assignment leaves the created project
-    // intact (recorded, manual recovery — documented in the module README).
+    // No compensation is defined for `create_project`: projects have no
+    // safe undo (no archive/delete capability, and a project may already be
+    // referenced). A failed assignment therefore leaves the created project
+    // and the engine reports the workflow as PARTIALLY COMPLETED — the
+    // rollback ledger lists `create_project` as outstanding (manual
+    // recovery), rather than pretending it was rolled back.
     compensation: [],
     timeoutMs: 120_000,
     status: 'active',
@@ -139,6 +158,7 @@ export function hireAndAssignEmployeeWorkflowDefinition(): WorkflowDefinition {
     toolId: FIND_PROJECT_CAPABILITY,
     input: { name: '{{projectName}}' },
     dependsOn: [],
+    mutatesState: false,
     next: {},
     retryPolicy: { maxAttempts: 1, backoffMs: 0 },
   };
@@ -163,9 +183,22 @@ export function hireAndAssignEmployeeWorkflowDefinition(): WorkflowDefinition {
     // Approval happens at the AI-orchestration level (the whole workflow is
     // a gated unit) — no per-step approval points in v1.
     approvalPoints: {},
-    // No compensation in v1: a failed assignment leaves the hired employee
-    // intact (recorded, manual recovery — documented in the module README).
-    compensation: [],
+    // A failed assignment must not leave an active, assignable employee
+    // behind: the hire is compensated by offboarding the employee the
+    // workflow created (the record is retained for audit — offboarding is
+    // the domain's own way to end an employment, never a delete). The
+    // employee id comes from the hire step's recorded output, so only what
+    // THIS workflow created can ever be reverted. The rollback runs under
+    // the workflow-level approval (it undoes the approved unit's own work).
+    compensation: [
+      {
+        forStepId: 'hire_employee',
+        capabilityId: REVOKE_HIRE_CAPABILITY,
+        toolId: REVOKE_HIRE_CAPABILITY,
+        input: { employeeId: '{{hire_employee.employee.id}}' },
+        requiresApproval: false,
+      },
+    ],
     timeoutMs: 120_000,
     status: 'active',
   };

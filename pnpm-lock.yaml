@@ -105,6 +105,9 @@ importers:
       '@nexora/domain-workspaces':
         specifier: workspace:*
         version: link:../../domains/workspaces
+      '@nexora/evaluation':
+        specifier: workspace:*
+        version: link:../../packages/evaluation
       '@nexora/mcp':
         specifier: workspace:*
         version: link:../../platform/mcp
@@ -129,12 +132,21 @@ importers:
       '@nexora/module-integrations':
         specifier: workspace:*
         version: link:../../platform/integrations
+      '@nexora/module-lineage':
+        specifier: workspace:*
+        version: link:../../platform/lineage
       '@nexora/module-measurements':
         specifier: workspace:*
         version: link:../../platform/measurements
       '@nexora/module-notifications':
         specifier: workspace:*
         version: link:../../platform/notifications
+      '@nexora/module-observability':
+        specifier: workspace:*
+        version: link:../../platform/observability
+      '@nexora/module-policy':
+        specifier: workspace:*
+        version: link:../../platform/policy
       '@nexora/module-remediation':
         specifier: workspace:*
         version: link:../../platform/remediation
@@ -581,6 +593,16 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)
 
+  packages/evaluation:
+    dependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+    devDependencies:
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.43)
+
   packages/persistence:
     dependencies:
       '@nexora/contracts':
@@ -707,12 +729,24 @@ importers:
       '@nexora/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@nexora/module-lineage':
+        specifier: workspace:*
+        version: link:../lineage
+      '@nexora/module-observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@nexora/module-policy':
+        specifier: workspace:*
+        version: link:../policy
       '@nexora/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       '@nexora/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -819,6 +853,15 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@20.19.43)
 
+  platform/lineage:
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@20.19.43)
+
   platform/mcp:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -881,21 +924,34 @@ importers:
 
   platform/observability:
     devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
+        version: 2.1.9(@types/node@20.19.43)
 
   platform/policy:
+    dependencies:
+      '@nexora/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
     devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.43
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
+        version: 2.1.9(@types/node@20.19.43)
 
   platform/remediation:
     dependencies:
       '@nexora/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@nexora/module-lineage':
+        specifier: workspace:*
+        version: link:../lineage
       '@nexora/shared':
         specifier: workspace:*
         version: link:../../packages/shared

@@ -35,7 +35,10 @@
 
 import type { TenantId, UserId } from '@nexora/contracts/common';
 import type { Tool, ToolExecutionContext, ToolManifest, ToolResult } from '@nexora/agent-sdk/tools';
-import type { AssignEmployeeToProjectHandler } from '@nexora/application-projects';
+import type {
+  AssignEmployeeToProjectHandler,
+  ListProjectMembersHandler,
+} from '@nexora/application-projects';
 import type { FindEmployeeByNameHandler } from '@nexora/application-hr';
 import type { FindProjectByNameHandler } from '@nexora/application-projects';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
@@ -77,6 +80,8 @@ export const ASSIGN_EMPLOYEE_MANIFEST: ToolManifest = {
   sideEffectClass: 'consequential',
   idempotent: false,
   timeoutMs: 15_000,
+  // Read-back: the assignment is re-read from the project's member list.
+  verification: { source: 'state_readback' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -106,8 +111,11 @@ export class AssignEmployeeToProjectTool implements Tool<
   readonly #findEmployeeByName: FindEmployeeByNameHandler;
   readonly #findProjectByName: FindProjectByNameHandler;
   readonly #listOrganizations: ListOrganizationsHandler;
+  readonly #listProjectMembers: ListProjectMembersHandler;
 
   constructor(dependencies: {
+    /** The project member read-back handler (verification against persisted state). */
+    listProjectMembers: ListProjectMembersHandler;
     /** The application-layer assignment command handler (Projects). */
     assignEmployeeToProject: AssignEmployeeToProjectHandler;
     /** The tenant-scoped employee resolution handler (HR). */
@@ -121,6 +129,7 @@ export class AssignEmployeeToProjectTool implements Tool<
     this.#findEmployeeByName = dependencies.findEmployeeByName;
     this.#findProjectByName = dependencies.findProjectByName;
     this.#listOrganizations = dependencies.listOrganizations;
+    this.#listProjectMembers = dependencies.listProjectMembers;
   }
 
   async execute(
@@ -213,7 +222,27 @@ export class AssignEmployeeToProjectTool implements Tool<
     //    source of truth, and this check is defense-in-depth.
     const assignment = result.value.assignment;
     if (assignment.organizationId !== context.tenantId) {
-      return this.#failure('Assignment verification failed: unexpected organization');
+      return this.#verificationFailure('Assignment verification failed: unexpected organization');
+    }
+
+    // 8. Read-back verification: the assignment must be present in the
+    //    project's persisted member list for this employee.
+    const members = await this.#listProjectMembers.handle({
+      organizationId: context.tenantId as TenantId,
+      projectId: project.id,
+    });
+    const persisted =
+      members.ok &&
+      members.value.some(
+        (member) =>
+          member.id === assignment.id &&
+          member.employeeId === employee.id &&
+          member.projectId === project.id,
+      );
+    if (!persisted) {
+      return this.#verificationFailure(
+        'Assignment verification failed: assignment not found on read-back',
+      );
     }
 
     return {
@@ -231,6 +260,11 @@ export class AssignEmployeeToProjectTool implements Tool<
       },
       completedAt: new Date().toISOString(),
     };
+  }
+
+  /** A failed read-back / result verification: failed AND unverified with the declared source. */
+  #verificationFailure(error: string): ToolResult<AssignEmployeeToProjectOutput> {
+    return { ...this.#failure(error), readBackFailed: true };
   }
 
   #failure(error: string): ToolResult<AssignEmployeeToProjectOutput> {

@@ -130,7 +130,7 @@ describe('ToolExecutor', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('S34 RBAC: an absent or empty ceiling applies no restriction (matches the discovery-layer default)', async () => {
+  it('S34 RBAC: an ABSENT ceiling is explicitly unrestricted; an EMPTY ceiling is no authority; a non-empty one lists the permitted capabilities', async () => {
     const executor = new ToolExecutor({ tools: registryWith(makeTool({ id: 't1' })) });
     const withoutCeiling = await executor.execute({
       toolId: 't1',
@@ -148,7 +148,27 @@ describe('ToolExecutor', () => {
       runId: 'r',
       allowedCapabilityIds: [],
     });
-    expect(withEmptyCeiling.ok).toBe(true);
+    expect(withEmptyCeiling.ok).toBe(false);
+    expect(withEmptyCeiling.error?.code).toBe('FORBIDDEN');
+    expect(withEmptyCeiling.attempts).toBe(0);
+    const permitted = await executor.execute({
+      toolId: 't1',
+      input: {},
+      userId: 'usr_1',
+      tenantId: 't',
+      runId: 'r',
+      allowedCapabilityIds: ['t1'],
+    });
+    expect(permitted.ok).toBe(true);
+    const otherCapability = await executor.execute({
+      toolId: 't1',
+      input: {},
+      userId: 'usr_1',
+      tenantId: 't',
+      runId: 'r',
+      allowedCapabilityIds: ['other'],
+    });
+    expect(otherCapability.error?.code).toBe('FORBIDDEN');
   });
 
   it('blocks consequential tools without approval', async () => {
@@ -298,15 +318,35 @@ describe('ToolExecutor', () => {
     const executor = new ToolExecutor({ tools: registryWith(capturing) });
     const result = await executor.execute({
       toolId: 't1',
-      input: { userId: 'usr_evil', tenantId: 'org_evil' },
+      input: {},
       userId: 'usr_trusted',
       tenantId: 'tenant_1',
       runId: 'r',
     });
     expect(result.ok).toBe(true);
-    // The context carries the trusted identity; the model-supplied input is
-    // passed through untouched but must never be mistaken for context.
     expect(received).toEqual(['usr_trusted']);
+  });
+
+  it('rejects model-supplied identity/tenant arguments instead of passing them through', async () => {
+    const received: string[] = [];
+    const capturing = makeTool({
+      id: 't1',
+      handler: async (_args, context) => {
+        received.push(context.userId);
+        return { ok: true, output: {}, completedAt: nowIso() };
+      },
+    });
+    const executor = new ToolExecutor({ tools: registryWith(capturing) });
+    const result = await executor.execute({
+      toolId: 't1',
+      input: { userId: 'usr_evil', tenantId: 'org_evil' },
+      userId: 'usr_trusted',
+      tenantId: 'tenant_1',
+      runId: 'r',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe('RESERVED_ARGUMENT');
+    expect(received).toEqual([]); // the tool never ran
   });
 
   it('honors a custom verifier that rejects output', async () => {
@@ -377,5 +417,38 @@ describe('retry policies', () => {
     const policy = defaultRetryPolicy({ extraRetryableCodes: ['CUSTOM'], backoffMs: 10 });
     expect(policy.isRetryable({ code: 'CUSTOM', message: 'x' })).toBe(true);
     expect(policy.delayForAttempt(2)).toBeGreaterThan(policy.delayForAttempt(1));
+  });
+});
+
+describe('ToolExecutor — tool-vetted failure detail', () => {
+  it('carries a failed tool result’s detail through, beside the (hidden) error', async () => {
+    const tools = new ExecutableToolRegistry();
+    tools.register({
+      manifest: {
+        id: 'demo.fails_with_detail',
+        name: 'Fails',
+        description: 'fails with a vetted detail',
+        sideEffectClass: 'read_only',
+        idempotent: true,
+        timeoutMs: 1000,
+        inputSchema: {},
+      },
+      execute: async () => ({
+        ok: false,
+        error: 'raw internal message',
+        detail: 'Rolled back: Hire employee.',
+        completedAt: new Date().toISOString(),
+      }),
+    });
+    const result = await new ToolExecutor({ tools }).execute({
+      toolId: 'demo.fails_with_detail',
+      input: {},
+      userId: 'u1',
+      tenantId: 't1',
+      runId: 'r1',
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.message).toBe('raw internal message');
+    expect(result.detail).toBe('Rolled back: Hire employee.');
   });
 });

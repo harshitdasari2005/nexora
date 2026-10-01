@@ -31,6 +31,7 @@ export {
   GetBusinessAgentHandler,
   type AgentPermissionResolver,
   type AgentProblemProvider,
+  type AgentPrincipalResolver,
   type AgentProposalProvider,
   type BusinessAgentContext,
   type BusinessAgentDomainCatalogPort,
@@ -51,3 +52,33 @@ export {
   validateAgentDefinition,
   type AgentCatalogForValidation,
 } from './validation/definitions.js';
+export {
+  NON_DELEGABLE_CAPABILITIES,
+  delegationEffectiveStatus,
+  effectiveAgentCapabilities,
+  evaluateAgentAuthority,
+  scopeCovers,
+  type AgentAuthorityDecision,
+  type AgentAuthorityDenial,
+  type AgentAuthorityInput,
+  type InvocationResources,
+} from './identity/authority.js';
+export {
+  InMemoryAgentDelegationRepository,
+  InMemoryAgentIdentityRepository,
+  type AgentDelegationRepository,
+  type AgentIdentityRepository,
+} from './identity/repositories.js';
+export {
+  AgentIdentityService,
+  MAX_DELEGATION_DAYS,
+  RESOURCE_SCOPED_CAPABILITIES,
+  type AgentAuthorityView,
+  type AgentCapabilityResolver,
+  type AgentDelegationView,
+  type AgentIdentityServiceDependencies,
+  type AgentManagementActor,
+  type AgentManagementError,
+  type AgentManagementFailure,
+  type AgentResourceVerifier,
+} from './identity/agent-identity-service.js';

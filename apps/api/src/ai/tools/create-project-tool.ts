@@ -64,6 +64,8 @@ export const CREATE_PROJECT_MANIFEST: ToolManifest = {
   sideEffectClass: 'consequential',
   idempotent: false,
   timeoutMs: 15_000,
+  // Read-back: the created record is re-read from persisted state.
+  verification: { source: 'state_readback' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -151,7 +153,7 @@ export class CreateProjectTool implements Tool<CreateProjectInput, CreateProject
     //    source of truth, and this check is defense-in-depth.
     const project = result.value.project;
     if (project.organizationId !== context.tenantId) {
-      return this.#failure('Project verification failed: unexpected organization');
+      return this.#verificationFailure('Project verification failed: unexpected organization');
     }
 
     // 5. Read-back verification (S24 Phase 4): read the persisted state
@@ -168,7 +170,7 @@ export class CreateProjectTool implements Tool<CreateProjectInput, CreateProject
         (candidate) => candidate.id === project.id && candidate.organizationId === context.tenantId,
       );
     if (!persisted) {
-      return this.#failure('Project verification failed: created project not found');
+      return this.#verificationFailure('Project verification failed: created project not found');
     }
 
     return {
@@ -185,6 +187,11 @@ export class CreateProjectTool implements Tool<CreateProjectInput, CreateProject
       },
       completedAt: new Date().toISOString(),
     };
+  }
+
+  /** A failed read-back / result verification: failed AND unverified with the declared source. */
+  #verificationFailure(error: string): ToolResult<CreateProjectOutput> {
+    return { ...this.#failure(error), readBackFailed: true };
   }
 
   #failure(error: string): ToolResult<CreateProjectOutput> {

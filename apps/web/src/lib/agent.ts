@@ -2,7 +2,8 @@
  * @nexora/app-web — governed business-agent client (S26 Phase 8).
  *
  * Loads the caller's agent (`GET /api/agent`) and executes governed intents
- * (`POST /api/agent/proposals/:proposalId/execute` and `POST /api/agent/execute`).
+ * (`POST /api/agent/proposals/:proposalId/execute` and `POST /api/agent/execute`),
+ * always AS an explicit agent identity (`?agentId=`, see `./agents.js`).
  * The server resolves the trusted tenant/workspace/role/agent — the client
  * only renders. Approval decisions reuse the EXISTING chat approval surface
  * (`decideApproval` from `./chat.js`) — one approval path.
@@ -28,6 +29,13 @@ function scopeSuffix(scope: AgentScope): string {
   return `?${params.toString()}`;
 }
 
+/** Scope query string that also names the agent identity to run AS. */
+function runSuffix(scope: AgentScope, agentId: string): string {
+  const params = new URLSearchParams(scopeSuffix(scope).slice(1));
+  params.set('agentId', agentId);
+  return `?${params.toString()}`;
+}
+
 /** Loads the caller's governed business agent. */
 export async function fetchAgent(scope: AgentScope): Promise<BusinessAgentDto> {
   return api<BusinessAgentDto>(`/agent${scopeSuffix(scope)}`);
@@ -37,9 +45,10 @@ export async function fetchAgent(scope: AgentScope): Promise<BusinessAgentDto> {
 export async function executeProposal(
   scope: AgentScope,
   proposalId: string,
+  agentId: string,
 ): Promise<AgentExecutionResponse> {
   return api<AgentExecutionResponse>(
-    `/agent/proposals/${encodeURIComponent(proposalId)}/execute${scopeSuffix(scope)}`,
+    `/agent/proposals/${encodeURIComponent(proposalId)}/execute${runSuffix(scope, agentId)}`,
     { method: 'POST' },
   );
 }
@@ -48,8 +57,9 @@ export async function executeProposal(
 export async function executeAgentIntent(
   scope: AgentScope,
   utterance: string,
+  agentId: string,
 ): Promise<AgentExecutionResponse> {
-  return api<AgentExecutionResponse>(`/agent/execute${scopeSuffix(scope)}`, {
+  return api<AgentExecutionResponse>(`/agent/execute${runSuffix(scope, agentId)}`, {
     method: 'POST',
     body: JSON.stringify({ utterance }),
   });

@@ -49,6 +49,8 @@ import {
 import type { TenantId as ProjectTenantId } from '@nexora/contracts/common';
 
 import { loadConfig } from '../src/config.js';
+import { InMemoryLineageRepository } from '@nexora/module-lineage';
+import { InMemoryPolicySettingsRepository } from '../src/policy/policy-settings.js';
 import { buildApp } from '../src/app.js';
 import type { RepositorySet } from '../src/container.js';
 import type { OidcGateway } from '../src/oidc/gateway.js';
@@ -87,12 +89,18 @@ import {
   FakeWorkspaceInstallationRepository,
   FakeWorkspaceMembershipRepository,
   FakeWorkspaceRepository,
+  MultiIdentityGateway,
 } from './fakes.js';
 import {
   DefaultDocumentTextExtractor,
   InMemoryDocumentStorage,
 } from '@nexora/application-documents';
 import { InMemorySearchIndex } from '@nexora/module-search';
+import {
+  InMemoryAgentDelegationRepository,
+  InMemoryAgentIdentityRepository,
+} from '@nexora/module-agents';
+import type { AgentResourceScope } from '@nexora/contracts/agent';
 
 /** Extracts a cookie value from a set-cookie header. */
 export function cookieValue(
@@ -159,12 +167,21 @@ export async function buildTestApp(
     agentExecutionRecorder?: Parameters<typeof buildApp>[0]['agentExecutionRecorder'];
     problemStore?: Parameters<typeof buildApp>[0]['problemStore'];
     planStore?: Parameters<typeof buildApp>[0]['planStore'];
+    /** The agent-authority clock (Prompt 4 delegation expiry tests). */
+    agentClock?: () => Date;
+    /** The approval expiry clock (Prompt 8); defaults to `agentClock`. */
+    approvalClock?: () => Date;
+    /** Injects a policy engine with extra rules (Prompt 5). */
+    policyEngine?: Parameters<typeof buildApp>[0]['policyEngine'];
+    /** Extra environment variables (e.g. `NEXORA_DEMO_MODE: 'true'`). */
+    env?: Record<string, string>;
   } = {},
 ): Promise<{ app: FastifyInstance; repos: RepositorySet; store: InMemoryConversationStore }> {
   const config = loadConfig({
     DATABASE_URL: 'postgres://test:test@localhost:5432/test',
     LOG_LEVEL: 'error',
     INTEGRATIONS_INBOUND_SECRET: 'test-inbound-secret',
+    ...options.env,
   } as NodeJS.ProcessEnv);
   const repositories: RepositorySet = {
     users: new FakeUserRepository(),
@@ -197,6 +214,10 @@ export async function buildTestApp(
     documentExtractor: new DefaultDocumentTextExtractor(),
     workflowInstances: new FakeWorkflowInstanceRepository(),
     workflowStepExecutions: new FakeWorkflowStepExecutionRepository(),
+    agents: new InMemoryAgentIdentityRepository(),
+    agentDelegations: new InMemoryAgentDelegationRepository(),
+    policySettings: new InMemoryPolicySettingsRepository(),
+    lineage: new InMemoryLineageRepository(),
     notifications: new FakeNotificationRepository(),
     notificationPreferences: new FakeNotificationPreferencesRepository(),
     activity: new FakeActivityRepository(),
@@ -207,6 +228,9 @@ export async function buildTestApp(
     oidc: options.oidc ?? new FakeOidcGateway(),
     repositories,
     aiStore: store,
+    ...(options.agentClock === undefined ? {} : { agentClock: options.agentClock }),
+    ...(options.approvalClock === undefined ? {} : { approvalClock: options.approvalClock }),
+    ...(options.policyEngine === undefined ? {} : { policyEngine: options.policyEngine }),
     webhookHttp: options.webhookHttp,
     connectors: options.connectors,
     // Journal governed agent executions in-memory so the agent tests can
@@ -244,8 +268,10 @@ export async function login(app: FastifyInstance): Promise<string> {
 }
 
 /** Builds the app (fakes + in-memory conversation store) and logs in. */
-export async function chatClient(): Promise<ChatClient> {
-  const { app, repos, store } = await buildTestApp();
+export async function chatClient(
+  options: Parameters<typeof buildTestApp>[0] = {},
+): Promise<ChatClient> {
+  const { app, repos, store } = await buildTestApp(options);
   const session = await login(app);
 
   return {
@@ -288,6 +314,100 @@ export async function chatClient(): Promise<ChatClient> {
         headers: { cookie: session, 'content-type': 'application/json' },
         payload: body,
       });
+    },
+  };
+}
+
+/** A second logged-in user (e.g. a distinct approver) alongside the first. */
+export interface SecondUser {
+  cookie: string;
+  userId: string;
+  /** POST JSON as the second user. */
+  post(path: string, body?: Record<string, unknown>): Promise<LightMyRequestResponse>;
+  /** GET as the second user. */
+  get(path: string): Promise<LightMyRequestResponse>;
+  /** Makes the second user a member of the org + workspace with the given roles. */
+  join(input: {
+    organizationId: string;
+    workspaceId: string;
+    orgRole?: OrgMembershipRole;
+    workspaceRole: MembershipRole;
+  }): Promise<void>;
+}
+
+/**
+ * Like {@link chatClient} but with two distinct identities: the returned
+ * client is the first user; `second` is a separately logged-in user who is
+ * NOT yet a member of anything (call `second.join(...)`). Used for
+ * separation-of-duties flows (Prompt 8: requester != approver).
+ */
+export async function chatClientWithSecondUser(
+  options: Parameters<typeof buildTestApp>[0] = {},
+): Promise<ChatClient & { second: SecondUser }> {
+  const issuer = 'http://keycloak.test/realms/nexora';
+  const { app, repos, store } = await buildTestApp({
+    ...options,
+    oidc: new MultiIdentityGateway([
+      {
+        subject: 'sub-requester-1',
+        email: 'requester@nexora.dev',
+        emailVerified: true,
+        displayName: 'Rita Requester',
+        issuer,
+      },
+      {
+        subject: 'sub-approver-2',
+        email: 'approver@nexora.dev',
+        emailVerified: true,
+        displayName: 'Ada Approver',
+        issuer,
+      },
+    ]),
+  });
+  const session = await login(app);
+  const secondCookie = await login(app);
+  const call = (
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH',
+    cookie: string,
+    url: string,
+    payload?: Record<string, unknown>,
+  ) =>
+    app.inject({
+      method,
+      url,
+      headers: { cookie, 'content-type': 'application/json' },
+      payload: payload ?? {},
+    });
+  const me = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie: secondCookie } });
+  const secondId = (me.json() as { user: { id: string } }).user.id;
+  return {
+    app,
+    session,
+    store,
+    repos,
+    get: (path) => call('GET', session, path),
+    postEmpty: (path) => call('POST', session, path),
+    post: (path, body) => call('POST', session, path, body),
+    put: (path, body) => call('PUT', session, path, body),
+    patch: (path, body) => call('PATCH', session, path, body),
+    second: {
+      cookie: secondCookie,
+      userId: secondId,
+      get: (path) => call('GET', secondCookie, path),
+      post: (path, body) => call('POST', secondCookie, path, body),
+      async join(input) {
+        await seedOrganizationMembership(repos, {
+          organizationId: input.organizationId,
+          userId: secondId,
+          role: input.orgRole ?? 'member',
+        });
+        await seedWorkspaceMembership(repos, {
+          organizationId: input.organizationId,
+          workspaceId: input.workspaceId,
+          userId: secondId,
+          role: input.workspaceRole,
+        });
+      },
     },
   };
 }
@@ -722,4 +842,63 @@ export async function seedWorkspaceMembership(
     },
   );
   await repos.workspaceMemberships.save(membership);
+}
+
+/**
+ * Seeds a persisted agent identity + its delegations directly into the
+ * repositories (Prompt 4 test helper). The delegations are granted by the
+ * current user (the grantor must still hold each capability at execution
+ * time for them to be effective). Returns the agent and delegation ids.
+ */
+export async function provisionAgent(
+  repos: RepositorySet,
+  input: {
+    organizationId: string;
+    workspaceId: string;
+    definitionId: string;
+    grantedBy: string;
+    capabilityIds: readonly string[];
+    name?: string;
+    status?: 'active' | 'suspended' | 'revoked';
+    resourceScope?: AgentResourceScope;
+    expiresAt?: string;
+    id?: string;
+  },
+): Promise<{ agentId: string; delegationIds: string[] }> {
+  if (repos.agents === undefined || repos.agentDelegations === undefined) {
+    throw new Error('provisionAgent requires in-memory agent repositories');
+  }
+  const at = '2026-01-01T00:00:00.000Z';
+  const agentId = input.id ?? `agt_${Math.random().toString(16).slice(2, 10)}`;
+  await repos.agents.save({
+    id: agentId,
+    organizationId: input.organizationId,
+    workspaceId: input.workspaceId,
+    definitionId: input.definitionId,
+    name: input.name ?? `${input.definitionId} agent`,
+    description: 'test agent',
+    status: input.status ?? 'active',
+    ownerUserId: input.grantedBy,
+    createdBy: input.grantedBy,
+    createdAt: at,
+    updatedAt: at,
+  });
+  const delegationIds: string[] = [];
+  for (const capabilityId of input.capabilityIds) {
+    const id = `dlg_${agentId.slice(4)}_${delegationIds.length + 1}`;
+    await repos.agentDelegations.save({
+      id,
+      agentId,
+      organizationId: input.organizationId,
+      workspaceId: input.workspaceId,
+      grantedByUserId: input.grantedBy,
+      capabilityId,
+      ...(input.resourceScope === undefined ? {} : { resourceScope: input.resourceScope }),
+      status: 'active',
+      createdAt: at,
+      ...(input.expiresAt === undefined ? {} : { expiresAt: input.expiresAt }),
+    });
+    delegationIds.push(id);
+  }
+  return { agentId, delegationIds };
 }

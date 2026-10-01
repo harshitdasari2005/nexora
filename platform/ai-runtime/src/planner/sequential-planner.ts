@@ -12,25 +12,23 @@ import type { AutonomyTier, SideEffectClass } from '@nexora/contracts/ai';
 import { prefixedId } from '@nexora/shared/ids';
 import { nowIso } from '@nexora/shared/time';
 import { SIDE_EFFECT_WEIGHT } from '@nexora/shared/constants';
+import { sideEffectRequiresApproval } from '@nexora/module-policy';
 import type { PlannerContext } from './planner-context.js';
 import type { PlanResult } from './plan-result.js';
 import type { ExecutionPlan, ExecutionStep, PlanGate } from './plan.js';
 import type { PlanningStrategy } from './planning-strategy.js';
 
-/** Decides whether a side-effect class requires approval under a tier (BR-13). */
+/**
+ * Decides whether a side-effect class requires approval under a tier (BR-13).
+ * The single definition lives in the policy module (POLICY_SIDE_EFFECT_APPROVAL);
+ * this is the planner's coarse, fact-free view — the executor's policy
+ * decision (which may add finance/agent conditions) is authoritative.
+ */
 export function requiresApprovalFor(
   sideEffectClass: SideEffectClass,
   autonomyTier: AutonomyTier,
 ): boolean {
-  if (sideEffectClass === 'consequential') {
-    return true;
-  }
-  if (sideEffectClass === 'state_change') {
-    // Supervised-autonomous tiers may perform state changes without a gate;
-    // Confirm/human-only tiers gate them.
-    return autonomyTier !== 'autonomous';
-  }
-  return false;
+  return sideEffectRequiresApproval(sideEffectClass, autonomyTier);
 }
 
 /**

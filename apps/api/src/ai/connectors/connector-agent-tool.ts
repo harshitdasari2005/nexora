@@ -27,8 +27,20 @@
  * (provider/connector/tool/scope — never secrets or credentials).
  */
 
-import type { Tool, ToolExecutionContext, ToolManifest, ToolResult } from '@nexora/agent-sdk/tools';
-import type { ConnectorTool, ExternalConnector, ConnectorToolResult } from '@nexora/connectors';
+import {
+  DEFAULT_TOOL_VERIFICATION,
+  type Tool,
+  type ToolExecutionContext,
+  type ToolManifest,
+  type ToolResult,
+  type ToolVerificationMetadata,
+} from '@nexora/agent-sdk/tools';
+import {
+  CONNECTOR_ERROR_CODES,
+  type ConnectorTool,
+  type ExternalConnector,
+  type ConnectorToolResult,
+} from '@nexora/connectors';
 import { createEventEnvelope, type EventPublisher } from '@nexora/shared/events';
 
 import type { ConnectorConnectionStore } from './connection-store.js';
@@ -76,6 +88,9 @@ export class ConnectorAgentTool implements Tool<Record<string, unknown>, Record<
       idempotent: options.tool.operationType === 'read',
       timeoutMs: options.tool.timeoutMs,
       inputSchema: options.tool.inputSchema,
+      ...(options.tool.operationType === 'write'
+        ? { verification: connectorWriteVerification(options.tool.id) }
+        : {}),
     };
   }
 
@@ -109,7 +124,13 @@ export class ConnectorAgentTool implements Tool<Record<string, unknown>, Record<
     });
 
     if (!result.ok) {
-      return this.#failure(this.#messageFor(result));
+      const failure = this.#failure(this.#messageFor(result));
+      // The provider acknowledged the write but the read-back failed: the
+      // declared verification ran and FAILED (recorded as unverified with the
+      // tool's declared source, never as an unverified-by-default failure).
+      return result.error?.code === CONNECTOR_ERROR_CODES.VERIFICATION_FAILED
+        ? { ...failure, readBackFailed: true }
+        : failure;
     }
 
     // Audit: a successful governed WRITE emits the external-write event so
@@ -174,5 +195,27 @@ export class ConnectorAgentTool implements Tool<Record<string, unknown>, Record<
 
   #failure(error: string): ToolResult<Record<string, unknown>> {
     return { ok: false, error, completedAt: new Date().toISOString() };
+  }
+}
+
+/**
+ * The DECLARED verification of a connector write (Prompt 9). Only what the
+ * connector genuinely does is claimed: GitHub re-GETs the created issue from
+ * the provider (`provider_readback`); Slack only checks the response carries
+ * the message `ts` (`response_shape`); any other write reports the handler
+ * result. Never claims a read-back that did not happen.
+ */
+export function connectorWriteVerification(toolId: string): ToolVerificationMetadata {
+  switch (toolId) {
+    case 'github.issues.create':
+      return { source: 'provider_readback' };
+    case 'slack.messages.send':
+      return {
+        source: 'response_shape',
+        limitation:
+          'the provider response carried a message identifier; the message was not re-read from Slack',
+      };
+    default:
+      return { ...DEFAULT_TOOL_VERIFICATION };
   }
 }

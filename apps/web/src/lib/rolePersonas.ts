@@ -98,7 +98,17 @@ export const ROLE_PERSONAS: readonly RolePersona[] = [
       'Search',
       'Settings',
     ],
-    secondaryModules: ['Calendar', 'Audit', 'Workflows', 'Employees', 'Documents', 'Knowledge'],
+    secondaryModules: [
+      'Calendar',
+      'Audit',
+      'Runtime',
+      'Policy',
+      'Approval Queue',
+      'Workflows',
+      'Employees',
+      'Documents',
+      'Knowledge',
+    ],
     navLabelOverrides: APPROVALS_LABEL_OVERRIDE,
     secondaryEmphasis: 'kpi-first',
     aiPrompts: [
@@ -129,7 +139,7 @@ export const ROLE_PERSONAS: readonly RolePersona[] = [
       'Search',
       'Settings',
     ],
-    secondaryModules: ['Projects', 'Knowledge'],
+    secondaryModules: ['Projects', 'Knowledge', 'Policy', 'Approval Queue'],
     navLabelOverrides: APPROVALS_LABEL_OVERRIDE,
     secondaryEmphasis: 'kpi-first',
     aiPrompts: [
@@ -159,7 +169,7 @@ export const ROLE_PERSONAS: readonly RolePersona[] = [
       'Search',
       'Settings',
     ],
-    secondaryModules: ['Employees', 'Documents'],
+    secondaryModules: ['Employees', 'Documents', 'Approval Queue'],
     navLabelOverrides: APPROVALS_LABEL_OVERRIDE,
     secondaryEmphasis: 'signals-first',
     aiPrompts: [
@@ -190,7 +200,7 @@ export const ROLE_PERSONAS: readonly RolePersona[] = [
       'Search',
       'Settings',
     ],
-    secondaryModules: ['Agent', 'Documents'],
+    secondaryModules: ['Agent', 'Documents', 'Approval Queue'],
     navLabelOverrides: { ...APPROVALS_LABEL_OVERRIDE, Integrations: 'GitHub / Engineering' },
     secondaryEmphasis: 'signals-first',
     aiPrompts: [
@@ -220,7 +230,7 @@ export const ROLE_PERSONAS: readonly RolePersona[] = [
       'Search',
       'Settings',
     ],
-    secondaryModules: ['Agent', 'Knowledge'],
+    secondaryModules: ['Agent', 'Knowledge', 'Approval Queue'],
     navLabelOverrides: APPROVALS_LABEL_OVERRIDE,
     secondaryEmphasis: 'kpi-first',
     aiPrompts: [
@@ -241,6 +251,9 @@ export const ROLE_PERSONAS: readonly RolePersona[] = [
     primaryModules: [
       'Command Center',
       'Audit',
+      'Runtime',
+      'Policy',
+      'Approval Queue',
       'Problems',
       'AI Assistant',
       'Insights',

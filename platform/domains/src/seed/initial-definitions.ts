@@ -157,10 +157,13 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'approvals.decide',
       'agent.use',
       'agent.execute',
+      'agents.manage',
       'activity.read',
       'calendar.read',
       'calendar.create',
       'audit.read',
+      'policy.read',
+      'policy.manage',
       'github.repositories.read',
       'github.issues.read',
       'github.issues.create',
@@ -204,12 +207,14 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'knowledge.publish',
       'agent.use',
       'agent.execute',
+      'agents.manage',
       'activity.read',
       'budgets.read',
       'budgets.manage',
       'expenses.read',
       'expenses.create',
       'expenses.decide',
+      'policy.read',
     ],
   },
   {
@@ -244,6 +249,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'insights.read',
       'agent.use',
       'agent.execute',
+      'agents.manage',
       'documents.read',
       'knowledge.read',
       'knowledge.publish',
@@ -410,10 +416,16 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'workflows.read',
       'workflows.execute',
       'approvals.read',
+      // Prompt 8: the remediation approval routing names this role as the
+      // approver of projects./calendar./notifications./workflow./slack.
+      // steps — a routed approver must be able to decide (still only when
+      // the approval's required role matches; never a blanket authority).
+      'approvals.decide',
       'problems.read',
       'problems.investigate',
       'agent.use',
       'agent.execute',
+      'agents.manage',
       'activity.read',
       'github.repositories.read',
       'github.issues.read',
@@ -448,6 +460,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'agent.use',
       'activity.read',
       'audit.read',
+      'policy.read',
+      'policy.manage',
     ],
   },
   {
@@ -459,7 +473,9 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     // Legal workspace's admin/member tier still needs audit visibility
     // (the Audit Center's Legal persona requirement) even though no other
     // executable surface has been built for this role yet.
-    capabilityIds: ['audit.read'],
+    // `policy.read`: compliance reviews the central policy configuration
+    // (read-only — changing it is policy.manage: CEO / General Counsel).
+    capabilityIds: ['audit.read', 'policy.read'],
   },
   {
     id: 'operations.head',
@@ -729,6 +745,20 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     description:
       "Read the unified cross-module audit trail — agent executions, approval decisions, workflow step outcomes, and business activity (existing surface: the Audit Center). Governance/oversight scope, distinct from any single module's own read capability.",
   },
+  // Policy administration (Prompt 8). Human-only: both are NON_DELEGABLE for
+  // agents and never exposed on any AI tool — AI is not authority.
+  {
+    id: 'policy.read',
+    name: 'Read Policies',
+    description:
+      "Read the central policy registry, each policy's current configuration and its version history (existing surface: the Policy Administration routes). Read-only; never delegable to an agent.",
+  },
+  {
+    id: 'policy.manage',
+    name: 'Manage Policies',
+    description:
+      'Create a new version of, enable or disable an organization-configurable policy — structured, validated, tighten-only configuration (existing surface: the Policy Administration routes). Human-only; never delegable to an agent.',
+  },
   // S35 Finance vertical: budgets and expenses (existing surface: the
   // Finance REST routes + the CFO workspace). Deliberately scoped to
   // finance.cfo only — Finance is a real, single-owner vertical, not a
@@ -779,5 +809,14 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     name: 'Manage Marketplace Apps',
     description:
       'Install, update, and uninstall workspace apps (existing surface: the marketplace app lifecycle routes)',
+  }, // Prompt 4: agent identity + delegated capabilities. Creating agents,
+  // granting/revoking delegations, and suspending/revoking agents is a
+  // human-only governance permission — never mapped to an AI capability and
+  // never delegable to an agent.
+  {
+    id: 'agents.manage',
+    name: 'Manage Agents',
+    description:
+      'Create agent identities, grant and revoke their delegated capabilities, and suspend or revoke agents (existing surface: the /api/agents management routes)',
   },
 ];

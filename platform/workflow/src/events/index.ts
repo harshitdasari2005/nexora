@@ -35,6 +35,7 @@ export const WORKFLOW_EVENT_TYPES = {
   workflowCompleted: 'workflow.completed',
   workflowFailed: 'workflow.failed',
   workflowCancelled: 'workflow.cancelled',
+  workflowCompensated: 'workflow.compensated',
 } as const;
 
 /** Payload of the {@link workflowCreatedEvent}. */
@@ -114,6 +115,17 @@ export interface WorkflowCancelledPayload {
   workflowId: string;
   definitionKey: string;
   tenantId: TenantId;
+}
+
+/** Payload of the {@link workflowCompensatedEvent}. */
+export interface WorkflowCompensatedPayload {
+  workflowId: string;
+  definitionKey: string;
+  tenantId: TenantId;
+  /** The failure that triggered the rollback. */
+  error: string;
+  /** Step ids whose effects were undone. */
+  compensatedSteps: readonly string[];
 }
 
 /** Context required to emit a workflow event (trusted scope). */
@@ -228,4 +240,18 @@ export function workflowCancelledEvent(
   payload: WorkflowCancelledPayload,
 ): EventEnvelope<WorkflowCancelledPayload> {
   return workflowEvent(WORKFLOW_EVENT_TYPES.workflowCancelled, context, payload);
+}
+
+/**
+ * The instance failed and every completed state-changing step was undone
+ * (workflow.compensated). Always accompanied by `workflow.failed`: the
+ * workflow DID fail — compensation is the additional audit fact that it
+ * left nothing behind.
+ */
+export function workflowCompensatedEvent(
+  context: WorkflowEventContext,
+  workflowId: string,
+  payload: WorkflowCompensatedPayload,
+): EventEnvelope<WorkflowCompensatedPayload> {
+  return workflowEvent(WORKFLOW_EVENT_TYPES.workflowCompensated, context, payload);
 }

@@ -17,6 +17,8 @@
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+import { fingerprintOf, type LineageRepository } from '@nexora/module-lineage';
+import { prefixedId } from '@nexora/shared/ids';
 import type { FastifyInstance } from 'fastify';
 import type { TenantId, WorkspaceId } from '@nexora/contracts/common';
 import {
@@ -41,6 +43,8 @@ export interface IntegrationsRoutesDependencies {
   integrations: IntegrationApplicationServiceType;
   /** The webhook-in shared secret (HMAC over the raw body). */
   inboundSecret: string;
+  /** Append-only lineage (Prompt 6): records every VERIFIED inbound message and its outcome. */
+  lineage?: LineageRepository;
   listOrganizations: ListOrganizationsHandler;
   listMyWorkspaces: ListMyWorkspacesHandler;
   /** RBAC permission resolution — webhook administration requires `integrations.manage`. */
@@ -533,6 +537,52 @@ export async function registerIntegrationsRoutes(
           actorId: body.from,
           correlationId: request.id,
         });
+        // Lineage (Prompt 6): a VERIFIED inbound message is external DATA. Record
+        // its provenance and outcome — the message id, a fingerprint of the
+        // (allowlisted) sender rather than the address, the action and the
+        // result. The scope is the signed body's; nothing here is authority
+        // (an "approved" in the payload is not an approval — only the
+        // verified processing above, through the shared approval
+        // authorization, can decide one).
+        if (dependencies.lineage !== undefined) {
+          try {
+            await dependencies.lineage.append([
+              {
+                id: prefixedId('lin'),
+                tenantId: body.organizationId,
+                workspaceId: body.workspaceId,
+                runId: `inbound:${body.messageId}`,
+                kind: 'EVIDENCE',
+                occurredAt: new Date().toISOString(),
+                seq: 0,
+                ...(body.action === 'approval.decide' ? { approvalId: body.targetId } : {}),
+                subjectType: 'INBOUND_MESSAGE',
+                subjectId: body.messageId,
+                fingerprint: fingerprintOf({
+                  messageId: body.messageId,
+                  action: body.action,
+                  targetId: body.targetId,
+                  decision: body.decision,
+                }),
+                data: {
+                  sourceType: 'INBOUND_MESSAGE',
+                  sourceId: body.messageId,
+                  retrievedAt: new Date().toISOString(),
+                  trust: 'EXTERNAL_CONTENT',
+                  retrievalMethod: 'inbound_email',
+                  toolId: 'integrations.inbound',
+                  signature: 'verified',
+                  senderFingerprint: fingerprintOf(body.from.toLowerCase()),
+                  action: body.action,
+                  outcome: result.ok ? 'processed' : 'rejected',
+                  ...(result.ok ? {} : { errorCode: result.error.code }),
+                },
+              },
+            ]);
+          } catch {
+            // Descriptive and best-effort: never changes the result.
+          }
+        }
         if (!result.ok) {
           const http = toHttpError(result.error, request.id);
           return reply.code(http.statusCode).send(http.body);

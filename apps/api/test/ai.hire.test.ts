@@ -360,14 +360,21 @@ describe('AI hire workflow slice (hire employee and assign to project)', () => {
     // The workflow ran and FAILED at find_project — never a false success.
     expect(executed.status).toBe('failed');
     expect(executed.response).not.toContain('assigned successfully');
+    // …and the response says what happened to the hire: it was rolled back.
+    expect(executed.response).toContain('Rolled back');
 
     // The failed run is journaled (audit), and NO assignment was created.
-    // The hire step committed first (no destructive compensation in v1 —
-    // documented): the employee exists, the assignment does not.
+    // The hire step committed first, so it is COMPENSATED: the employee is
+    // offboarded (record retained for audit) — no active employee is left
+    // behind, and the rollback is a journaled, audited step.
     const instance = [...workflowInstances(client).values()][0];
-    expect(instance?.status).toBe('failed');
+    expect(instance?.status).toBe('compensated');
+    expect(instance?.compensation?.status).toBe('compensated');
     expect(assignments(client).size).toBe(0);
-    expect(employeeCount(client)).toBe(before + 1);
+    expect(employeeCount(client)).toBe(before + 1); // retained, not deleted
+    expect(findEmployee(client, 'Sarah')?.status.value).toBe('offboarded');
+    const journal = [...stepExecutions(client).values()];
+    expect(journal.some((step) => step.stepId === 'compensate:hire_employee')).toBe(true);
     await client.app.close();
   });
 });

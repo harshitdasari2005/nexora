@@ -11,6 +11,7 @@
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import type { EventPublisher } from '@nexora/shared/events';
+import type { ApprovalEngine } from '@nexora/ai-runtime';
 import type { ConversationStore } from '@nexora/ai-runtime/conversation';
 import {
   createDatabase,
@@ -71,12 +72,29 @@ import type { OidcGateway } from './oidc/gateway.js';
 import { registerAuth } from './plugins/auth.js';
 import { buildContainer, type RepositorySet } from './container.js';
 import { composeAiRuntime } from './ai/compose.js';
+import type { AiRuntime } from './ai/runtime.js';
+import { createInitiatorCapabilityResolver } from './ai/workflow-initiator.js';
 import { buildConnectorStore } from './ai/connectors/build-connector-store.js';
 import type { ConnectorConnectionStore } from './ai/connectors/connection-store.js';
 import { buildAgent } from './agent/build.js';
 import { registerAgentRoutes } from './routes/agent.js';
+import { registerAgentIdentityRoutes } from './routes/agents.js';
+import { prefixedId } from '@nexora/shared/ids';
 import type { AgentExecutionRecorder } from '@nexora/module-agents';
+import { buildAgentIdentityLayer } from './agent/identity-layer.js';
 import { PgAgentExecutionRecorder } from './agent/pg-agent-execution-recorder.js';
+import {
+  PgAgentDelegationRepository,
+  PgAgentIdentityRepository,
+} from './agent/pg-agent-identity-repository.js';
+import type { PolicyEngine } from '@nexora/module-policy';
+import { DecisionTraceService } from './audit/decision-trace.js';
+import { buildLineageLayer } from './lineage/lineage-layer.js';
+import { PgLineageRepository } from './lineage/pg-lineage-repository.js';
+import { buildObservabilityLayer } from './observability/observability-layer.js';
+import { PgRuntimeRunRepository } from './observability/pg-runtime-run-repository.js';
+import { buildPolicyLayer } from './policy/policy-layer.js';
+import { PgPolicySettingsRepository } from './policy/policy-settings.js';
 import { buildDetection } from './detection/build.js';
 import { PgBusinessProblemStore } from './agent/pg-business-problem-store.js';
 import { InMemoryProblemStore } from './detection/in-memory-problem-store.js';
@@ -89,7 +107,11 @@ import {
 import { PgPlanStore } from './remediation/pg-plan-store.js';
 import { InMemoryPlanStore, type PlanStore } from '@nexora/module-remediation';
 import { registerRemediationRoutes } from './routes/remediation.js';
+import { authorizeApprovalDecision } from './ai/approval-authorization.js';
+import { approvalRefusalReasonCode, createApprovalLifecycle } from './ai/approval-governance.js';
 import { registerAiRoutes } from './routes/ai.js';
+import { DemoService } from './demo/demo-service.js';
+import { registerDemoDisabledRoutes, registerDemoRoutes } from './demo/routes.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerHealth } from './routes/health.js';
@@ -126,6 +148,9 @@ import { registerNotificationRoutes } from './routes/notifications.js';
 import { registerWorkflowRoutes } from './routes/workflows.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
 import { registerAuditRoutes } from './routes/audit.js';
+import { registerRuntimeOpsRoutes } from './routes/runtime-ops.js';
+import { registerPolicyRoutes } from './routes/policy.js';
+import { PolicyAdminService } from './policy/policy-admin-service.js';
 import { AuditQueryService } from './audit/audit-query-service.js';
 
 /** Dependencies required to build the application. */
@@ -169,6 +194,31 @@ export interface AppDependencies {
    * available (absent otherwise — plans are ephemeral).
    */
   planStore?: PlanStore;
+  /**
+   * The agent-authority clock (Prompt 4): delegation expiry is evaluated
+   * against it at execution time. Tests and the evaluation harness inject a
+   * controllable clock; defaults to the system clock.
+   */
+  agentClock?: () => Date;
+  /**
+   * The approval expiry clock (Prompt 8). Defaults to `agentClock` when
+   * provided, so one controllable clock moves delegation expiry AND approval
+   * expiry; otherwise the real clock.
+   */
+  approvalClock?: () => Date;
+  /**
+   * The approval engine (tests and the evaluation harness inject one to read
+   * approval state back); defaults to the durable engine / an in-memory one.
+   */
+  approvals?: ApprovalEngine;
+  /** Overrides the policy engine (tests inject additional rules). */
+  policyEngine?: PolicyEngine;
+  /**
+   * Receives the composed AI runtime once (read-only observation seam for the
+   * evaluation harness: it drives the app's REAL workflow service / tool
+   * registry for the contrived closure scenarios). Never used by production.
+   */
+  onAiRuntime?: (runtime: AiRuntime) => void;
 }
 
 /** Builds the Nexora API application. */
@@ -218,6 +268,29 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
 
   registerAuth(app, { config: dependencies.config, sessions: container.sessionsService });
   registerHealth(app);
+  // Demo World (explicit opt-in). When disabled these routes do not exist (404).
+  // Registered before every business route so its request gate covers them all.
+  if (dependencies.config.demo?.enabled === true) {
+    const demo = new DemoService({
+      repositories,
+      database: dependencies.database,
+      authenticate: container.authenticateWithOidc,
+    });
+    registerDemoRoutes(app, {
+      config: dependencies.config,
+      demo,
+      sessions: container.sessionsService,
+      endSession: container.endSession,
+    });
+    // Idempotent: seeds the deterministic demo organization when it is absent
+    // or drifted, and never touches any other organization.
+    app.addHook('onReady', async () => {
+      await demo.seed();
+      app.log.info({ organizationId: demo.ids.organizationId }, 'Demo world ready');
+    });
+  } else {
+    registerDemoDisabledRoutes(app);
+  }
   registerMeRoutes(app, {
     getCurrentUser: container.getCurrentUser,
     listOrganizations: container.listOrganizations,
@@ -317,6 +390,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
+    // Prompt 8: REST mutations consult the SAME central policy port as every
+    // AI surface (composed below; resolved lazily at request time).
+    restPolicy: () => ({ policy: policyLayer.port, securitySink: ai.securitySink }),
   });
   registerWorkspaceRoutes(app, {
     createWorkspace: container.createWorkspace,
@@ -327,7 +403,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   registerDashboardRoutes(app, {
     getCurrentUser: container.getCurrentUser,
     listOrganizations: container.listOrganizations,
-    listWorkspaces: container.listWorkspaces,
+    listMyWorkspaces: container.listMyWorkspaces,
+    roleResolver: businessRoleResolver,
   });
   registerNotificationRoutes(app, {
     listNotifications: container.listNotifications,
@@ -358,7 +435,37 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       tenantId: dependencies.config.connectors.tenantId,
     });
 
+  // Prompt 4 — agent identity + delegated capabilities. ONE set of
+  // repositories, ONE definition registry, ONE clock, and ONE authority
+  // rule (`evaluateAgentAuthority`) shared by management (routes), the
+  // execution-time check inside the ToolExecutor (chat/agent/MCP), and the
+  // approval-resume path.
+  const agentLayer = buildAgentIdentityLayer({
+    repositories,
+    container,
+    rbac,
+    publisher,
+    ...(dependencies.agentClock === undefined ? {} : { clock: dependencies.agentClock }),
+  });
+  const agentStores = agentLayer.stores;
+  const agentDefinitions = agentLayer.definitions;
+  const capabilitiesOf = agentLayer.capabilitiesOf;
+  const agentAuthority = agentLayer.authority;
+  const agentIdentities = agentLayer.identities;
+
+  const approvalClock = dependencies.approvalClock ?? dependencies.agentClock;
+  const policyLayer = buildPolicyLayer({
+    repositories,
+    ...(dependencies.policyEngine === undefined ? {} : { engine: dependencies.policyEngine }),
+    ...(dependencies.agentClock === undefined ? {} : { now: dependencies.agentClock }),
+  });
+  const lineageLayer = buildLineageLayer({ repositories });
+  const observabilityLayer = buildObservabilityLayer({
+    repositories,
+    pricingJson: dependencies.config.observability?.modelPricingJson,
+  });
   const ai = composeAiRuntime({
+    rbac,
     config: dependencies.config,
     container,
     repositories,
@@ -366,9 +473,40 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     database: dependencies.database,
     aiStore: dependencies.aiStore,
     connectors,
+    agentAuthority,
+    policy: policyLayer.port,
+    lineage: lineageLayer.port,
+    runTelemetry: observabilityLayer.hub,
+    ...(dependencies.agentClock === undefined ? {} : { extractionClock: dependencies.agentClock }),
+    ...(approvalClock === undefined ? {} : { approvalClock }),
+    ...(dependencies.approvals === undefined ? {} : { approvals: dependencies.approvals }),
   });
+  dependencies.onAiRuntime?.(ai);
+  const executionRecorder =
+    dependencies.agentExecutionRecorder ??
+    (dependencies.database === undefined
+      ? undefined
+      : new PgAgentExecutionRecorder(dependencies.database));
+  // Approval lifecycle audit events + the (lazy / periodic-safe) expiry sweeper.
+  const approvalLifecycle = createApprovalLifecycle(ai.approvals, publisher);
+  const resolveUserName = async (userId: string): Promise<string | undefined> => {
+    const user = await repositories.users.findById(userId as never);
+    if (user === undefined) {
+      return undefined;
+    }
+    const displayName = user.profile.displayName.value;
+    return displayName.length > 0 ? displayName : user.email.value;
+  };
+  // Governance read models show display names only — never an email fallback.
+  const resolveDisplayName = async (userId: string): Promise<string | undefined> => {
+    const user = await repositories.users.findById(userId as never);
+    const displayName = user?.profile.displayName.value;
+    return displayName === undefined || displayName.length === 0 ? undefined : displayName;
+  };
   registerAiRoutes(app, {
     orchestrator: ai.orchestrator,
+    lifecycle: approvalLifecycle,
+    resolveUserName,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
     buildBusinessContext: (context) =>
@@ -379,6 +517,50 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     approvals: ai.approvals,
     conversations: ai.conversations,
     permissions: rbac,
+    securitySink: ai.securitySink,
+    // Prompt 4: agent-opened approvals resume AS the persisted agent, and the
+    // resumed execution is journaled against that agent identity.
+    agentPrincipals: agentStores.agents,
+    resolveAgentEffectiveCapabilities: async ({ userId, tenantId, workspaceId, agentId }) => {
+      if (workspaceId === undefined) {
+        return undefined;
+      }
+      const inspected = await agentIdentities.inspectAgent(
+        { userId, organizationId: tenantId, workspaceId, capabilityIds: [] },
+        agentId,
+      );
+      return inspected.ok ? inspected.view.effectiveCapabilityIds : undefined;
+    },
+    onAgentApprovalExecuted: async ({ approval, principal, response }) => {
+      if (executionRecorder === undefined || principal === undefined) {
+        return;
+      }
+      const definition = agentDefinitions.get(principal.definitionId);
+      const delegationIds = [
+        ...new Set(
+          response.steps
+            .map((step) => step.delegationId)
+            .filter((id): id is string => id !== undefined),
+        ),
+      ].sort();
+      await executionRecorder.record({
+        id: prefixedId('agx'),
+        agentId: principal.definitionId,
+        roleId: definition?.roleId ?? 'unknown',
+        domainId: definition?.domainId ?? 'unknown',
+        tenantId: approval.tenantId,
+        ...(approval.workspaceId === undefined ? {} : { workspaceId: approval.workspaceId }),
+        userId: approval.userId,
+        proposalAction: `Approved action: ${approval.capabilityId}`,
+        agentIdentityId: principal.id,
+        ...(delegationIds.length === 0 ? {} : { delegationIds }),
+        approvalId: approval.id,
+        status: response.status as never,
+        runId: response.runId,
+        ...(response.status === 'completed' ? {} : { reason: response.response.slice(0, 500) }),
+        createdAt: new Date().toISOString(),
+      });
+    },
   });
   registerWorkflowRoutes(app, {
     startWorkflow: new StartWorkflowHandler(ai.workflows),
@@ -386,7 +568,15 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     getWorkflow: new GetWorkflowHandler(ai.workflows),
     listWorkflows: new ListWorkflowsHandler(ai.workflows),
     listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
+    requiredCapabilities: (key) => ai.workflows.requiredCapabilities(key),
+    initiatorCapabilities: createInitiatorCapabilityResolver(rbac),
+    sideEffectOf: (toolId) => ai.tools.resolve(toolId)?.manifest.sideEffectClass,
+    restPolicy: () => ({ policy: policyLayer.port, securitySink: ai.securitySink }),
+    lineage: lineageLayer.repository,
+    approvals: ai.approvals,
+    sweepExpiredApprovals: () => approvalLifecycle.sweepExpiredApprovals(),
   });
   registerInsightsRoutes(app, {
     getTenantMeasurements: container.getTenantMeasurements,
@@ -418,7 +608,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     // No fixed identity: the HTTP surface resolves each session's trusted
     // context from the authenticated request (per-session contexts).
     server: await buildNexoraMCPServer({
-      runtime: { tools: ai.tools, approvals: ai.approvals },
+      runtime: ai,
       resolveBusinessContext: (context) =>
         buildAIBusinessContext(
           { roleResolver: businessRoleResolver, catalog: domainCatalog },
@@ -432,6 +622,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         { roleResolver: businessRoleResolver, catalog: domainCatalog },
         context,
       ),
+    // Prompt 4: `X-Nexora-Agent` sessions, validated server-side.
+    resolveAgent: agentLayer.resolveSession,
+    securitySink: ai.securitySink,
   });
 
   // S24 Phase 2: the generic role-aware Command Center. Composed here (not
@@ -473,11 +666,6 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   // minimum durable lifecycle state (`business_problems`). The generic
   // engine never decides tenant/workspace/role/capability/authorization —
   // those stay with the trusted context and the S26 agent surface.
-  const executionRecorder =
-    dependencies.agentExecutionRecorder ??
-    (dependencies.database === undefined
-      ? undefined
-      : new PgAgentExecutionRecorder(dependencies.database));
   const detectionSurface = buildDetection({
     getTenantMeasurements: container.getTenantMeasurements,
     listProjects: container.listProjects,
@@ -511,6 +699,9 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     // S27 agent integration: detected problems surface in the agent DTO and
     // their action proposals flow through the SAME governed execution path.
     problems: detectionSurface.problems,
+    // Prompt 4: one registry + persisted agent principals.
+    registry: agentDefinitions,
+    principals: agentStores.agents,
   });
   registerAgentRoutes(app, {
     getAgent: agentSurface.getAgent,
@@ -518,6 +709,18 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
+    securitySink: ai.securitySink,
+  });
+  // Prompt 4: agent identities + delegated capabilities (management +
+  // execution AS an agent principal).
+  registerAgentIdentityRoutes(app, {
+    identities: agentIdentities,
+    executeAgent: agentSurface.executeAgent,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    capabilitiesOf,
+    securitySink: ai.securitySink,
   });
   // S27 problems console: the dedicated HTTP surface over the SAME
   // detection engine that feeds the agent DTO. The routes resolve the
@@ -545,6 +748,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   // agent-execution journal (plan-linked rows). There is no second engine,
   // no second approval system, no second journal.
   const remediationSurface = buildRemediation({
+    lineage: lineageLayer.repository,
     store:
       dependencies.planStore ??
       (dependencies.database === undefined
@@ -622,7 +826,38 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       users: repositories.users,
       workspaces: repositories.workspaces,
       catalog: domainCatalog,
+      agents: agentStores.agents,
     }),
+    decisionTrace: new DecisionTraceService({
+      approvals: ai.approvals,
+      lineage: lineageLayer.repository,
+      ...(executionRecorder === undefined ? {} : { agentExecutions: executionRecorder }),
+      workflowStepExecutions: repositories.workflowStepExecutions,
+      workflowInstances: repositories.workflowInstances,
+      resolveUserName: resolveDisplayName,
+      sideEffectOf: (toolId) => ai.tools.resolve(toolId)?.manifest.sideEffectClass,
+    }),
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+  });
+
+  registerPolicyRoutes(app, {
+    policyAdmin: new PolicyAdminService({
+      settings: policyLayer.settings,
+      users: repositories.users,
+      publisher,
+    }),
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+  });
+
+  registerRuntimeOpsRoutes(app, {
+    runs: observabilityLayer.repository,
+    approvals: ai.approvals,
+    lineage: lineageLayer.repository,
+    resolveUserName: resolveDisplayName,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
@@ -671,11 +906,15 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       );
       return wsMembership !== undefined;
     },
-    routeInboundAction: async ({ action, targetId, decision, from, tenantId }) => {
+    routeInboundAction: async ({ action, targetId, decision, from, tenantId, workspaceId }) => {
       // Only the supported action catalog is routable (BKD §9.2):
       // `approval.decide` maps to the existing ApprovalEngine — no new
       // approval system (AIR.md §12). The actor is resolved from the
-      // allowlisted sender, never from the request.
+      // allowlisted sender, never from the request, and the decision is
+      // authorized by the SAME rules as the REST decision route (requester,
+      // membership, `approvals.decide`, capability still permitted, and the
+      // approval's own workspace) — an email can never decide an approval
+      // its sender could not decide in the app.
       if (action !== 'approval.decide') {
         return { ok: false, reason: 'unknown-action' };
       }
@@ -700,14 +939,60 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       if (!grant && !reject) {
         return { ok: false, reason: 'invalid-decision' };
       }
+      await approvalLifecycle.sweepApprovals();
+      const authorization = await authorizeApprovalDecision(
+        {
+          listOrganizations: container.listOrganizations,
+          listMyWorkspaces: container.listMyWorkspaces,
+          permissions: rbac,
+          buildBusinessContext: (context) =>
+            buildAIBusinessContext(
+              { roleResolver: businessRoleResolver, catalog: domainCatalog },
+              context,
+            ),
+        },
+        { approval, deciderId: user.id, channelWorkspaceId: workspaceId },
+      );
+      if (!authorization.ok) {
+        if (authorization.refusal === 'APPROVAL_EXPIRED') {
+          // An expired approval is not decidable by any channel (never audited
+          // as a security block — the expiry event was published on transition).
+          return { ok: false, reason: 'expired' };
+        }
+        await ai.securitySink({
+          actorId: user.id,
+          origin: 'inbound_email',
+          invocationId: approval.runId ?? approval.id,
+          organizationId: approval.tenantId,
+          ...(approval.workspaceId === undefined ? {} : { workspaceId: approval.workspaceId }),
+          toolId: approval.toolId,
+          capabilityId: approval.capabilityId,
+          action: 'approval.decide',
+          policyDecision: 'deny',
+          reasonCode: approvalRefusalReasonCode(authorization.refusal),
+          reason: `decision refused: ${authorization.refusal}`,
+          outcome: 'blocked',
+          occurredAt: new Date().toISOString(),
+        });
+        return { ok: false, reason: 'target-not-found' };
+      }
       const outcome = await ai.approvals.decide(targetId, {
         decision: grant ? 'grant' : 'reject',
         decidedBy: user.id,
         reason: 'inbound email action',
       });
-      // Exactly-once: a duplicate inbound delivery resolves to
-      // already_decided — the action never executes twice.
-      return outcome.ok ? { ok: true } : { ok: false, reason: outcome.reason };
+      if (outcome.ok) {
+        await approvalLifecycle.publish({
+          kind: grant ? 'granted' : 'rejected',
+          approval: outcome.request,
+          decidedBy: user.id,
+        });
+        return { ok: true };
+      }
+      if (outcome.reason === 'expired' && outcome.transitioned && outcome.request !== undefined) {
+        await approvalLifecycle.publish({ kind: 'expired', approval: outcome.request });
+      }
+      return { ok: false, reason: outcome.reason };
     },
     publisher,
   });
@@ -733,6 +1018,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   registerIntegrationsRoutes(app, {
     integrations: integrationService,
     inboundSecret: dependencies.config.integrations.inboundSecret,
+    lineage: lineageLayer.repository,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
@@ -804,6 +1090,11 @@ export function buildPgRepositories(
     notifications: new PgNotificationRepository(database),
     notificationPreferences: new PgNotificationPreferencesRepository(database),
     activity: new PgActivityRepository(database),
+    agents: new PgAgentIdentityRepository(database),
+    agentDelegations: new PgAgentDelegationRepository(database),
+    policySettings: new PgPolicySettingsRepository(database),
+    lineage: new PgLineageRepository(database),
+    runtimeRuns: new PgRuntimeRunRepository(database),
   };
 }
 

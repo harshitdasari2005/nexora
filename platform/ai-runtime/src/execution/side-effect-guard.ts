@@ -8,6 +8,7 @@
  */
 
 import type { AutonomyTier, SideEffectClass } from '@nexora/contracts/ai';
+import { sideEffectRequiresApproval } from '@nexora/module-policy';
 import { SIDE_EFFECT_WEIGHT } from '@nexora/shared/constants';
 
 /** The decision of the side-effect guard. */
@@ -31,31 +32,18 @@ export function evaluateSideEffect(
   sideEffectClass: SideEffectClass,
   autonomyTier: AutonomyTier,
 ): SideEffectDecision {
-  if (sideEffectClass === 'read_only') {
-    return {
-      requiresApproval: false,
-      sideEffectClass,
-      autonomyTier,
-      reason: 'Read-only actions never require approval',
-    };
-  }
-  if (sideEffectClass === 'consequential') {
-    return {
-      requiresApproval: true,
-      sideEffectClass,
-      autonomyTier,
-      reason: 'Consequential actions always require human approval (BR-13)',
-    };
-  }
-  const requiresApproval = autonomyTier !== 'autonomous';
-  return {
-    requiresApproval,
-    sideEffectClass,
-    autonomyTier,
-    reason: requiresApproval
-      ? 'State changes require approval under the current autonomy tier'
-      : 'State changes are permitted under the autonomous tier',
-  };
+  // One definition of the rule (POLICY_SIDE_EFFECT_APPROVAL); this wrapper
+  // only adds the explainability text this module has always returned.
+  const requiresApproval = sideEffectRequiresApproval(sideEffectClass, autonomyTier);
+  const reason =
+    sideEffectClass === 'read_only'
+      ? 'Read-only actions never require approval'
+      : sideEffectClass === 'consequential'
+        ? 'Consequential actions always require human approval (BR-13)'
+        : requiresApproval
+          ? 'State changes require approval under the current autonomy tier'
+          : 'State changes are permitted under the autonomous tier';
+  return { requiresApproval, sideEffectClass, autonomyTier, reason };
 }
 
 /** Compares two side-effect classes by severity (for risk analysis). */

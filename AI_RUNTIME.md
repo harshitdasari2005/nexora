@@ -529,6 +529,8 @@ Realizes: PSD AIX-8; SAD §10; DDD §12 (tools); FR-13, ER-2/5, BR-13.
 
 The **Tool Runtime** is the execution gatekeeper for everything an agent does: it validates, invokes, verifies, retries, compensates, and isolates tool calls. No tool executes outside this runtime (ADR-001).
 
+**Trust boundaries (implemented).** Tool arguments, retrieved content, entity text, and external tool output are untrusted data. The executor's argument guard rejects (and audits) forged scope/authority fields and enforces each tool's JSON schema before any approval opens; a resumed approval executes only the exact arguments that were approved; every approval-decision channel shares one authorizer. See `platform/ai-runtime/docs/TRUST_MODEL.md` for the full model, the per-path enforcement points, and residual risks.
+
 ### 10.1 Tool lifecycle (behavior)
 
 | Stage            | Behavior                                                                                                                                                                 |
@@ -690,6 +692,15 @@ The **Policy Engine** is the single synchronous evaluation point for every autho
 | **Invariants**       | Security and approval invariants (AC-1/3/4, BR-13) are non-relaxable; configuration that weakens them is rejected, not stored (R-35)                                                         |
 | **AI integration**   | The Planner queries feasibility (PLN-2); the Tool Runtime re-checks at execution (TLR-1); the Approval Engine reads chains (L6) — evaluation happens at every stage where a decision is made |
 
+> **Implementation status (v1).** The specification above describes the full
+> layered engine. What is built is a deterministic core of it
+> (`platform/policy`, see §19): the AI-policy and finance-application-policy
+> layers, one evaluation point on every AI/agent/MCP/workflow execution path,
+> versioned decisions recorded on approvals and blocks, and fail-closed
+> semantics. Company/workspace/compliance layers, value-tier approval chains,
+> approval timeouts, a separate DecisionLog and `PolicyChanged` propagation are
+> **not** implemented; §19 lists exactly what is and is not.
+
 ### 13.3 Policy change propagation
 
 `PolicyChanged` (EVT-31) invalidates cached grants, re-filters capability discovery visibility (§5.3-2), re-evaluates in-flight workflow checkpoints (EC-1), and is itself audited (AUD-1) — so policy changes take effect on the next decision, with zero window of stale authority.
@@ -805,6 +816,211 @@ The runtime is designed so every evolution below is an **addition to existing se
 3. **One gate** — Consequential actions always require human approval (AC-3); no evolution relaxes it.
 4. **One record** — decision-time recording (ADR-011) means every evolution is immediately auditable and explainable.
 5. **One discovery fabric** — new capabilities are registered content (ADR-005); the EAO never hardcodes them.
+
+---
+
+## 18. Agent identity & delegated capabilities (implementation note)
+
+The specification's agents (§3, §4) are **definitions**. v1 additionally
+persists an **agent identity** per workspace and lets humans **delegate**
+individual capabilities to it. The design adds no second authorization
+system: it extends the deterministic pipeline of §2.5 with one more
+intersection at the execution boundary.
+
+- **Agent** — a persisted principal (`agents`): id, organization, workspace,
+  business-agent _definition_ (the capability ceiling), name, description,
+  status `active | suspended | revoked`, owner, timestamps. Ownership is not
+  authority.
+- **Delegation** — one capability granted to one agent by one human
+  (`agent_delegations`): optional resource scope (`project` | `budget`),
+  expiry (≤ 90 days, evaluated at execution), revocation (a state, never a
+  deletion).
+- **Effective authority** = live delegation ∩ agent definition ∩ initiating
+  user ∩ grantor ∩ organization/workspace ∩ resource scope ∩ approval policy.
+  A delegation **never replaces an approval**; an agent can never decide
+  approvals, manage agents, or delegate (non-delegable capabilities).
+- **Enforcement** — the pure `evaluateAgentAuthority`
+  (`platform/agents/src/identity/authority.ts`) behind the Tool Runtime's
+  `AgentAuthorityPort`, called by the `ToolExecutor` for every invocation made
+  as an agent, and by the orchestrator before an approval opens. Revocation,
+  expiry, suspension, and role changes therefore apply to the very call being
+  made, including a run resumed after an approval.
+- **Attribution** — runs, approvals, workflow instances and journal rows
+  record the initiating user, agent, delegation(s), origin and approval; the
+  Audit Center answers who / which agent / which delegation / what / who
+  approved / what ran.
+- **Surfaces** — `GET/POST /api/agents`, `GET /api/agents/:id` (inspect),
+  `POST …/suspend | reactivate | revoke`, `POST …/delegations`,
+  `POST …/delegations/:id/revoke`, `POST …/execute`; MCP `X-Nexora-Agent`
+  (validated, never trusted); stdio `NEXORA_MCP_AGENT_ID`.
+- **Not supported** — agent-to-agent calls or delegation (consistent with
+  MAC-1), agent credentials/sessions, sub-delegation, delegation conditions
+  other than resource scope and expiry. See
+  [`platform/ai-runtime/docs/TRUST_MODEL.md`](platform/ai-runtime/docs/TRUST_MODEL.md)
+  §8 for the enforcement points, the security reason codes, the invariants,
+  and the residual risks.
+
+---
+
+## 19. Central policy engine (implementation note)
+
+The specification's Policy Engine (§13) is realized as a small, pure,
+deterministic core with one rule: **RBAC and agent delegation decide who;
+policy decides under what conditions; approval decides whether a human must
+say yes — three layers, never collapsed.**
+
+- **Engine** — `platform/policy`: `PolicyEngine.evaluate(request) →
+PolicyDecision` (`ALLOW` | `DENY` | `REQUIRE_APPROVAL`, deciding policy id
+  and version, reason code, matched rules, fingerprint). Precedence DENY >
+  REQUIRE_APPROVAL > ALLOW, ties by policy id, independent of registration
+  order. It fails closed and never mutates state.
+- **Seam** — the Tool Runtime's `PolicyPort` (`ai-runtime/src/execution`),
+  called by the `ToolExecutor` for every invocation after RBAC, argument and
+  agent-authority checks and before the approval gate and the mutation, and by
+  the orchestrator before an approval opens. The API supplies `ApiPolicyPort`,
+  which reads the trusted facts (organization policy configuration, the
+  persisted budget and its approved spend) and calls the one engine.
+- **Policies** — `POLICY_SIDE_EFFECT_APPROVAL`,
+  `POLICY_FINANCE_EXPENSE_APPROVAL`, `POLICY_FINANCE_BUDGET_STATE`, and the
+  opt-in `POLICY_FINANCE_BUDGET_LIMIT`; agent, approval, scope and argument
+  denials carry stable ids (`policyIdForReason`). There is **no amount
+  threshold** in Nexora: money movement is always approved by a human (BR-19).
+- **Approvals bind the policy** — an approval records the decision it was
+  opened under; a resumed run whose policy changed is refused
+  (`POLICY_CHANGED_AFTER_APPROVAL`) and must be requested again.
+- **Configuration** — append-only, versioned, per organization
+  (`policy_settings`); no write API yet.
+
+Full design, order, conflict rules, failure semantics, invariants,
+performance and residual risks: `platform/ai-runtime/docs/TRUST_MODEL.md` §9.
+
+---
+
+## 20. Evidence provenance and data lineage (implementation note)
+
+The runtime's explainability requirements (§14, ADR-011) are extended with a
+first-class lineage. **Evidence informs; it never grants authority** — what
+informed a decision, what was planned, what was approved, what actually ran and
+what was verified are separate, linked, append-only facts.
+
+- **Module** — `platform/lineage`: `LineageRecord` (`EVIDENCE`,
+  `PLANNED_ACTION`, `EXECUTION`, `VERIFICATION`, `LINK`, `FINDING`),
+  `fingerprintOf` (sha256 of canonical JSON), an append-only repository.
+- **Seam** — the Tool Runtime's `LineagePort`: the `ToolExecutor` reports every
+  invocation that really ran (invocation id, status, fingerprints, policy,
+  approval, workflow step/compensation); the orchestrator reports each planned
+  step. Reporting is one-way and best-effort and is never read by any decision.
+- **API** — `ApiLineagePort` derives evidence from tool results (knowledge and
+  document references with exact source id + version, projects, employees,
+  connector items — external content is `EXTERNAL_CONTENT`), fenced to the
+  trusted workspace; remediation records its basis and a derived finding;
+  signed inbound messages record their provenance.
+- **Audit** — `GET /api/audit/events/:id/trace` returns the decision trace:
+  request, evidence, authorization, policy, approval, planned vs executed,
+  verification, lineage — no reasoning, no raw content.
+
+Design, the concrete lineage example, invariants and residual risks:
+`platform/ai-runtime/docs/TRUST_MODEL.md` §10.
+
+---
+
+## 21. Runtime observability and execution telemetry (implementation note)
+
+§16 describes the full observability target. What ships today is a deliberately
+small, deterministic slice that reuses the seams the runtime already has:
+
+- **Audit** = what happened. **Lineage** = what data / results were connected.
+  **Observability** = how the runtime _performed_ (where time went, where a run
+  failed). Three systems, three stores, never blurred; none is read by a decision.
+- **Module** — `platform/observability`: the `RuntimeRun` model (stage timings,
+  model / tool / retrieval / policy / approval records), the failure taxonomy
+  (`stage` + `code` + `class`), redaction detectors, trusted-config pricing,
+  aggregation (percentiles over actual samples, bottleneck of one run) and an
+  append-only `RuntimeRunRepository`.
+- **Seams** — the `ToolExecutor` (single chokepoint) reports its own
+  authorization / policy / execution / verification segments and per-attempt
+  retry records; the orchestrator times request, planning, approval handling and
+  narration and captures the narration model call (provider, model, local vs
+  cloud, usage only when reported, template version, fingerprints — never the
+  prompt); each MCP tool call is its own run. A failing sink never affects a run.
+- **Storage** — append-only `runtime_runs` (migration `0022`).
+- **Operator view** — `GET /api/ops/runtime/runs`, `/runs/:runId`, `/metrics`
+  and a Runtime Runs page, behind the Audit Center's authorization (`audit.read`).
+- **Honesty** — usage the provider did not report is `usageAvailable=false`;
+  cost without trusted pricing is `null`; unused stages are absent; the human
+  approval wait is separate from execution latency. No OpenTelemetry, no alerting
+  platform (a documented future extension).
+
+Design, taxonomy, invariants and residual risks:
+`platform/ai-runtime/docs/TRUST_MODEL.md` §11.
+
+## 22. Policy administration and approval governance (implementation note)
+
+§13 and §19 describe policy as a deterministic, fail-closed layer. Prompt 8 adds
+its administrative surface and a real approval-governance model, reusing the
+existing seams (RBAC, `PolicyPort`, `ApprovalEngine`, Audit, lineage,
+observability) rather than building a parallel authorization system.
+
+- **Principles** - the AI is not authority; policy does not grant authority;
+  approval never overrides a DENY; the backend is the final authority.
+- **Policy administration** - `platform/policy` exposes a `POLICY_REGISTRY` and a
+  strict allow-list `validatePolicyConfig` (configuration is data, tighten-only).
+  `apps/api/src/policy/policy-admin-service.ts` is the only writer, behind
+  `/api/policy/*` and the human-only, non-delegable `policy.read` /
+  `policy.manage` capabilities. Storage is the append-only, versioned
+  `policy_settings` (migration `0023`); every change is a new version.
+- **Configurable policies** - `POLICY_FINANCE_BUDGET_LIMIT` and
+  `POLICY_APPROVAL_AUTHORITY` only; everything else is platform-managed.
+- **Approval governance** - a REQUIRE_APPROVAL decision may carry an approval
+  requirement (separation of duties, required approver role, TTL) that is copied
+  onto the approval record. `authorizeApprovalDecision` is the single decider
+  rule set for every channel. Approvals expire (default 24h) under an injectable
+  clock; expiry is idempotent and an expired approval never authorizes.
+- **REST and workflows** - `enforceRestPolicy` applies policy to human REST
+  mutations (origin `rest`); composite workflow inner steps are bounded by the
+  initiator's RBAC ceiling (migration `0024`) and evaluated by policy.
+- **Observability and audit** - `approval.granted|rejected|expired` and
+  `policy.*` activity events; `APPROVAL_EXPIRED` failure code and `expired`
+  approval timing state. Telemetry never feeds a decision.
+
+Design, invariants and residual risks:
+`platform/ai-runtime/docs/TRUST_MODEL.md` §12.
+
+---
+
+## 23. Governed business execution (implementation note)
+
+§12 and §22 define approval as a human gate. Prompt 9 makes the whole path from
+request to proof explicit and closes the gaps between the steps, reusing the
+existing seams. The canonical description is
+`platform/ai-runtime/docs/GOVERNED_EXECUTION.md`.
+
+- **Lifecycle** - REQUEST -> AUTHENTICATION -> SCOPE -> CAPABILITY -> AGENT
+  AUTHORITY -> POLICY -> APPROVAL -> APPROVED ARGUMENTS -> EXECUTION ->
+  VERIFICATION -> LINEAGE -> AUDIT -> RESPONSE. Only the request and the wording of
+  the response are advisory; every other step is deterministic backend code.
+- **State machine** - `APPROVAL_TRANSITIONS` (with `canTransition`,
+  `assertTransition`, `sourcesOf`) is the single table behind the in-memory and
+  PostgreSQL approval engines; `EXECUTION_LIFECYCLE` maps the governed phases onto
+  the existing approval and step statuses (no new persisted state).
+- **Actors** - requester, agent, delegation, effective authority, approver and
+  executor stay distinct. The approver is descriptive (`approvedBy` on lineage,
+  `decidedBy` on the approval and run) and never the actor or executor.
+- **Approved arguments** - canonical equality with the stored approval input; a run
+  that names an approval must consume it (`APPROVAL_NOT_BOUND` otherwise); a
+  resumed agent approval runs under the requester's ceiling narrowed to the
+  agent's effective capabilities.
+- **Verification** - tools declare `verification {source, limitation?}`; the
+  recorded source is never stronger than the declared one, and read-back tools
+  make a lying handler `UNVERIFIED`.
+- **Composite workflows** - inner steps are preflighted; uncovered inner approval
+  governance refuses `WORKFLOW_INNER_APPROVAL_UNCOVERED` before anything runs.
+- **Correlation** - the runtime run detail carries a server-joined `governance`
+  block and the decision trace an `actors` block; runs filter by `approvalId` and
+  `invocationId`.
+
+Invariants: `platform/ai-runtime/docs/TRUST_MODEL.md` §13. Residual risks:
+`GOVERNED_EXECUTION.md` §11.
 
 ---
 

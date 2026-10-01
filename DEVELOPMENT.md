@@ -18,17 +18,23 @@ Twelve specification documents at the repo root are the source of truth (`PRD.md
 
 The specs describe the full vision; the code is well past MVP but far from all of it. Quick map:
 
-| Area                                                                                                                                                      | State                                                       |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| `apps/api` (Fastify modular monolith), `apps/web` (Vite/React SPA)                                                                                        | Real, primary                                               |
-| Auth (Keycloak OIDC + cookie session), RBAC (S34 authoritative — `business-context/permissions.ts`)                                                       | Real                                                        |
-| Persistence: Postgres via Drizzle, migrations `0000`–`0018`                                                                                               | Real                                                        |
-| AI runtime: orchestrator, discovery, planner, durable approval engine, workflow engine                                                                    | Real                                                        |
-| Registered agents: Workspaces, Projects, HR, Knowledge, Notifications, Calendar, Finance, Workflow                                                        | Real                                                        |
-| MCP server (stdio + authenticated HTTP), external connectors (GitHub, Slack)                                                                              | Real                                                        |
-| Verticals: HR, Projects, Documents, Knowledge, Calendar, Finance, Command Center, detection/problems, remediation, marketplace, integrations, audit views | Real                                                        |
-| `domains/`: crm, sales, inventory, procurement, analytics, administration, marketplace                                                                    | **Stub** (one-line `index.ts`) — later `ROADMAP.md` sprints |
-| `apps/admin`, `apps/docs`                                                                                                                                 | Scaffold only                                               |
+| Area                                                                                                                                                                                                                                                                                                                                                             | State                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `apps/api` (Fastify modular monolith), `apps/web` (Vite/React SPA)                                                                                                                                                                                                                                                                                               | Real, primary                                               |
+| Auth (Keycloak OIDC + cookie session), RBAC (S34 authoritative — `business-context/permissions.ts`)                                                                                                                                                                                                                                                              | Real                                                        |
+| Persistence: Postgres via Drizzle, migrations `0000`–`0024`                                                                                                                                                                                                                                                                                                      | Real                                                        |
+| AI runtime: orchestrator, discovery, planner, durable approval engine, workflow engine                                                                                                                                                                                                                                                                           | Real                                                        |
+| Registered agents: Workspaces, Projects, HR, Knowledge, Notifications, Calendar, Finance, Workflow                                                                                                                                                                                                                                                               | Real                                                        |
+| Agent identity + delegated capabilities (persisted agents, delegations, execution-time enforcement; `platform/agents/src/identity`, `apps/api/src/agent`, `/api/agents`) — see `platform/ai-runtime/docs/TRUST_MODEL.md` §8                                                                                                                                      | Real                                                        |
+| Central policy engine (`platform/policy`: pure, versioned, fail-closed rules; `apps/api/src/policy`: fact-resolving port + append-only org configuration) on every AI/agent/MCP/workflow path — see `platform/ai-runtime/docs/TRUST_MODEL.md` §9                                                                                                                 | Real                                                        |
+| Evidence provenance + data lineage (`platform/lineage`: append-only tenant-scoped `lineage_records`; execution/plan/evidence/verification recorded at the `ToolExecutor` chokepoint; decision trace at `GET /api/audit/events/:id/trace`) — see `platform/ai-runtime/docs/TRUST_MODEL.md` §10                                                                    | Real                                                        |
+| Policy administration + approval governance (`/api/policy/*`, `policy.read` / `policy.manage`; approval authority, separation of duties, expiry; REST policy enforcement) — see `platform/ai-runtime/docs/TRUST_MODEL.md` §12                                                                                                                                    | Real                                                        |
+| Governed business execution (approval state machine, exact approved arguments and `APPROVAL_NOT_BOUND`, declared verification sources with read-back, approver/agent/requester actor continuity, runtime run governance join) — see `platform/ai-runtime/docs/GOVERNED_EXECUTION.md` and `TRUST_MODEL.md` §13                                                    | Real                                                        |
+| Runtime observability + execution telemetry (`platform/observability`: append-only tenant-scoped `runtime_runs`; stage / model / tool / approval timing and failure taxonomy recorded at the orchestrator and `ToolExecutor` chokepoints; operator view at `GET /api/ops/runtime/*` + the Runtime Runs page) — see `platform/ai-runtime/docs/TRUST_MODEL.md` §11 | Real                                                        |
+| MCP server (stdio + authenticated HTTP), external connectors (GitHub, Slack)                                                                                                                                                                                                                                                                                     | Real                                                        |
+| Verticals: HR, Projects, Documents, Knowledge, Calendar, Finance, Command Center, detection/problems, remediation, marketplace, integrations, audit views                                                                                                                                                                                                        | Real                                                        |
+| `domains/`: crm, sales, inventory, procurement, analytics, administration, marketplace                                                                                                                                                                                                                                                                           | **Stub** (one-line `index.ts`) — later `ROADMAP.md` sprints |
+| `apps/admin`, `apps/docs`                                                                                                                                                                                                                                                                                                                                        | Scaffold only                                               |
 
 `git log` HEAD is `feat(s34)`; the working tree typically carries later uncommitted sprint work.
 `pnpm typecheck` / `pnpm lint` / `pnpm test` (~1,300 tests) are the gates — keep them green.
@@ -62,7 +68,14 @@ pnpm format:check
 
 pnpm demo:reset              # seed demo data (apps/api/scripts/seed-demo.ts)
 pnpm scan:secrets            # scripts/scan-secrets.mjs
+
+pnpm eval:run                # scenario evaluation (in-memory, real app) → evaluation-results/
+pnpm scenarios:seed          # deterministic scenario dataset → DATABASE_URL (idempotent)
+pnpm scenarios:reset         # delete only the dataset's rows, then reseed
 ```
+
+The scenario dataset and evaluation framework (`packages/evaluation`,
+`apps/api/evaluation`) are documented in `packages/evaluation/README.md`.
 
 Ports can be overridden: `NEXORA_API_PORT=3100 NEXORA_WEB_PORT=5174 pnpm dev:local`.
 Copy `.env.example` to `.env` first — Postgres is mapped to host port **5433** (not 5432).
@@ -135,7 +148,7 @@ mostly `.gitkeep` placeholders per `ENGINEERING_PLAYBOOK.md §3.3`; real code li
 
 - `src/App.tsx` — routes. Onboarding flow: Landing → Login (SSO) → `/onboarding/organization` →
   `/onboarding/workspace` → `/app` shell (`/app/command-center`, `/app/agent`, `/app/projects`,
-  `/app/employees`, `/app/finance`, `/app/audit`, …). `RequireAuth` + `SessionProvider` live in
+  `/app/employees`, `/app/finance`, `/app/audit`, `/app/policy` (policy administration, `policy.read`), `/app/approvals`, …). `RequireAuth` + `SessionProvider` live in
   `src/session.tsx`; `GET /api/me` resolves the session.
 - Dev server proxies `/api/*` → `http://localhost:3001` so SPA and API share an origin and the
   session cookie flows without CORS.

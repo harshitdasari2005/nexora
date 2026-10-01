@@ -66,6 +66,15 @@ export interface S3Config {
   bucket: string;
 }
 
+/** Runtime observability configuration. */
+export interface ObservabilityConfig {
+  /**
+   * TRUSTED, versioned model pricing JSON (`{version,currency,models:{"provider/model":{promptPer1k,completionPer1k}}}`).
+   * Absent → cost is `null`; Nexora never invents pricing.
+   */
+  modelPricingJson?: string;
+}
+
 /** External connector credentials (S25 Phase 7 — environment only). */
 export interface ConnectorsConfig {
   /** GitHub personal-access token (the GitHub connection credential). */
@@ -95,6 +104,12 @@ export interface CookieConfig {
 }
 
 /** The API container configuration. */
+/** Demo-mode configuration. */
+export interface DemoConfig {
+  /** Explicit opt-in (NEXORA_DEMO_MODE=true). Never enabled by default. */
+  enabled: boolean;
+}
+
 export interface ApiConfig {
   /** HTTP listen port. */
   port: number;
@@ -117,11 +132,22 @@ export interface ApiConfig {
   /** External connector credentials + tenant binding (S25 Phase 7). */
   connectors: ConnectorsConfig;
   /**
+   * Runtime observability (Prompt 7). Optional so existing hand-built configs
+   * keep compiling.
+   */
+  observability?: ObservabilityConfig;
+  /**
    * S3/MinIO object storage. `undefined` when S3_ENDPOINT is not set — the
    * container then falls back to the in-memory storage port (local dev
    * without MinIO). Durable content requires S3 configured.
    */
   s3: S3Config | undefined;
+  /**
+   * Demo mode (final demo experience). Optional so existing hand-built configs
+   * keep compiling; absent means DISABLED. When disabled the demo routes do not
+   * exist (404) and normal authentication is unchanged.
+   */
+  demo?: DemoConfig;
   /** Structured log level. */
   logLevel: 'debug' | 'info' | 'warn' | 'error';
 }
@@ -236,7 +262,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
       slackToken: env['SLACK_TOKEN']?.trim() || undefined,
       tenantId: env['CONNECTOR_TENANT_ID']?.trim() || undefined,
     },
+    observability: { modelPricingJson: env['NEXORA_MODEL_PRICING']?.trim() || undefined },
     s3: loadS3Config(env),
+    demo: { enabled: env['NEXORA_DEMO_MODE'] === 'true' },
     logLevel,
   };
 }

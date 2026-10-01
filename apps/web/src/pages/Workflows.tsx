@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Badge,
   Button,
@@ -25,11 +25,14 @@ import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
 import { humanizeIdentifier } from '../lib/humanize.js';
 import type {
+  CompositeApprovalDto,
   DashboardResponse,
   WorkflowExecutionRecordDto,
   WorkflowInstanceDto,
+  WorkflowStateKey,
   WorkflowStepExecutionDto,
 } from '../lib/types.js';
+import { resolveWorkflowState, stateStyle } from '../lib/workflowState.js';
 import { useSession } from '../session.js';
 
 /** The workflow execution view. */
@@ -40,9 +43,10 @@ export function Workflows(): JSX.Element {
   const [state, setState] = useState<{
     dashboard: DashboardResponse | null;
     workflows: WorkflowInstanceDto[];
+    composites: CompositeApprovalDto[];
     loading: boolean;
     error: ApiError | null;
-  }>({ dashboard: null, workflows: [], loading: true, error: null });
+  }>({ dashboard: null, workflows: [], composites: [], loading: true, error: null });
 
   const load = useCallback(async () => {
     // Keeps any already-loaded dashboard visible while refetching — a role
@@ -56,13 +60,20 @@ export function Workflows(): JSX.Element {
       const suffix = params.size > 0 ? `?${params.toString()}` : '';
       const dashboard = await api<DashboardResponse>(`/dashboard${suffix}`);
       if (dashboard.organization === null) {
-        setState({ dashboard, workflows: [], loading: false, error: null });
+        setState({ dashboard, workflows: [], composites: [], loading: false, error: null });
         return;
       }
-      const listed = await api<{ workflows: WorkflowInstanceDto[] }>(
-        `/workflows?organizationId=${encodeURIComponent(dashboard.organization.id)}`,
-      );
-      setState({ dashboard, workflows: listed.workflows, loading: false, error: null });
+      const listed = await api<{
+        workflows: WorkflowInstanceDto[];
+        composites?: CompositeApprovalDto[];
+      }>(`/workflows?organizationId=${encodeURIComponent(dashboard.organization.id)}`);
+      setState({
+        dashboard,
+        workflows: listed.workflows,
+        composites: listed.composites ?? [],
+        loading: false,
+        error: null,
+      });
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -126,6 +137,7 @@ export function Workflows(): JSX.Element {
         organizationId={dashboard.organization.id}
         organizationName={dashboard.organization.name}
         initialWorkflows={state.workflows}
+        initialComposites={state.composites}
       />
     </AppShell>
   );
@@ -139,6 +151,8 @@ export interface WorkflowsViewProps {
   organizationName: string;
   /** The workflows to render. */
   initialWorkflows: readonly WorkflowInstanceDto[];
+  /** Composite unit approvals with no workflow instance (waiting / rejected / expired / refused). */
+  initialComposites?: readonly CompositeApprovalDto[];
 }
 
 /** The pure workflows content (exported for smoke tests). */
@@ -146,8 +160,12 @@ export function WorkflowsView({
   organizationId,
   organizationName,
   initialWorkflows,
+  initialComposites = [],
 }: WorkflowsViewProps): JSX.Element {
   const [workflows, setWorkflows] = useState<WorkflowInstanceDto[]>(() => [...initialWorkflows]);
+  const [composites, setComposites] = useState<CompositeApprovalDto[]>(() => [
+    ...initialComposites,
+  ]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<WorkflowExecutionRecordDto | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -177,10 +195,12 @@ export function WorkflowsView({
 
   const refresh = useCallback(async () => {
     try {
-      const listed = await api<{ workflows: WorkflowInstanceDto[] }>(
-        `/workflows?organizationId=${encodeURIComponent(organizationId)}`,
-      );
+      const listed = await api<{
+        workflows: WorkflowInstanceDto[];
+        composites?: CompositeApprovalDto[];
+      }>(`/workflows?organizationId=${encodeURIComponent(organizationId)}`);
       setWorkflows(listed.workflows);
+      setComposites(listed.composites ?? []);
     } catch {
       // Keep the mounted list intact on a background refresh failure.
     }
@@ -209,7 +229,15 @@ export function WorkflowsView({
         </Button>
       </Stack>
 
-      {workflows.length === 0 ? (
+      {composites.length > 0 ? (
+        <Stack gap={3}>
+          {composites.map((composite) => (
+            <CompositeApprovalRow key={composite.approvalId} composite={composite} />
+          ))}
+        </Stack>
+      ) : null}
+
+      {workflows.length === 0 && composites.length === 0 ? (
         <Card>
           <EmptyState
             icon="⧉"
@@ -217,7 +245,7 @@ export function WorkflowsView({
             description="Ask the AI: “Create a project called Mobile Banking and assign Priya to it.” The workflow will appear here."
           />
         </Card>
-      ) : (
+      ) : workflows.length === 0 ? null : (
         <Stack gap={3}>
           {workflows.map((workflow) => (
             <WorkflowRow
@@ -246,7 +274,7 @@ export function WorkflowsView({
               {detailError}
             </div>
           ) : detail !== null ? (
-            <StepTimeline steps={detail.steps} status={detail.instance.status} />
+            <StepTimeline steps={detail.steps} instance={detail.instance} />
           ) : null}
         </Card>
       ) : null}
@@ -281,10 +309,7 @@ export function WorkflowRow({
             style={{
               fontSize: typography.sizes.xs,
               color: 'var(--nexora-textMuted)',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: 480,
+              maxWidth: 520,
             }}
             title={workflow.id}
           >
@@ -295,10 +320,11 @@ export function WorkflowRow({
               hour: 'numeric',
               minute: '2-digit',
             })}
+            {workflow.stateDetail !== undefined ? ` — ${workflow.stateDetail}` : ''}
           </div>
         </Stack>
         <Stack direction="row" gap={3} align="center" style={{ flexShrink: 0 }}>
-          <WorkflowStatusBadge status={workflow.status} />
+          <WorkflowStatusBadge instance={workflow} />
           <Button size="sm" variant={selected ? 'primary' : 'secondary'} onClick={onOpen}>
             {selected ? 'Viewing' : 'View'}
           </Button>
@@ -308,89 +334,149 @@ export function WorkflowRow({
   );
 }
 
+/** A composite waiting for / refused at its unit approval: no instance exists. */
+export function CompositeApprovalRow({
+  composite,
+}: {
+  composite: CompositeApprovalDto;
+}): JSX.Element {
+  return (
+    <Card style={{ padding: '14px 16px' }}>
+      <Stack
+        direction="row"
+        gap={3}
+        align="center"
+        justify="space-between"
+        style={{ flexWrap: 'wrap' }}
+      >
+        <Stack gap={0.5} style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: typography.weights.semibold }} title={composite.capabilityId}>
+            {humanizeIdentifier(composite.definitionKey ?? composite.capabilityId)}
+          </div>
+          <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+            {composite.stateDetail}
+          </div>
+        </Stack>
+        <Stack direction="row" gap={3} align="center" style={{ flexShrink: 0 }}>
+          <WorkflowStateBadge state={composite.state} />
+          {composite.state === 'waiting_for_approval' ? (
+            <Link to="/app/approvals" style={{ fontSize: typography.sizes.sm }}>
+              Open approvals
+            </Link>
+          ) : null}
+        </Stack>
+      </Stack>
+    </Card>
+  );
+}
+
+const STEP_VERIFICATION_TEXT: Readonly<Record<string, string>> = {
+  verified: 'verified by state read-back',
+  self_reported: 'self-reported by the tool — no independent read-back',
+  unverified: 'verification did not pass',
+  missing: 'no verification record found',
+};
+
 /** The read-only step timeline of a workflow execution. */
 export function StepTimeline({
   steps,
-  status,
+  instance,
 }: {
   steps: readonly WorkflowStepExecutionDto[];
-  status: string;
+  instance: WorkflowInstanceDto;
 }): JSX.Element {
-  const succeeded = status === 'succeeded';
+  const state = resolveWorkflowState(instance);
+  const style = stateStyle(state);
+  const detail =
+    instance.stateDetail ??
+    (state === 'completed_unverified' ? 'Completed — not independently verified.' : style.label);
   return (
     <Stack gap={2}>
-      {steps.map((step) => (
-        <div key={step.id} style={{ display: 'flex', gap: 10 }}>
-          <span aria-hidden style={{ width: 20, textAlign: 'center', flexShrink: 0 }}>
-            {step.status === 'succeeded' ? '✓' : step.status === 'failed' ? '✕' : '…'}
-          </span>
-          <Stack gap={0} style={{ minWidth: 0 }}>
-            <div style={{ fontSize: typography.sizes.sm, fontWeight: typography.weights.medium }}>
-              {step.name}
-            </div>
-            <div
-              style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}
-              title={step.capabilityId}
-            >
-              {humanizeIdentifier(step.capabilityId)}
-              {step.attempt > 1 ? ` · attempt ${step.attempt}` : ''}
-              {step.error !== undefined ? ` · ${step.error}` : ''}
-            </div>
-          </Stack>
-        </div>
-      ))}
-      {succeeded ? (
-        <div style={{ display: 'flex', gap: 10 }}>
-          <span aria-hidden style={{ width: 20, textAlign: 'center', flexShrink: 0 }}>
-            ✓
-          </span>
-          <span style={{ fontSize: typography.sizes.sm }}>Verify</span>
-        </div>
-      ) : null}
+      {steps.map((step) => {
+        const compensation = step.purpose === 'compensation';
+        const verification = step.verification;
+        const verificationText =
+          verification !== undefined && verification.status !== 'not_applicable'
+            ? STEP_VERIFICATION_TEXT[verification.status]
+            : undefined;
+        return (
+          <div key={step.id} style={{ display: 'flex', gap: 10 }}>
+            <span aria-hidden style={{ width: 20, textAlign: 'center', flexShrink: 0 }}>
+              {compensation
+                ? '↺'
+                : step.status === 'succeeded'
+                  ? '✓'
+                  : step.status === 'failed'
+                    ? '✕'
+                    : '…'}
+            </span>
+            <Stack gap={0} style={{ minWidth: 0 }}>
+              <div style={{ fontSize: typography.sizes.sm, fontWeight: typography.weights.medium }}>
+                {step.name}
+                {compensation ? ' (rollback)' : ''}
+              </div>
+              <div
+                style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}
+                title={step.capabilityId}
+              >
+                {humanizeIdentifier(step.capabilityId)}
+                {` · ${step.status}`}
+                {step.attempt > 1 ? ` · attempt ${step.attempt}` : ''}
+                {step.errorCode !== undefined ? ` · ${step.errorCode}` : ''}
+                {step.error !== undefined ? ` · ${step.error}` : ''}
+                {verificationText !== undefined ? ` · ${verificationText}` : ''}
+              </div>
+            </Stack>
+          </div>
+        );
+      })}
       <div
+        role="status"
+        data-workflow-state={state}
         style={{
           marginTop: 4,
           fontSize: typography.sizes.xs,
           fontWeight: typography.weights.medium,
-          color: succeeded ? 'var(--nexora-success)' : 'var(--nexora-danger)',
+          // Green ONLY for a verified success; everything else is never green.
+          color:
+            style.tone === 'success'
+              ? 'var(--nexora-success)'
+              : style.tone === 'warning'
+                ? 'var(--nexora-warning)'
+                : style.tone === 'danger'
+                  ? 'var(--nexora-danger)'
+                  : 'var(--nexora-textSecondary)',
         }}
       >
-        {succeeded
-          ? 'Workflow completed.'
-          : status === 'failed'
-            ? 'Workflow failed — no partial success was reported.'
-            : `Workflow ${status.replaceAll('_', ' ')}.`}
+        <span aria-hidden>{style.icon} </span>
+        {style.label}. {detail}
       </div>
+      {instance.approvalId !== undefined || instance.initiator !== undefined ? (
+        <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+          {instance.initiator !== undefined ? `Initiated by ${instance.initiator}` : ''}
+          {instance.approvalId !== undefined ? ` · approval ${instance.approvalId}` : ''}
+          {instance.errorCode !== undefined ? ` · error ${instance.errorCode}` : ''}
+        </div>
+      ) : null}
     </Stack>
   );
 }
 
-/** Maps a workflow status to a tone. */
-export function WorkflowStatusBadge({ status }: { status: string }): JSX.Element {
-  if (status === 'succeeded') {
-    return (
-      <Badge tone="success" dot>
-        Completed
-      </Badge>
-    );
-  }
-  if (status === 'failed') {
-    return <Badge tone="danger">Failed</Badge>;
-  }
-  if (status === 'cancelled') {
-    // Matches the "Cancelled" tone used everywhere else in the app
-    // (projects, employees, remediation plans) — danger, not neutral.
-    return <Badge tone="danger">Cancelled</Badge>;
-  }
-  if (status === 'awaiting_approval') {
-    return <Badge tone="warning">Awaiting approval</Badge>;
-  }
-  if (status === 'running' || status === 'ready' || status === 'planning') {
-    return (
-      <Badge tone="primary" dot>
-        Running
-      </Badge>
-    );
-  }
-  return <Badge>Created</Badge>;
+/** A state badge (the only mapping from state to tone). */
+export function WorkflowStateBadge({ state }: { state: WorkflowStateKey }): JSX.Element {
+  const style = stateStyle(state);
+  return (
+    <Badge tone={style.tone} dot={state === 'executing' || state === 'verified'}>
+      {style.label}
+    </Badge>
+  );
+}
+
+/** Renders the badge of an instance (server state, else a conservative derivation). */
+export function WorkflowStatusBadge({
+  instance,
+}: {
+  instance: Pick<WorkflowInstanceDto, 'status' | 'state' | 'compensation'>;
+}): JSX.Element {
+  return <WorkflowStateBadge state={resolveWorkflowState(instance)} />;
 }

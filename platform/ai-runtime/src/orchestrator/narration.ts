@@ -32,7 +32,15 @@ export function composeResponse(input: NarrationInput): string {
     return 'I could not determine what you need. Please clarify your request.';
   }
   if (input.status === 'failed') {
-    return `I could not complete "${input.intent}". The plan could not be executed.`;
+    // The raw failure message stays out of the response; only a detail the
+    // tool itself vetted as safe (e.g. what was rolled back) is added.
+    const details = input.steps
+      .filter((step) => step.status === 'failed' && step.detail !== undefined)
+      .map((step) => step.detail as string);
+    return [
+      `I could not complete "${input.intent}". The plan could not be executed.`,
+      ...details,
+    ].join(' ');
   }
 
   const succeeded = input.steps.filter((step) => step.status === 'succeeded');
@@ -98,7 +106,7 @@ function describeOutput(output: unknown): string {
   if (retrieval !== undefined) {
     return retrieval;
   }
-  return cap(JSON.stringify(output));
+  return summarizeStructured(output, COMPOSER_OUTPUT_BUDGET);
 }
 
 /** Inputs to {@link renderResultsDigest}. */
@@ -162,6 +170,9 @@ export function renderResultsDigest(input: ResultsDigestInput): string {
       lines.push(`${n}. ${step.capabilityId} — blocked, awaiting human approval; not executed`);
     } else if (step.status === 'failed') {
       lines.push(`${n}. ${step.capabilityId} — did not complete; no result was returned`);
+      if (step.detail !== undefined) {
+        lines.push(`   Outcome: ${step.detail}`);
+      }
     } else {
       lines.push(`${n}. ${step.capabilityId} — skipped; an earlier step did not complete`);
     }
@@ -208,7 +219,7 @@ function describeOutputForDigest(output: unknown): string {
   if (output === undefined || output === null) {
     return '';
   }
-  return truncate(JSON.stringify(output), DIGEST_OUTPUT_BUDGET);
+  return summarizeStructured(output, DIGEST_OUTPUT_BUDGET);
 }
 
 /** One retrieved knowledge reference, as tools emit it. */
@@ -303,9 +314,206 @@ function renderRetrieval(
   return `${shown.join(' · ')}${more.length > 0 ? ` (${more})` : ''}`;
 }
 
-/** Truncates a serialized value for narration (400 chars). */
+/** Character budget of one structured tool output in the user-facing composer. */
+const COMPOSER_OUTPUT_BUDGET = 600;
+
+/** Character budget of a plain-string tool output in the user-facing composer. */
+const STRING_OUTPUT_BUDGET = 600;
+
+/** Longest single scalar value shown inside a structured summary. */
+const SCALAR_BUDGET = 160;
+
+/** Longest tool-authored `message` / `summary` kept whole (they are already concise). */
+const HEADLINE_BUDGET = 400;
+
+/** Depth to which nested objects are flattened into summary fields. */
+const SUMMARY_MAX_DEPTH = 3;
+
+/** Keys that identify the entity or state of a result, in display order. */
+const PRIORITY_KEYS: readonly string[] = [
+  'message',
+  'summary',
+  'name',
+  'title',
+  'id',
+  'status',
+  'outcome',
+  'result',
+  'count',
+  'total',
+  'error',
+];
+
+/**
+ * Keys that carry a tool-authored, human-readable headline. When present,
+ * they lead the summary and are kept whole — a result is described first in
+ * the tool's own words ("Sarah Thomas was hired and assigned to Mobile
+ * Banking Platform"), then supported by the structured fields.
+ */
+const HEADLINE_KEYS: readonly string[] = ['message', 'summary'];
+
+/** A flattened field of a structured output. */
+interface SummaryField {
+  path: string;
+  text: string;
+  rank: number;
+}
+
+/**
+ * Renders a structured tool output as a compact field summary instead of a
+ * blind prefix of its JSON.
+ *
+ * Slicing serialized JSON keeps whatever key happens to come first, so a
+ * large nested block (a step timeline, a list) silently displaced the entity
+ * name, id, and outcome that the answer must state. Here the object is
+ * flattened to `path: value` fields and ranked — headline text and
+ * identifying fields (`name`, `id`, `status`, …) first — and whole fields are
+ * admitted while they fit the budget. A field is never cut mid-value, and
+ * whatever does not fit is counted (`+N more fields`), never lost silently.
+ * Arrays of objects render as short labelled items (`steps: Hire employee:
+ * succeeded; …`). Nothing is inferred: every value shown is copied from the
+ * output.
+ */
+function summarizeStructured(output: unknown, budget: number): string {
+  if (output === undefined || output === null) {
+    return '';
+  }
+  if (typeof output !== 'object') {
+    return truncate(String(output), budget);
+  }
+  const fields: SummaryField[] = [];
+  collectFields(output, '', 0, fields);
+  if (fields.length === 0) {
+    return truncate(JSON.stringify(output), budget);
+  }
+  fields.sort((a, b) => a.rank - b.rank);
+
+  const shown: string[] = [];
+  let used = 0;
+  for (const field of fields) {
+    const rendered = HEADLINE_KEYS.includes(field.path)
+      ? field.text
+      : `${field.path}: ${field.text}`;
+    const cost = rendered.length + 2;
+    // The first field is always shown (a result is never rendered empty).
+    if (shown.length > 0 && used + cost > budget) {
+      continue;
+    }
+    shown.push(rendered);
+    used += cost;
+  }
+  const omitted = fields.length - shown.length;
+  const joined = shown.join('; ');
+  return omitted > 0 ? `${joined} (+${omitted} more field${omitted === 1 ? '' : 's'})` : joined;
+}
+
+/** Flattens an object into ranked scalar / list-of-labels fields. */
+function collectFields(value: unknown, path: string, depth: number, into: SummaryField[]): void {
+  if (Array.isArray(value)) {
+    if (path.length > 0) {
+      into.push({ path, text: summarizeArray(value), rank: rankOf(path) });
+    }
+    return;
+  }
+  if (typeof value !== 'object' || value === null) {
+    if (path.length > 0) {
+      const leaf = path.slice(path.lastIndexOf('.') + 1);
+      const budget = HEADLINE_KEYS.includes(path) ? HEADLINE_BUDGET : SCALAR_BUDGET;
+      into.push({ path, text: truncate(String(value), budget), rank: rankOf(path, leaf) });
+    }
+    return;
+  }
+  if (depth >= SUMMARY_MAX_DEPTH) {
+    into.push({ path, text: truncate(JSON.stringify(value), SCALAR_BUDGET), rank: rankOf(path) });
+    return;
+  }
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (child === undefined || child === null) {
+      continue;
+    }
+    collectFields(child, path.length > 0 ? `${path}.${key}` : key, depth + 1, into);
+  }
+}
+
+/** Character budget of one array field (its items are admitted whole, never cut). */
+const ARRAY_BUDGET = 480;
+
+/** Longest single value shown inside an array item. */
+const ITEM_VALUE_BUDGET = 100;
+
+/**
+ * Renders an array as a count plus its items. Each object item is shown by
+ * ALL of its scalar fields (`name=Engineering slug=engineering status=active`,
+ * identifying keys first), so no field of a listed entity is dropped; items are
+ * admitted whole while they fit {@link ARRAY_BUDGET}, and the rest are counted.
+ */
+function summarizeArray(items: readonly unknown[]): string {
+  if (items.length === 0) {
+    return 'none';
+  }
+  const rendered: string[] = [];
+  let used = 0;
+  for (const item of items) {
+    const text = describeItem(item);
+    if (rendered.length > 0 && used + text.length + 2 > ARRAY_BUDGET) {
+      break;
+    }
+    rendered.push(text);
+    used += text.length + 2;
+  }
+  const more = items.length - rendered.length;
+  const suffix = more > 0 ? ` (+${more} more)` : '';
+  return `${items.length} item${items.length === 1 ? '' : 's'} [${rendered.join('; ')}]${suffix}`;
+}
+
+/** One array item: a scalar as-is, an object as its scalar `key=value` pairs. */
+function describeItem(item: unknown): string {
+  if (typeof item !== 'object' || item === null) {
+    return truncate(String(item), ITEM_VALUE_BUDGET);
+  }
+  if (Array.isArray(item)) {
+    return `${item.length} item${item.length === 1 ? '' : 's'}`;
+  }
+  const pairs: { key: string; text: string }[] = [];
+  const walk = (record: Record<string, unknown>, prefix: string, depth: number): void => {
+    for (const [key, value] of Object.entries(record)) {
+      const path = prefix.length > 0 ? `${prefix}.${key}` : key;
+      if (value === undefined || value === null) {
+        continue;
+      }
+      if (typeof value === 'object') {
+        if (!Array.isArray(value) && depth < 1) {
+          walk(value as Record<string, unknown>, path, depth + 1);
+        }
+        continue;
+      }
+      pairs.push({ key: path, text: `${path}=${truncate(String(value), ITEM_VALUE_BUDGET)}` });
+    }
+  };
+  walk(item as Record<string, unknown>, '', 0);
+  if (pairs.length === 0) {
+    return '{}';
+  }
+  pairs.sort((a, b) => rankOf(a.key) - rankOf(b.key));
+  return pairs.map((pair) => pair.text).join(' ');
+}
+
+/**
+ * Display rank of a field: headline first, then identifying keys in
+ * {@link PRIORITY_KEYS} order (shallower paths before deeper), then the rest.
+ */
+function rankOf(path: string, leaf: string = path.slice(path.lastIndexOf('.') + 1)): number {
+  const depth = path.split('.').length - 1;
+  const priority = PRIORITY_KEYS.indexOf(leaf);
+  if (priority >= 0) {
+    return priority * 10 + depth;
+  }
+  return 1000 + depth * 10;
+}
+
+/** Truncates a plain-string output for narration, marking the cut. */
 function cap(value: string): string {
-  return truncate(value, 400);
+  return truncate(value, STRING_OUTPUT_BUDGET);
 }
 
 /** Truncates to a character budget, marking the cut with an ellipsis. */

@@ -148,8 +148,12 @@ export interface AgentExecutionStep {
   output?: unknown;
   /** The failure/block reason. */
   error?: string;
+  /** The stable machine code of a failure (a policy/reason code, never argument values). */
+  errorCode?: string;
   /** Whether the result was verified. */
   verified: boolean;
+  /** The delegation that authorized the step, when it ran as an agent (Prompt 4). */
+  delegationId?: string;
 }
 
 /** An approval gate outcome of a governed agent run (card context only). */
@@ -163,7 +167,7 @@ export interface AgentApprovalOutcome {
   /** The capability id (card context). */
   capabilityId?: string;
   /** The gate disposition. */
-  status: 'granted' | 'pending' | 'rejected';
+  status: 'granted' | 'pending' | 'rejected' | 'expired';
   /** The side-effect class that triggered the gate. */
   sideEffectClass: string;
   /** The user-controlled action input (card context; never identity). */
@@ -240,6 +244,16 @@ export interface AgentExecutionRecord {
   stepId?: string;
   /** The remediated problem id (Phase 10). */
   problemId?: string;
+  /**
+   * The agent IDENTITY (security principal, `agt_…`) that ran (Prompt 4).
+   * `agentId` above is the agent DEFINITION; this is WHICH agent. Absent for
+   * historical and remediation rows (human-driven).
+   */
+  agentIdentityId?: string;
+  /** The delegations that authorized the run's executed steps (Prompt 4). */
+  delegationIds?: readonly string[];
+  /** The approval this record's execution ran under, when resumed (Prompt 4). */
+  approvalId?: string;
 }
 
 /**
@@ -284,6 +298,13 @@ export interface AgentExecutionIntent {
    * never find the granted decision and the step reports blocked.
    */
   conversationId?: string;
+  /**
+   * The TRUSTED agent principal the run executes as (Prompt 4): resolved by
+   * server code from a persisted, active agent identity in the caller's
+   * organization + workspace. Every tool invocation is then re-authorized
+   * against the agent's delegations at execution time.
+   */
+  agent?: AgentPrincipalContext;
 }
 
 /**
@@ -378,4 +399,128 @@ export interface BusinessAgentDto {
    * fabricated.
    */
   problems: readonly BusinessProblemDto[];
+}
+
+// ---------------------------------------------------------------------------
+// Agent identity + delegated capabilities (Prompt 4)
+// ---------------------------------------------------------------------------
+
+/**
+ * The lifecycle status of an {@link AgentPrincipal}. `revoked` is terminal.
+ * Only `active` agents can execute anything; the status is checked at
+ * EXECUTION time, not only when a run starts.
+ */
+export type AgentStatus = 'active' | 'suspended' | 'revoked';
+
+/** The agent statuses (for validation). */
+export const AGENT_STATUSES: readonly AgentStatus[] = ['active', 'suspended', 'revoked'];
+
+/**
+ * A durable AGENT IDENTITY: an automated security principal owned by one
+ * organization + workspace. It is NOT a user, a role, a persona, a model, a
+ * conversation, or an API key. It holds NO authority of its own: everything
+ * it may do comes from explicit {@link AgentDelegation}s, intersected with
+ * the initiating user's current authority, its definition's capability
+ * ceiling, workspace scope, policy, and approval — evaluated at execution
+ * time on the server.
+ *
+ * `definitionId` names the {@link BusinessAgentDefinition} (the engine
+ * configuration: goals, policies, and the maximum capability set any
+ * instance of that definition may ever be delegated).
+ */
+export interface AgentPrincipal {
+  /** Agent id (`agt_…`). */
+  id: string;
+  /** The owning organization (tenant). */
+  organizationId: string;
+  /** The owning workspace — the agent never acts outside it. */
+  workspaceId: string;
+  /** The business-agent definition this identity runs (e.g. `finance`). */
+  definitionId: BusinessAgentId;
+  /** Display name. */
+  name: string;
+  /** What the agent is for. */
+  description: string;
+  /** Lifecycle status (checked at execution time). */
+  status: AgentStatus;
+  /** The user accountable for the agent. Ownership grants NO authority. */
+  ownerUserId: string;
+  /** The user who created the agent. */
+  createdBy: string;
+  /** The user who last changed the status, when changed. */
+  statusChangedBy?: string;
+  /** Why the status last changed, when given. */
+  statusReason?: string;
+  /** ISO-8601 UTC. */
+  createdAt: string;
+  /** ISO-8601 UTC. */
+  updatedAt: string;
+}
+
+/**
+ * The resource a delegation is restricted to. `undefined` scope means the
+ * whole workspace (still bounded by tenant + workspace + capability).
+ */
+export interface AgentResourceScope {
+  /** The resource kind the capability operates on. */
+  kind: 'project' | 'budget';
+  /** The resource id (validated to exist in the delegation's org/workspace). */
+  id: string;
+}
+
+/** The stored lifecycle status of a delegation (`expired` is derived, never stored). */
+export type AgentDelegationStatus = 'active' | 'revoked';
+
+/** The effective state of a delegation at a given instant. */
+export type AgentDelegationEffectiveStatus = 'active' | 'revoked' | 'expired';
+
+/**
+ * One explicit, auditable grant of ONE executable capability to ONE agent,
+ * by ONE human, inside ONE organization + workspace, optionally restricted
+ * to one resource and bounded in time. Never deleted: revocation keeps the
+ * record as historical evidence.
+ */
+export interface AgentDelegation {
+  /** Delegation id (`dlg_…`). */
+  id: string;
+  /** The agent receiving the capability. */
+  agentId: string;
+  /** The organization (tenant) — equals the agent's. */
+  organizationId: string;
+  /** The workspace — equals the agent's. */
+  workspaceId: string;
+  /** The human who granted it (must hold the capability themselves). */
+  grantedByUserId: string;
+  /** The EXECUTABLE capability id (e.g. `projects.assign_employee`). */
+  capabilityId: string;
+  /** Optional resource restriction. */
+  resourceScope?: AgentResourceScope;
+  /** Stored status. */
+  status: AgentDelegationStatus;
+  /** ISO-8601 UTC. */
+  createdAt: string;
+  /** ISO-8601 UTC expiry, when bounded in time. */
+  expiresAt?: string;
+  /** ISO-8601 UTC, when revoked. */
+  revokedAt?: string;
+  /** Who revoked it, when revoked. */
+  revokedBy?: string;
+  /** Why it was revoked, when given. */
+  revokeReason?: string;
+  /** Free-form, non-authoritative annotations (never read by authorization). */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * The trusted agent principal of a run: set ONLY by server code from a
+ * persisted {@link AgentPrincipal} (never from a request body, tool argument,
+ * or model output) and re-validated at every tool execution.
+ */
+export interface AgentPrincipalContext {
+  /** The agent identity id (`agt_…`). */
+  agentId: string;
+  /** The agent definition id (engine configuration). */
+  definitionId: BusinessAgentId;
+  /** The agent's display name (audit). */
+  name: string;
 }

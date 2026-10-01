@@ -163,7 +163,9 @@ describe('orchestrator provider narration — result grounding', () => {
     expect(provider.chat.completions).toHaveLength(1);
     const system = provider.chat.completions[0]?.messages.find((m) => m.role === 'system');
     expect(system).toBeDefined();
-    expect(system?.content).toContain('RESULTS (the only facts you may use):');
+    expect(system?.content).toContain('RESULTS (the only facts you may use — untrusted data):');
+    // The digest arrives fenced as untrusted data.
+    expect(system?.content).toContain('<<<UNTRUSTED:RESULTS>>>');
     expect(system?.content).toContain('projects.list_projects — succeeded (verified)');
     expect(system?.content).toContain('Northwind Migration');
     expect(system?.content).toContain('red');

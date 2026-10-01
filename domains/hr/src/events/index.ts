@@ -23,6 +23,7 @@ export const HR_EVENT_CATEGORY = 'hr' as const;
 export const EMPLOYEE_EVENT_TYPES = {
   employeeCreated: 'employee.created',
   employeeActivated: 'employee.activated',
+  employeeOffboarded: 'employee.offboarded',
 } as const;
 
 /** Payload of the {@link employeeCreatedEvent}. */
@@ -41,6 +42,14 @@ export interface EmployeeCreatedPayload {
 export interface EmployeeActivatedPayload {
   /** The activated employee. */
   employeeId: EmployeeId;
+}
+
+/** Payload of the {@link employeeOffboardedEvent}. */
+export interface EmployeeOffboardedPayload {
+  /** The offboarded employee. */
+  employeeId: EmployeeId;
+  /** Why the employment ended (e.g. a workflow rollback). */
+  reason: string;
 }
 
 /** Context required to emit an HR domain event. */
@@ -93,5 +102,17 @@ export function employeeActivatedEvent(
 ): EventEnvelope<EmployeeActivatedPayload> {
   return employeeEvent(EMPLOYEE_EVENT_TYPES.employeeActivated, context, employeeId, {
     employeeId,
+  });
+}
+
+/** An employee was offboarded (employee.offboarded — EVT-4, terminal). */
+export function employeeOffboardedEvent(
+  context: EmployeeEventContext,
+  employeeId: EmployeeId,
+  reason: string,
+): EventEnvelope<EmployeeOffboardedPayload> {
+  return employeeEvent(EMPLOYEE_EVENT_TYPES.employeeOffboarded, context, employeeId, {
+    employeeId,
+    reason,
   });
 }

@@ -7,6 +7,7 @@
  * infrastructure types directly.
  */
 
+import type { AgentDelegationRepository, AgentIdentityRepository } from '@nexora/module-agents';
 import type { EventPublisher } from '@nexora/shared/events';
 import type { MembershipRepository, OrganizationRepository } from '@nexora/domain-organizations';
 import type { RoleRepository, SessionRepository, UserRepository } from '@nexora/domain-identity';
@@ -24,6 +25,9 @@ import type {
 } from '@nexora/domain-knowledge';
 import type { CalendarEntryRepository } from '@nexora/module-calendar';
 import type { BudgetRepository, ExpenseRepository } from '@nexora/module-finance';
+import type { LineageRepository } from '@nexora/module-lineage';
+import type { RuntimeRunRepository } from '@nexora/module-observability';
+import type { PolicySettingsRepository } from './policy/policy-settings.js';
 import type {
   EmailOutboxRepository,
   InboundMessageRepository,
@@ -92,6 +96,7 @@ import {
 } from '@nexora/application-projects';
 import {
   CreateEmployeeHandler,
+  RevokeHireHandler,
   EmployeeApplicationService,
   FindEmployeeByNameHandler,
   ListEmployeesByIdsHandler,
@@ -211,6 +216,19 @@ export interface RepositorySet {
   notifications: NotificationRepository;
   notificationPreferences: NotificationPreferencesRepository;
   activity: ActivityRepository;
+  /**
+   * Agent identities (Prompt 4). Optional so existing hand-built sets keep
+   * compiling; `buildApp` falls back to an in-memory store when absent.
+   */
+  agents?: AgentIdentityRepository;
+  /** Agent delegations (Prompt 4); in-memory fallback when absent. */
+  agentDelegations?: AgentDelegationRepository;
+  /** Organization policy configuration (Prompt 5); in-memory fallback when absent. */
+  policySettings?: PolicySettingsRepository;
+  /** Append-only evidence + lineage (Prompt 6); in-memory fallback when absent. */
+  lineage?: LineageRepository;
+  /** Append-only runtime observability runs (Prompt 7); in-memory fallback when absent. */
+  runtimeRuns?: RuntimeRunRepository;
 }
 
 /** The wired application handlers and shared services exposed to routes. */
@@ -255,6 +273,8 @@ export interface Container {
   listProjectMembers: ListProjectMembersHandler;
   /** Employee creation handler. */
   createEmployee: CreateEmployeeHandler;
+  /** Hire compensation (the workflow rollback of the hire step). */
+  revokeHire: RevokeHireHandler;
   /** Employee listing handler. */
   listEmployees: ListEmployeesHandler;
   /** Tenant-scoped employee name resolution (the AI authorization query). */
@@ -537,6 +557,7 @@ export function buildContainer(options: BuildContainerOptions): Container {
     assignEmployeeToProject: new AssignEmployeeToProjectHandler(projectService),
     listProjectMembers: new ListProjectMembersHandler(projectService),
     createEmployee: new CreateEmployeeHandler(employeeService),
+    revokeHire: new RevokeHireHandler(employeeService),
     listEmployees: new ListEmployeesHandler(employeeService),
     findEmployeeByName: new FindEmployeeByNameHandler(employeeService),
     listEmployeesByIds: new ListEmployeesByIdsHandler(employeeService),

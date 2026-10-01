@@ -100,11 +100,32 @@ export function registerRemediationRoutes(
     if (scope.error !== undefined) {
       return reply.code(scope.error.status).send(scope.error.body);
     }
-    const plans = await dependencies.remediation.list({
+    const listed = await dependencies.remediation.list({
       userId: auth.userId,
       tenantId: scope.tenantId,
       workspaceId: scope.workspaceId,
     });
+    if (scope.workspaceId !== undefined) {
+      return { plans: listed };
+    }
+    // No workspace named: the tenant-wide listing must never widen past the
+    // caller's own workspace memberships — drop plans of workspaces the
+    // caller is not a member of (tenant-level, workspace-less plans stay).
+    const mine = await dependencies.listMyWorkspaces.handle({
+      userId: auth.userId,
+      organizationId: scope.tenantId as TenantId,
+    });
+    const memberOf = new Set(mine.ok ? mine.value.map((workspace) => workspace.id as string) : []);
+    const plans = [];
+    for (const plan of listed) {
+      const planWorkspaceId = await dependencies.remediation.planWorkspaceId(
+        scope.tenantId,
+        plan.id,
+      );
+      if (planWorkspaceId === undefined || memberOf.has(planWorkspaceId)) {
+        plans.push(plan);
+      }
+    }
     return { plans };
   });
 
@@ -113,9 +134,10 @@ export function registerRemediationRoutes(
     const { planId } = request.params as { planId: string };
     const query = request.query as { organizationId?: string; workspaceId?: string };
 
-    const scope = await resolveTrustedScope(
+    const scope = await resolvePlanScope(
       dependencies,
       auth.userId,
+      planId,
       query.organizationId,
       query.workspaceId,
     );
@@ -140,9 +162,10 @@ export function registerRemediationRoutes(
     const { planId } = request.params as { planId: string };
     const query = request.query as { organizationId?: string; workspaceId?: string };
 
-    const scope = await resolveTrustedScope(
+    const scope = await resolvePlanScope(
       dependencies,
       auth.userId,
+      planId,
       query.organizationId,
       query.workspaceId,
     );
@@ -164,13 +187,17 @@ export function registerRemediationRoutes(
     if (!result.ok) {
       // A forged/foreign plan id, a non-runnable plan, or a capability
       // escalation — all fail closed with an explicit reason (never a leak).
-      const status = result.reason === 'capability-escalation' ? 403 : 409;
+      // A missing / foreign / other-workspace plan is a plain 404 (no leak).
+      const status =
+        result.reason === 'no-plan' ? 404 : result.reason === 'capability-escalation' ? 403 : 409;
       return reply.code(status).send({
         error: {
           code:
-            result.reason === 'capability-escalation'
-              ? 'CAPABILITY_ESCALATION'
-              : 'PLAN_NOT_RUNNABLE',
+            result.reason === 'no-plan'
+              ? 'NOT_FOUND'
+              : result.reason === 'capability-escalation'
+                ? 'CAPABILITY_ESCALATION'
+                : 'PLAN_NOT_RUNNABLE',
           message: remediationFailureMessage(result.reason),
           requestId: request.id,
         },
@@ -184,9 +211,10 @@ export function registerRemediationRoutes(
     const { planId } = request.params as { planId: string };
     const query = request.query as { organizationId?: string; workspaceId?: string };
 
-    const scope = await resolveTrustedScope(
+    const scope = await resolvePlanScope(
       dependencies,
       auth.userId,
+      planId,
       query.organizationId,
       query.workspaceId,
     );
@@ -222,9 +250,10 @@ export function registerRemediationRoutes(
     const { planId } = request.params as { planId: string };
     const query = request.query as { organizationId?: string; workspaceId?: string };
 
-    const scope = await resolveTrustedScope(
+    const scope = await resolvePlanScope(
       dependencies,
       auth.userId,
+      planId,
       query.organizationId,
       query.workspaceId,
     );
@@ -350,6 +379,53 @@ function remediationReasonCode(reason: string): string {
     default:
       return 'PLAN_NOT_CREATED';
   }
+}
+
+/**
+ * Resolves the trusted scope of a PLAN operation (get / advance / replan /
+ * cancel). Beyond the tenant + optional workspace of {@link resolveTrustedScope}:
+ *
+ * - a plan that belongs to a workspace is operable ONLY under that workspace
+ *   (the service refuses any other scope — see `RemediationApplicationService`);
+ * - when the caller names no workspace, the plan's own workspace is DERIVED and
+ *   the caller's membership of it is verified — a non-member gets the same 404
+ *   as a missing plan (never a 403 that would confirm the plan exists).
+ */
+async function resolvePlanScope(
+  dependencies: RemediationRoutesDependencies,
+  userId: UserId,
+  planId: string,
+  organizationIdQuery?: string,
+  workspaceIdQuery?: string,
+): Promise<TrustedScope> {
+  const scope = await resolveTrustedScope(
+    dependencies,
+    userId,
+    organizationIdQuery,
+    workspaceIdQuery,
+  );
+  if (scope.error !== undefined || scope.workspaceId !== undefined) {
+    return scope;
+  }
+  const planWorkspaceId = await dependencies.remediation.planWorkspaceId(scope.tenantId, planId);
+  if (planWorkspaceId === undefined) {
+    return scope;
+  }
+  const derived = await resolveTrustedScope(
+    dependencies,
+    userId,
+    organizationIdQuery,
+    planWorkspaceId,
+  );
+  if (derived.error !== undefined) {
+    return {
+      error: {
+        status: 404,
+        body: { error: { code: 'NOT_FOUND', message: 'Plan not found' } },
+      },
+    };
+  }
+  return derived;
 }
 
 /** A resolved trusted scope, or an error response. */
