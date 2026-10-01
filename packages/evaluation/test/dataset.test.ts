@@ -13,8 +13,8 @@ import { validateDataset, validateScenario, validateWorld } from '../src/validat
  * report's `dataset.version` always identifies exactly one scenario set.
  */
 const PINNED = {
-  version: '2.0.0',
-  fingerprint: '74e7a94955cf4dae627101394c4092a7d4605c7e42f508e28e48671f27a792da',
+  version: '2.0.1',
+  fingerprint: 'f22e8c9731193680e520c4dae3e49fbc14cd759a590aef3bc7d941f0264ba1b2',
 };
 
 describe('scenario dataset v1', () => {

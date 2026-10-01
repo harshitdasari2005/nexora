@@ -28,6 +28,7 @@ import {
 import { nowIso } from '@nexora/shared/time';
 
 import type { EmailSender } from '../email/email-sender.js';
+import { isInternalHostLiteral } from '../dispatch/destination-guard.js';
 import {
   DuplicateInboundMessageError,
   InboundSenderNotAllowedError,
@@ -484,6 +485,12 @@ function validateWebhookInput(url: string, eventTypes: readonly string[]): Nexor
     return new InvalidWebhookUrlError({ url });
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return new InvalidWebhookUrlError({ url });
+  }
+  // SSRF: an internal literal host (loopback, private, link-local, localhost)
+  // is never a valid destination. Resolution-time checks at delivery cover
+  // hostnames that merely point at internal addresses.
+  if (isInternalHostLiteral(parsed)) {
     return new InvalidWebhookUrlError({ url });
   }
   const unknown = eventTypes.filter((type) => !WEBHOOK_SUBSCRIBABLE_EVENTS.includes(type));

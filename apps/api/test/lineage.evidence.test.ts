@@ -500,7 +500,7 @@ describe('ApiLineagePort', () => {
 
 const open: { close(): Promise<unknown> }[] = [];
 afterEach(async () => {
-  for (const item of open.splice(0)) {
+  for (const item of open.splice(0).reverse()) {
     try {
       await item.close();
     } catch {

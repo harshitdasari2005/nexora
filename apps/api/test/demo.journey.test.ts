@@ -208,12 +208,14 @@ describe('Demo World', () => {
       decision: 'approve',
     });
     expect(self.statusCode).toBe(403);
-    // A user without the required role (the Team Manager) cannot either.
+    // A user without the required role (the Team Manager — also not a member of
+    // the Finance workspace) cannot either: with no standing in the approval's
+    // workspace it is reported exactly like a missing approval (F-008).
     const manager = await demoLogin(app, 'manager');
     const wrong = await call(app, manager).post(`/api/ai/approvals/${approval.id}/decision`, {
       decision: 'approve',
     });
-    expect(wrong.statusCode).toBe(403);
+    expect(wrong.statusCode).toBe(404);
 
     const cfo = await demoLogin(app, 'cfo');
     const decided = await call(app, cfo).post(`/api/ai/approvals/${approval.id}/decision`, {

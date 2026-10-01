@@ -503,6 +503,20 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
           outcome: 'blocked',
           occurredAt: new Date().toISOString(),
         });
+        if (authorization.refusal === 'NOT_A_MEMBER') {
+          // No standing in the approval's organization/workspace: the caller is
+          // told EXACTLY what they would be told for a missing approval, so the
+          // response cannot be used to learn whether an approval id exists. The
+          // refusal above is still recorded in the approval's own tenant audit
+          // trail (documented: TRUST_MODEL §approval authority, NXS-119).
+          return reply.code(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Approval request not found',
+              requestId: request.id,
+            },
+          });
+        }
         return reply.code(403).send({
           error: {
             code: 'AUTHORIZATION_ERROR',

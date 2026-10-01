@@ -129,7 +129,9 @@ The API auto-runs migrations on boot when `DATABASE_AUTO_MIGRATE=true` (default 
 
 ## Guided Demo (demo mode)
 
-Set `NEXORA_DEMO_MODE=true` on the API to enable the gated demo experience. At
+Set `NEXORA_DEMO_MODE=true` on the API to enable the gated demo experience (demo
+sign-in is unauthenticated, so with `NODE_ENV=production` the API refuses to
+start unless `NEXORA_DEMO_ALLOW_IN_PRODUCTION=true` is also set). At
 boot the API seeds one deterministic, isolated demo organization — **Lumen
 Capital (Demo)** — with four real seeded accounts (CEO, Team Manager, Finance
 Controller, CFO), two workspaces (Engineering Delivery, Finance), projects,

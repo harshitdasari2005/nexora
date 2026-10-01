@@ -89,26 +89,10 @@ export async function authorizeApprovalDecision(
   },
 ): Promise<ApprovalDecisionAuthorization> {
   const { approval, deciderId } = input;
-  const governed = approval.requiredApproverRoleId !== undefined || approval.separationOfDuties;
-  if (!governed && approval.userId !== deciderId) {
-    // Legacy rule (no POLICY_APPROVAL_AUTHORITY requirement): only the
-    // requester decides their own approval.
-    return {
-      ok: false,
-      refusal: 'NOT_REQUESTER',
-      message: 'You are not the requester of this approval',
-    };
-  }
-  if (
-    input.channelWorkspaceId !== undefined &&
-    (approval.workspaceId ?? undefined) !== input.channelWorkspaceId
-  ) {
-    return {
-      ok: false,
-      refusal: 'WORKSPACE_MISMATCH',
-      message: 'This approval does not belong to that workspace',
-    };
-  }
+  // Standing FIRST: whether the decider belongs to the approval's organization
+  // and workspace is established before any approval-specific refusal, so a
+  // caller with no standing there learns nothing about the approval (the REST
+  // route answers `NOT_A_MEMBER` exactly like a missing approval).
   const membership = await dependencies.listOrganizations.handle({ userId: deciderId as never });
   const stillMember = membership.ok && membership.value.some((org) => org.id === approval.tenantId);
   if (!stillMember) {
@@ -132,6 +116,26 @@ export async function authorizeApprovalDecision(
         message: 'You are not a member of this workspace',
       };
     }
+  }
+  const governed = approval.requiredApproverRoleId !== undefined || approval.separationOfDuties;
+  if (!governed && approval.userId !== deciderId) {
+    // Legacy rule (no POLICY_APPROVAL_AUTHORITY requirement): only the
+    // requester decides their own approval.
+    return {
+      ok: false,
+      refusal: 'NOT_REQUESTER',
+      message: 'You are not the requester of this approval',
+    };
+  }
+  if (
+    input.channelWorkspaceId !== undefined &&
+    (approval.workspaceId ?? undefined) !== input.channelWorkspaceId
+  ) {
+    return {
+      ok: false,
+      refusal: 'WORKSPACE_MISMATCH',
+      message: 'This approval does not belong to that workspace',
+    };
   }
   const decide = await authorizePermission(
     dependencies.permissions,

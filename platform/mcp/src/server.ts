@@ -68,7 +68,18 @@ export interface NexoraMCPServerOptions {
    * input; trusted scope always comes from the session context.
    */
   argumentPolicy?: NexoraMCPArgumentPolicy;
+  /**
+   * HTTP sessions: how long a session may sit idle before it is discarded
+   * (default {@link DEFAULT_SESSION_IDLE_TTL_MS}). Bounds both how long stale
+   * authority can live and how many sessions can accumulate.
+   */
+  sessionIdleTtlMs?: number;
+  /** Clock (ms since epoch), injectable for deterministic tests. */
+  now?: () => number;
 }
+
+/** Default idle lifetime of an HTTP MCP session (30 minutes). */
+export const DEFAULT_SESSION_IDLE_TTL_MS = 30 * 60 * 1000;
 
 /** A pre-validation argument policy (see {@link NexoraMCPServerOptions.argumentPolicy}). */
 export type NexoraMCPArgumentPolicy = (input: {
@@ -109,9 +120,14 @@ export interface NexoraMCPServerHandleHttpInput {
   identity: NexoraMCPHandleHttpIdentity;
   /**
    * Resolves the full TRUSTED business context of a NEW session (identity +
-   * business domain/role/capability affinity). Invoked ONCE per session —
-   * the resolved context is cached for the session's lifetime, so tool
-   * calls never re-resolve membership.
+   * business domain/role/capability affinity). Invoked when a session is
+   * created AND on every later request to it: the session keeps the context
+   * it was created with only while the freshly resolved USER authority
+   * (identity, scope, business role/domain, agent binding) is unchanged. If it
+   * changed — e.g. the role was downgraded or removed — the session is
+   * terminated and the client re-initializes with current authority, so a
+   * revocation never rides on a stale session. Agent delegation narrowing is
+   * enforced per call by the governed executor, not by ending the session.
    */
   resolveContext: (identity: NexoraMCPHandleHttpIdentity) => Promise<NexoraMCPContext>;
 }
@@ -126,6 +142,30 @@ interface HttpSession {
   sdk: Server;
   /** The streamable-HTTP transport. */
   transport: StreamableHTTPServerTransport;
+  /** Last request time (ms) — idle expiry. */
+  lastSeenAt: number;
+}
+
+/**
+ * Whether two trusted contexts carry the same USER authority: the identity,
+ * scope, resolved business role/domain and agent binding. A user's capability
+ * set derives from the role, so a role downgrade/removal ends the session.
+ *
+ * Deliberately NOT compared: `capabilityIds`. For an agent session that set
+ * is the user's capabilities ∩ the agent's delegations, and delegation
+ * revocation/expiry is enforced PER CALL by the governed executor (re-checked
+ * at execution time, audited — see the agent-delegation scenarios), which must
+ * keep being the layer that refuses an in-flight approved write.
+ */
+function sameAuthority(a: NexoraMCPContext, b: NexoraMCPContext): boolean {
+  return (
+    a.userId === b.userId &&
+    a.tenantId === b.tenantId &&
+    a.workspaceId === b.workspaceId &&
+    a.businessRole === b.businessRole &&
+    a.businessDomain === b.businessDomain &&
+    a.agent?.agentId === b.agent?.agentId
+  );
 }
 
 /** Stable HTTP status codes for session-level failures (fail closed). */
@@ -222,6 +262,8 @@ export class NexoraMCPServer {
     input: NexoraMCPServerHandleHttpInput,
   ): Promise<void> {
     const sessionId = readSessionId(req.headers['mcp-session-id']);
+    const now = (this.#options.now ?? Date.now)();
+    await this.#sweepIdle(now);
 
     if (sessionId !== undefined) {
       const session = this.#sessions.get(sessionId);
@@ -241,17 +283,37 @@ export class NexoraMCPServer {
         });
         return;
       }
+      // Re-validate USER authority on EVERY request: the cached context must
+      // still match what the server resolves now (role/domain/agent binding).
+      // Changed → terminate; the client's standard recovery from an unknown
+      // session is to re-initialize.
+      const fresh = await input.resolveContext(input.identity);
+      if (!sameAuthority(session.context, fresh)) {
+        await this.#terminate(sessionId, session);
+        writeJson(res, MCP_HTTP_ERRORS.notFound, {
+          jsonrpc: '2.0',
+          error: { code: ErrorCode.InvalidRequest, message: 'Unknown MCP session id' },
+        });
+        return;
+      }
+      session.lastSeenAt = now;
       await session.transport.handleRequest(req, res, parsedBody);
       return;
     }
 
-    // New session (initialize): resolve the trusted context ONCE.
+    // New session (initialize): resolve the trusted context.
     const context = await input.resolveContext(input.identity);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => `mcp_${sessionToken()}`,
     });
     const sdk = this.#buildSdkServer(context);
-    const session: HttpSession = { identity: input.identity, context, sdk, transport };
+    const session: HttpSession = {
+      identity: input.identity,
+      context,
+      sdk,
+      transport,
+      lastSeenAt: now,
+    };
     transport.onclose = () => {
       if (transport.sessionId !== undefined) {
         this.#sessions.delete(transport.sessionId);
@@ -261,6 +323,26 @@ export class NexoraMCPServer {
     await transport.handleRequest(req, res, parsedBody);
     if (transport.sessionId !== undefined) {
       this.#sessions.set(transport.sessionId, session);
+    }
+  }
+
+  /** Discards sessions idle longer than the configured TTL. */
+  async #sweepIdle(now: number): Promise<void> {
+    const ttl = this.#options.sessionIdleTtlMs ?? DEFAULT_SESSION_IDLE_TTL_MS;
+    for (const [id, session] of [...this.#sessions]) {
+      if (now - session.lastSeenAt > ttl) {
+        await this.#terminate(id, session);
+      }
+    }
+  }
+
+  /** Removes a session and closes its transport (best-effort). */
+  async #terminate(sessionId: string, session: HttpSession): Promise<void> {
+    this.#sessions.delete(sessionId);
+    try {
+      await session.transport.close();
+    } catch {
+      // Already closed — the session is gone either way.
     }
   }
 

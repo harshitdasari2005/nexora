@@ -223,3 +223,72 @@ describe('DetectionApplicationService', () => {
     expect(forged).toBeUndefined();
   });
 });
+
+describe('DetectionApplicationService — workspace scope (tenant-isolation audit F-001)', () => {
+  // The store contract only filters by tenant (like the PostgreSQL store), so
+  // the SERVICE must enforce the workspace: a foreign-workspace problem id
+  // resolves exactly like a missing one and is never mutated.
+  const failing = (workspaceId: string) =>
+    emptySnapshot({
+      workspaceId,
+      workflowHealth: [workflowMetric({ definitionKey: 'wf_auth', total: 10, failed: 6 })],
+    });
+  const wsA: DetectionScope = { ...scope, workspaceId: 'ws_a' };
+  const wsB: DetectionScope = { ...scope, workspaceId: 'ws_b' };
+  const orgLevel: DetectionScope = { ...scope, workspaceId: undefined };
+  const otherTenant: DetectionScope = { ...wsA, tenantId: 'org_tenant_b' };
+
+  async function seed() {
+    const store = new InMemoryProblemStore();
+    const idOf = async (s: DetectionScope, workspaceId: string) => {
+      const { service } = buildService({ snapshot: failing(workspaceId), store });
+      const result = await service.scan(s);
+      expect(result.ok).toBe(true);
+      const problem = result.ok
+        ? result.problems.find((p) => p.signalId === 'workflow_failure')
+        : undefined;
+      expect(problem).toBeDefined();
+      return problem?.id as string;
+    };
+    const idA = await idOf(wsA, 'ws_a');
+    const idB = await idOf(wsB, 'ws_b');
+    const { service } = buildService({ snapshot: failing('ws_a'), store });
+    return { service, store, idA, idB };
+  }
+
+  it('getById resolves only inside the owning workspace', async () => {
+    const { service, idA, idB } = await seed();
+    expect((await service.getById(wsA, idA))?.id).toBe(idA);
+    expect(await service.getById(wsB, idA)).toBeUndefined();
+    expect(await service.getById(orgLevel, idA)).toBeUndefined();
+    expect(await service.getById(otherTenant, idA)).toBeUndefined();
+    expect((await service.getById(wsB, idB))?.id).toBe(idB);
+  });
+
+  it('reevaluate never evaluates (or returns) a foreign-workspace problem', async () => {
+    const { service, idA } = await seed();
+    expect(await service.reevaluate(wsB, idA)).toBeUndefined();
+    expect((await service.reevaluate(wsA, idA))?.problem.id).toBe(idA);
+  });
+
+  it('transition refuses a foreign-workspace problem and leaves it untouched', async () => {
+    const { service, store, idA } = await seed();
+    const before = store.problems.get(idA);
+    expect(await service.transition(wsB, idA, 'RESOLVED', '2026-08-16T13:00:00.000Z')).toBe(false);
+    expect(await service.transition(orgLevel, idA, 'RESOLVED', '2026-08-16T13:00:00.000Z')).toBe(
+      false,
+    );
+    expect(store.problems.get(idA)).toEqual(before);
+    // Control: the owning workspace may transition it.
+    expect(await service.transition(wsA, idA, 'INVESTIGATING', '2026-08-16T13:00:00.000Z')).toBe(
+      true,
+    );
+    expect(store.problems.get(idA)?.status).toBe('INVESTIGATING');
+  });
+
+  it('listByIds omits problems that belong to another workspace', async () => {
+    const { service, idA, idB } = await seed();
+    const listed = await service.listByIds(wsA, [idA, idB]);
+    expect(listed.map((p) => p.id)).toEqual([idA]);
+  });
+});

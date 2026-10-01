@@ -1101,12 +1101,12 @@ export function buildLifecycleScenariosV1(base: ScenarioWorld): ScenarioDefiniti
     // -----------------------------------------------------------------------
     {
       id: 'NXS-145',
-      revision: 1,
+      revision: 2,
       title: 'An approver with the wrong role or workspace cannot approve; the right one can',
       category: 'governed_lifecycle',
       domain: 'projects',
       description:
-        'The organization requires a delivery manager to approve calendar requests. The CEO (wrong role) and the General Counsel (holds approvals.decide but is not in the workspace) are refused and audited; the approval stays pending until the delivery manager approves, and the event is created under the CEO as requester.',
+        'The organization requires a delivery manager to approve calendar requests. The CEO (wrong role) and the General Counsel (holds approvals.decide but is not in the workspace) are refused (the General Counsel with the same 404 as a missing approval) and audited; the approval stays pending until the delivery manager approves, and the event is created under the CEO as requester.',
       tags: [...TAGS, 'approval', 'approver-role'],
       world: generalWorld(base, 'NXS-145', [
         { capabilityPrefix: 'calendar.', requiredApproverRoleId: 'delivery.manager' },
@@ -1124,7 +1124,8 @@ export function buildLifecycleScenariosV1(base: ScenarioWorld): ScenarioDefiniti
         'calendar.create_event',
         [
           { kind: 'probe', label: 'ceo-wrong-role', status: 403 },
-          { kind: 'probe', label: 'counsel-wrong-workspace', status: 403 },
+          // No standing in the workspace → the same 404 as a missing approval (no oracle).
+          { kind: 'probe', label: 'counsel-wrong-workspace', status: 404 },
           {
             kind: 'actor_continuity',
             requester: 'meera',

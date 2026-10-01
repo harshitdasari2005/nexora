@@ -113,6 +113,39 @@ export function isActivityInScope(
   return connectionTenantId !== undefined && itemTenantId === connectionTenantId;
 }
 
+/**
+ * What one SSE connection may see of the activity feed — resolved ONCE at
+ * connect from trusted server state, with exactly the rules of
+ * `GET /api/activity`: workspace membership when a workspace is named, and
+ * the `activity.read` capability evaluated in that scope. `allowed: false`
+ * (non-member workspace, missing capability, no tenant) withholds every
+ * activity frame; the connection still carries the caller's own
+ * notifications.
+ */
+export interface ActivityStreamScope {
+  allowed: boolean;
+  tenantId: string | undefined;
+  /** The verified workspace the feed is narrowed to (absent = organization feed). */
+  workspaceId: string | undefined;
+}
+
+/**
+ * Whether a stream activity item is visible to this connection. Mirrors the
+ * GET feed: the tenant always matches; a workspace-scoped connection receives
+ * only its own workspace's items (an org-level item with no workspace is not
+ * part of a workspace feed); an organization-scoped connection receives the
+ * organization feed, exactly like `GET /api/activity?organizationId=…`.
+ */
+export function isActivityVisibleToStream(
+  item: { tenantId: string; workspaceId?: string },
+  scope: ActivityStreamScope,
+): boolean {
+  if (!scope.allowed || !isActivityInScope(item.tenantId, scope.tenantId)) {
+    return false;
+  }
+  return scope.workspaceId === undefined || item.workspaceId === scope.workspaceId;
+}
+
 /** Resolves the trusted tenant (first membership or verified query org). */
 async function resolveTenant(
   dependencies: NotificationRoutesDependencies,
@@ -147,6 +180,29 @@ async function workspaceDenial(
   });
   const accessible = workspaces.ok && workspaces.value.some((ws) => ws.id === workspaceId);
   return accessible ? undefined : 'You are not a member of this workspace';
+}
+
+/** Resolves {@link ActivityStreamScope} from trusted state (never from the request alone). */
+export async function resolveActivityStreamScope(
+  dependencies: NotificationRoutesDependencies,
+  userId: UserId,
+  tenantId: string | undefined,
+  workspaceId: string | undefined,
+): Promise<ActivityStreamScope> {
+  const denied: ActivityStreamScope = { allowed: false, tenantId, workspaceId: undefined };
+  if (tenantId === undefined) {
+    return denied;
+  }
+  const denial = await workspaceDenial(dependencies, userId, tenantId as TenantId, workspaceId);
+  if (denial !== undefined) {
+    return denied;
+  }
+  const authz = await authorizePermission(
+    dependencies.permissions,
+    { userId, tenantId: tenantId as TenantId, workspaceId },
+    'activity.read',
+  );
+  return authz.ok ? { allowed: true, tenantId, workspaceId } : denied;
 }
 
 /** Registers the notification routes. */
@@ -463,13 +519,22 @@ export function registerNotificationRoutes(
   // seam; the consumer publishes onto it as notifications are created.
   app.get('/api/notifications/stream', async (request, reply) => {
     const auth = requireAuth(request);
-    const query = request.query as { organizationId?: string };
+    const query = request.query as { organizationId?: string; workspaceId?: string };
     // `auth.tenantId` is the identity bootstrap tenant (`tnt_platform`), NOT
     // the caller's organization — the real tenant is resolved from trusted
     // membership, exactly like every other endpoint in this file. Without
     // this, the activity filter below (`item.tenantId === <bootstrap>`) never
     // matched and the live activity feed silently never streamed.
     const tenantId = await resolveTenant(dependencies, auth.userId, query.organizationId);
+
+    // Activity is authorized exactly like `GET /api/activity` (see
+    // `ActivityStreamScope`). Notifications are recipient-scoped and unchanged.
+    const activityScope = await resolveActivityStreamScope(
+      dependencies,
+      auth.userId,
+      tenantId,
+      query.workspaceId,
+    );
 
     reply.hijack();
     const raw = reply.raw;
@@ -504,7 +569,7 @@ export function registerNotificationRoutes(
       ) {
         safeWrite(formatSse('notification', Notification.snapshot(event.notification)));
       }
-      if (event.kind === 'activity' && isActivityInScope(event.item.tenantId, tenantId)) {
+      if (event.kind === 'activity' && isActivityVisibleToStream(event.item, activityScope)) {
         safeWrite(formatSse('activity', ActivityItem.snapshot(event.item)));
       }
     });

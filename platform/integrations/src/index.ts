@@ -50,8 +50,17 @@ export {
   type UserEmailResolver,
 } from './email/email-projection.js';
 export {
+  WebhookDestinationBlockedError,
+  createGuardedWebhookHttpClient,
+  isInternalHostLiteral,
+  isPrivateAddress,
+  type GuardedWebhookClientOptions,
+  type HostResolver,
+  type PinnedRequest,
+} from './dispatch/destination-guard.js';
+export {
   WebhookDispatcher,
-  fetchWebhookHttpClient,
+  guardedWebhookHttpClient,
   type WebhookDispatcherDependencies,
   type WebhookDispatcherLogger,
   type WebhookHttpClient,

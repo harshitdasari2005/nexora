@@ -233,6 +233,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     throw new Error('Invalid SESSION_MAX_AGE_SECONDS: must be a positive integer');
   }
 
+  // Production safety. The API only treats an environment as production when
+  // NODE_ENV says so; local dev, tests and CI keep their current behavior.
+  const production = env['NODE_ENV'] === 'production';
+
+  // Demo mode exposes an UNAUTHENTICATED persona sign-in (`POST /api/demo/login`)
+  // and a data-reset route. A single stray `NEXORA_DEMO_MODE=true` must never
+  // quietly open that path on a production deployment: it takes a second,
+  // explicit acknowledgement, and without it the process refuses to start.
+  const demoEnabled = env['NEXORA_DEMO_MODE'] === 'true';
+  if (production && demoEnabled && env['NEXORA_DEMO_ALLOW_IN_PRODUCTION'] !== 'true') {
+    throw new Error(
+      'Refusing to start: NEXORA_DEMO_MODE=true with NODE_ENV=production would expose ' +
+        'unauthenticated demo sign-in. Unset NEXORA_DEMO_MODE, or — only for a deliberately ' +
+        'public demo deployment — also set NEXORA_DEMO_ALLOW_IN_PRODUCTION=true.',
+    );
+  }
+
   return {
     port,
     host: env['HOST'] ?? '0.0.0.0',
@@ -247,7 +264,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     cookie: {
       name: env['COOKIE_NAME'] ?? 'nexora_session',
       sameSite,
-      secure: env['COOKIE_SECURE'] === 'true',
+      // Secure by default in production; an explicit COOKIE_SECURE always wins
+      // (local HTTP dev keeps `COOKIE_SECURE=false` from .env.example).
+      secure: env['COOKIE_SECURE'] === undefined ? production : env['COOKIE_SECURE'] === 'true',
       maxAgeSeconds,
     },
     ai: loadAiConfig(env),
@@ -264,7 +283,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     },
     observability: { modelPricingJson: env['NEXORA_MODEL_PRICING']?.trim() || undefined },
     s3: loadS3Config(env),
-    demo: { enabled: env['NEXORA_DEMO_MODE'] === 'true' },
+    demo: { enabled: demoEnabled },
     logLevel,
   };
 }
