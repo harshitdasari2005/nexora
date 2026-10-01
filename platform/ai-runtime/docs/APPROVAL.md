@@ -24,17 +24,20 @@ proposed ──► awaiting_approval ──► approved ──► executing ─�
                  │                    │              │
                  │                    ▼              └──► failed
                  └──────────────► rejected
+
+  proposed | awaiting_approval | approved ──(now >= expiresAt)──► expired
 ```
 
-| State               | Meaning                                            | Entered by                     |
-| ------------------- | -------------------------------------------------- | ------------------------------ |
-| `proposed`          | The gate was raised (transient)                    | Orchestrator gate              |
-| `awaiting_approval` | A recorded request exists; the caller may decide   | `ApprovalEngine.open`          |
-| `approved`          | A grant decision was recorded                      | `ApprovalEngine.decide`        |
-| `rejected`          | A rejection was recorded; no execution is possible | `ApprovalEngine.decide`        |
-| `executing`         | The request was atomically claimed (single flight) | `ApprovalEngine.claim`         |
-| `completed`         | The tool result was recorded                       | `ApprovalEngine.recordOutcome` |
-| `failed`            | The tool failed after execution                    | `ApprovalEngine.recordOutcome` |
+| State               | Meaning                                                   | Entered by                                    |
+| ------------------- | --------------------------------------------------------- | --------------------------------------------- |
+| `proposed`          | The gate was raised (transient)                           | Orchestrator gate                             |
+| `awaiting_approval` | A recorded request exists; the caller may decide          | `ApprovalEngine.open`                         |
+| `approved`          | A grant decision was recorded                             | `ApprovalEngine.decide`                       |
+| `rejected`          | A rejection was recorded; no execution is possible        | `ApprovalEngine.decide`                       |
+| `executing`         | The request was atomically claimed (single flight)        | `ApprovalEngine.claim`                        |
+| `completed`         | The tool result was recorded                              | `ApprovalEngine.recordOutcome`                |
+| `failed`            | The tool failed after execution                           | `ApprovalEngine.recordOutcome`                |
+| `expired`           | Not decided/executed before `expiresAt`; never authorizes | `expire` / `expireDue` / lazy read / `decide` |
 
 ## 3. The flow (create workspace)
 
@@ -120,6 +123,82 @@ Every request is a trusted record (never client-supplied):
 ## 8. Auditing
 
 The conversation records the lifecycle as **system turns** (`Approval granted recorded for apr_xxx`, `Approval rejected by usr_...`) — never hidden chain-of-thought, never provider credentials. The decision record and execution trace (ADR-011) additionally capture who decided, when, and the outcome with the correlation ids.
+
+## 8a. Expiry and approval authority (Prompt 8)
+
+- **Expiry.** Every approval has `expiresAt` (default 24 hours, overridable by a
+  `POLICY_APPROVAL_AUTHORITY` rule's `ttlMinutes`). Expiry is deterministic (an
+  injectable clock; expired when `now >= expiresAt`), idempotent (the transition
+  and its `approval.expired` audit event happen once) and never authorizes:
+  decide answers `expired` (HTTP 410), `claim` refuses, and a resume fails the
+  step with `APPROVAL_EXPIRED`. Sweeps are lazy (on read, decide, claim, list).
+  A legacy approval without an expiry reads as `created_at` + 24h.
+- **Who may decide.** The record also carries `requiredApproverRoleId` and
+  `separationOfDuties` (copied from the policy requirement at open time). The
+  decider is derived server-side by `authorizeApprovalDecision`: org and
+  workspace membership, `approvals.decide`, the required role (exact match),
+  separation of duties (decider is not the requester), or — for legacy approvals
+  with neither — the requester. Nothing in the request body is read. The run
+  resumes as the requester, never the approver.
+- **Resume revalidation.** Tenant, workspace, requester, agent and delegation,
+  policy fingerprint (`POLICY_CHANGED_AFTER_APPROVAL`), approved arguments
+  (`APPROVAL_ARGUMENTS_MISMATCH`), state, expiry.
+- An approval never overrides a policy DENY.
+
+Design and residual risks: `TRUST_MODEL.md` §12.
+
+## 8b. State machine, not-bound and terminal re-request (Prompt 9)
+
+The only legal approval transitions (`APPROVAL_TRANSITIONS` in
+`platform/ai-runtime/src/approval/engine.ts`; the durable engine derives its
+`WHERE status IN (...)` guards from the same table through `sourcesOf`):
+
+| From                | To                                         |
+| ------------------- | ------------------------------------------ |
+| `proposed`          | `awaiting_approval`, `rejected`, `expired` |
+| `awaiting_approval` | `approved`, `rejected`, `expired`          |
+| `approved`          | `executing`, `expired`                     |
+| `executing`         | `completed`, `failed`                      |
+| `rejected`          | none (terminal)                            |
+| `expired`           | none (terminal)                            |
+| `completed`         | none (terminal)                            |
+| `failed`            | none (terminal)                            |
+
+Anything else is refused (`InvalidApprovalTransitionError` from
+`assertTransition`; a conditional update that matches zero rows in the durable
+store). A terminal approval is never reopened, re-decided or re-run. A claimed
+(`executing`) approval cannot expire. `EXECUTION_LIFECYCLE` maps the governed
+phases (PROPOSED, AUTHORIZED, POLICY_DENIED, APPROVAL_REQUIRED, APPROVAL_PENDING,
+APPROVED, REJECTED, EXPIRED, EXECUTING, VERIFIED, FAILED) onto these statuses and
+the plan-step statuses; see `GOVERNED_EXECUTION.md` §2.
+
+- **Expired.** `expired` is reachable only from `proposed`, `awaiting_approval` or
+  `approved` (granted but never executed also expires). Decide answers HTTP 410
+  `APPROVAL_EXPIRED`; a resume fails the step `APPROVAL_EXPIRED`; nothing is
+  claimed or run. Expiry is lazy (persisted when touched), so the audit event can
+  lag the wall clock.
+- **Not bound.** A run that names an `approvalId` must consume that approval in
+  exactly one bound step. If the rebuilt plan has no matching gated step, the step
+  is no longer gated, or the approval is foreign, the run fails
+  `APPROVAL_NOT_BOUND` (audited as `approval.resume`; the approval is not claimed
+  and nothing runs; the user must request the action again). It is never reported
+  as completed. Argument divergence is the more specific
+  `APPROVAL_ARGUMENTS_MISMATCH` (canonical comparison of the stored approval input
+  with the step input).
+- **Approver is descriptive.** `decidedBy`, `decidedAt` and
+  `requiredApproverRoleId` on the approval are the authoritative record;
+  lineage `approvedBy` and the run's `approval.decidedBy` are copies for
+  navigation. The approver never becomes the executor.
+- **Agent resume ceiling.** An agent approval resumes under the requester's
+  ceiling narrowed to the agent's effective capabilities (plus the gated
+  capability, so a revoked delegation is refused with its specific code).
+- **Terminal re-request (MCP).** The MCP resume key is unique per tenant. A
+  rejected, expired or failed approval for that key no longer makes the same
+  write permanently unrequestable: a LATER run takes the next attempt key
+  (`<key>:2`, `:3`, ... up to 50) and opens a brand-new approval; a terminal
+  approval is never reused. The run that owns the terminal approval still sees its
+  outcome (`APPROVAL_DENIED`, `APPROVAL_EXPIRED`, `EXECUTION_FAILED`). A `completed`
+  approval replays its stored result.
 
 ## 9. Extending to future write tools
 

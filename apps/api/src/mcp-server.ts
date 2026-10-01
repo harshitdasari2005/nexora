@@ -40,6 +40,10 @@ import { composeAiRuntime } from './ai/compose.js';
 import { buildConnectorStore } from './ai/connectors/build-connector-store.js';
 import { buildNexoraMCPServer, type NexoraMCPTrustedIdentity } from './ai/mcp/build-server.js';
 import { loadConfig } from './config.js';
+import { buildAgentIdentityLayer } from './agent/identity-layer.js';
+import { buildLineageLayer } from './lineage/lineage-layer.js';
+import { buildObservabilityLayer } from './observability/observability-layer.js';
+import { buildPolicyLayer } from './policy/policy-layer.js';
 import {
   buildAIBusinessContext,
   MembershipBusinessRoleResolver,
@@ -65,6 +69,32 @@ function trustedIdentityFromEnv(env: NodeJS.ProcessEnv): NexoraMCPTrustedIdentit
   };
 }
 
+/**
+ * Validates the env identity against persisted state before the server
+ * starts (Prompt 4 hardening): the user must be a member of the tenant, and
+ * a selected workspace must BELONG to that tenant (previously a workspace of
+ * another organization could be paired with this tenant). Fails the process
+ * closed on any mismatch.
+ */
+async function assertEnvIdentityConsistent(
+  repositories: ReturnType<typeof buildPgRepositories>,
+  identity: NexoraMCPTrustedIdentity,
+): Promise<void> {
+  const membership = await repositories.memberships.findByOrganizationAndUser(
+    identity.tenantId as never,
+    identity.userId as never,
+  );
+  if (membership === undefined) {
+    throw new Error('NEXORA_MCP_USER_ID is not a member of NEXORA_MCP_TENANT_ID');
+  }
+  if (identity.workspaceId !== undefined) {
+    const workspace = await repositories.workspaces.findById(identity.workspaceId as never);
+    if (workspace === undefined || workspace.organizationId !== identity.tenantId) {
+      throw new Error('NEXORA_MCP_WORKSPACE_ID does not belong to NEXORA_MCP_TENANT_ID');
+    }
+  }
+}
+
 /** A stderr-only structured logger (stdout is reserved for the MCP protocol). */
 function stderrLogger(): PipelineLogger {
   const write = (level: string) => (obj: Record<string, unknown>, message?: string) => {
@@ -85,12 +115,37 @@ async function main(): Promise<void> {
   const repositories = buildPgRepositories(database, config);
   const { publisher } = buildApplicationEventPublisher({ repositories, logger });
   const container = buildContainer({ config, repositories, publisher });
+  const catalog = createInitialCatalog();
+  const roleResolver = new MembershipBusinessRoleResolver({
+    memberships: repositories.memberships,
+    workspaceMemberships: repositories.workspaceMemberships,
+    workspaces: repositories.workspaces,
+  });
+  // Prompt 4: the SAME agent identity layer as the HTTP app — agent-bound
+  // tool calls are re-authorized against persisted delegations.
+  const agentLayer = buildAgentIdentityLayer({
+    repositories,
+    container,
+    rbac: { roleResolver, catalog },
+    publisher,
+  });
+  const policyLayer = buildPolicyLayer({ repositories });
+  const lineageLayer = buildLineageLayer({ repositories });
+  const observabilityLayer = buildObservabilityLayer({
+    repositories,
+    pricingJson: config.observability?.modelPricingJson,
+  });
   const ai = composeAiRuntime({
+    rbac: { roleResolver, catalog },
     config,
     container,
     repositories,
     publisher,
     database,
+    agentAuthority: agentLayer.authority,
+    policy: policyLayer.port,
+    lineage: lineageLayer.port,
+    runTelemetry: observabilityLayer.hub,
     // S25 Phase 7: env-configured external connectors (registered when a
     // credential + binding tenant are configured; empty otherwise).
     connectors: buildConnectorStore({
@@ -100,15 +155,30 @@ async function main(): Promise<void> {
     }),
   });
 
-  // Trusted business context: the SAME resolver + catalog the AI route uses.
-  const roleResolver = new MembershipBusinessRoleResolver({
-    memberships: repositories.memberships,
-    workspaceMemberships: repositories.workspaceMemberships,
-    workspaces: repositories.workspaces,
-  });
-  const catalog = createInitialCatalog();
-
-  const identity = trustedIdentityFromEnv(process.env);
+  const envIdentity = trustedIdentityFromEnv(process.env);
+  await assertEnvIdentityConsistent(repositories, envIdentity);
+  // Prompt 4: an optional agent principal (NEXORA_MCP_AGENT_ID), validated
+  // against persisted state exactly like the HTTP `X-Nexora-Agent` binding.
+  const agentId = process.env['NEXORA_MCP_AGENT_ID']?.trim();
+  let identity: NexoraMCPTrustedIdentity = envIdentity;
+  if (agentId !== undefined && agentId.length > 0) {
+    if (envIdentity.workspaceId === undefined) {
+      throw new Error('NEXORA_MCP_AGENT_ID requires NEXORA_MCP_WORKSPACE_ID');
+    }
+    const session = await agentLayer.resolveSession({
+      userId: envIdentity.userId,
+      tenantId: envIdentity.tenantId,
+      workspaceId: envIdentity.workspaceId,
+      agentId,
+    });
+    if (!session.ok) {
+      throw new Error(`NEXORA_MCP_AGENT_ID refused: ${session.reasonCode}`);
+    }
+    identity = {
+      ...envIdentity,
+      agent: { agent: session.agent, effectiveCapabilityIds: session.effectiveCapabilityIds },
+    };
+  }
   const business = await buildAIBusinessContext(
     { roleResolver, catalog },
     {
@@ -130,7 +200,7 @@ async function main(): Promise<void> {
   );
 
   const server = await buildNexoraMCPServer({
-    runtime: { tools: ai.tools, approvals: ai.approvals },
+    runtime: ai,
     resolveBusinessContext: (context) => buildAIBusinessContext({ roleResolver, catalog }, context),
     identity,
   });

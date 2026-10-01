@@ -269,7 +269,7 @@ describe('Nexora MCP server — read tools (real data, scoped)', () => {
     expect((result.output as { resolved: boolean }).resolved).toBe(true);
   });
 
-  it('forged identity/scope arguments are rejected by the strict schema', async () => {
+  it('forged identity/scope arguments are rejected (and audited) before the schema check', async () => {
     const { server } = await buildMcpFixture({ role: 'member' });
     const result = await server.call('nexora.projects.get', {
       name: 'payments',
@@ -278,7 +278,21 @@ describe('Nexora MCP server — read tools (real data, scoped)', () => {
       roleId: 'executive.ceo',
     });
     expect(result.ok).toBe(false);
-    expect(result.error?.code).toBe('INVALID_INPUT');
+    // Forged scope/authority is a security block (RESERVED_ARGUMENT), not a
+    // generic schema error — it is recorded in the audit trail.
+    expect(result.error?.code).toBe('RESERVED_ARGUMENT');
+  });
+
+  it('arguments nested deeper than the inspected depth fail closed (ARGUMENT_TOO_DEEP), even with a reserved key hiding below', async () => {
+    const { server } = await buildMcpFixture({ role: 'member' });
+    let deep: Record<string, unknown> = { tenantId: 'org_alien' };
+    for (let i = 0; i < 8; i += 1) deep = { nested: deep };
+    const refused = await server.call('nexora.projects.get', { name: 'payments', extra: deep });
+    expect(refused.ok).toBe(false);
+    expect(refused.error?.code).toBe('ARGUMENT_TOO_DEEP');
+    // Control: the same call without the deep structure passes the trust screen.
+    const shallow = await server.call('nexora.projects.get', { name: 'payments' });
+    expect(shallow.error?.code).not.toBe('ARGUMENT_TOO_DEEP');
   });
 
   it('a guessed tool outside the caller capability set is not callable', async () => {
@@ -425,6 +439,6 @@ describe('Nexora MCP server — cross-tenant/workspace isolation', () => {
       workspaceId: 'wsp_alien',
     });
     expect(result.ok).toBe(false);
-    expect(result.error?.code).toBe('INVALID_INPUT');
+    expect(result.error?.code).toBe('RESERVED_ARGUMENT');
   });
 });

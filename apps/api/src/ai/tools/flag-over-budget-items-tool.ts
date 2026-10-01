@@ -38,7 +38,7 @@
 
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import type { Tool, ToolExecutionContext, ToolManifest, ToolResult } from '@nexora/agent-sdk/tools';
-import type { FlagOverBudgetItemsHandler } from '@nexora/application-finance';
+import type { FlagOverBudgetItemsHandler, ListBudgetsHandler } from '@nexora/application-finance';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 
@@ -65,6 +65,8 @@ export const FLAG_OVER_BUDGET_ITEMS_MANIFEST: ToolManifest = {
   sideEffectClass: 'consequential',
   idempotent: true,
   timeoutMs: 15_000,
+  // Read-back: each flagged budget's status is re-read from the workspace budget list.
+  verification: { source: 'state_readback' },
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
 };
 
@@ -81,8 +83,11 @@ export class FlagOverBudgetItemsTool implements Tool<
   readonly #flagOverBudgetItems: FlagOverBudgetItemsHandler;
   readonly #listOrganizations: ListOrganizationsHandler;
   readonly #listMyWorkspaces: ListMyWorkspacesHandler;
+  readonly #listBudgets: ListBudgetsHandler;
 
   constructor(dependencies: {
+    /** The workspace-scoped budget read-back handler (verification against persisted state). */
+    listBudgets: ListBudgetsHandler;
     flagOverBudgetItems: FlagOverBudgetItemsHandler;
     listOrganizations: ListOrganizationsHandler;
     listMyWorkspaces: ListMyWorkspacesHandler;
@@ -90,6 +95,7 @@ export class FlagOverBudgetItemsTool implements Tool<
     this.#flagOverBudgetItems = dependencies.flagOverBudgetItems;
     this.#listOrganizations = dependencies.listOrganizations;
     this.#listMyWorkspaces = dependencies.listMyWorkspaces;
+    this.#listBudgets = dependencies.listBudgets;
   }
 
   async execute(
@@ -135,7 +141,26 @@ export class FlagOverBudgetItemsTool implements Tool<
       (budget) => budget.organizationId === context.tenantId && budget.workspaceId === workspaceId,
     );
     if (flagged.length !== result.value.flagged.length) {
-      return this.#failure('Budget flagging verification failed: unexpected scope');
+      return this.#verificationFailure('Budget flagging verification failed: unexpected scope');
+    }
+
+    // 5. Read-back verification: re-read the workspace budgets and confirm
+    //    every flagged budget really carries the flagged status.
+    if (flagged.length > 0) {
+      const readBack = await this.#listBudgets.handle({
+        organizationId: context.tenantId as TenantId,
+        workspaceId: workspaceId as WorkspaceId,
+      });
+      const persisted = new Map(readBack.ok ? readBack.value.map((row) => [row.id, row]) : []);
+      const mismatch = flagged.some((budget) => {
+        const row = persisted.get(budget.id);
+        return row === undefined || row.status !== budget.status.value;
+      });
+      if (mismatch) {
+        return this.#verificationFailure(
+          'Budget flagging verification failed: status not found on read-back',
+        );
+      }
     }
 
     return {
@@ -150,6 +175,11 @@ export class FlagOverBudgetItemsTool implements Tool<
       },
       completedAt: new Date().toISOString(),
     };
+  }
+
+  /** A failed read-back / result verification: failed AND unverified with the declared source. */
+  #verificationFailure(error: string): ToolResult<FlagOverBudgetItemsOutput> {
+    return { ...this.#failure(error), readBackFailed: true };
   }
 
   #failure(error: string): ToolResult<FlagOverBudgetItemsOutput> {

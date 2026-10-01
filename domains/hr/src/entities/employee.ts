@@ -20,7 +20,11 @@ import { nowIso } from '@nexora/shared/time';
 import type { TenantId } from '@nexora/contracts/common';
 
 import type { EmployeeEventContext } from '../events/index.js';
-import { employeeActivatedEvent, employeeCreatedEvent } from '../events/index.js';
+import {
+  employeeActivatedEvent,
+  employeeCreatedEvent,
+  employeeOffboardedEvent,
+} from '../events/index.js';
 import { EmployeeStateTransitionError } from '../errors/index.js';
 import { EMPLOYEE_TRANSITIONS } from '../policies/index.js';
 import type { EmployeeId } from '../value-objects/employee-id.js';
@@ -187,6 +191,28 @@ export class Employee {
    */
   cancel(context: EmployeeEventContext, now = nowIso()): void {
     this.#transitionTo(EmployeeStatus.cancelled(), 'cancel', now);
+  }
+
+  /**
+   * Starts offboarding (`active | on_leave` → `exiting` — WRK-3).
+   *
+   * @throws {EmployeeStateTransitionError} when the transition is not allowed.
+   */
+  startOffboarding(context: EmployeeEventContext, now = nowIso()): void {
+    this.#transitionTo(EmployeeStatus.exiting(), 'start offboarding', now);
+  }
+
+  /**
+   * Completes offboarding (`exiting` → `offboarded` — EVT-4). Offboarded is
+   * terminal: the record is retained (audit history), the employee is no
+   * longer active or assignable (BR-16).
+   *
+   * @param reason - why the employment ended (recorded on the event).
+   * @throws {EmployeeStateTransitionError} when the transition is not allowed.
+   */
+  offboard(context: EmployeeEventContext, reason: string, now = nowIso()): void {
+    this.#transitionTo(EmployeeStatus.offboarded(), 'offboard', now);
+    this.#events.push(employeeOffboardedEvent(context, this.#id, reason));
   }
 
   /**

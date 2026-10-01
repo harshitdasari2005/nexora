@@ -42,6 +42,12 @@ export interface EmployeeCommandResult {
   events: readonly EventEnvelope[];
 }
 
+/** The outcome of an offboarding: the aggregate, its events, and whether it changed. */
+export interface EmployeeOffboardResult extends EmployeeCommandResult {
+  /** `false` when the employee was already offboarded (idempotent no-op). */
+  changed: boolean;
+}
+
 /** Dependencies of the {@link EmployeeDomainService}. */
 export interface EmployeeDomainServiceDependencies {
   /** Employee persistence. */
@@ -144,6 +150,40 @@ export class EmployeeDomainService {
       employee.activate(context);
       await this.#employees.save(employee);
       return ok({ employee, events: employee.pullDomainEvents() });
+    } catch (error) {
+      return err(toHrError(error) as EmployeeNotFoundError | EmployeeStateTransitionError);
+    }
+  }
+
+  /**
+   * Offboards an employee (`active | on_leave` → `exiting` → `offboarded`).
+   * The record is retained — offboarding is the domain's supported way to end
+   * an employment, never a delete.
+   *
+   * Idempotent: an already-offboarded employee returns `changed: false` with
+   * no events, so a retried rollback never fails or double-emits. An
+   * employee that cannot legally reach `offboarded` from its current status
+   * (e.g. `proposed`, `hired`) yields a transition error — the caller must
+   * treat that as "not safely reversible", never force it.
+   */
+  async offboard(
+    employeeId: EmployeeId,
+    reason: string,
+    context: EmployeeEventContext,
+  ): Promise<Result<EmployeeOffboardResult, EmployeeNotFoundError | EmployeeStateTransitionError>> {
+    try {
+      const employee = await this.#requireEmployee(employeeId);
+      if (employee.status.value === 'offboarded') {
+        return ok({ employee, events: [], changed: false });
+      }
+      if (employee.status.value !== 'exiting') {
+        this.#lifecycle.assertCanTransition(employee.status, EmployeeStatus.exiting());
+        employee.startOffboarding(context);
+      }
+      this.#lifecycle.assertCanTransition(employee.status, EmployeeStatus.offboarded());
+      employee.offboard(context, reason);
+      await this.#employees.save(employee);
+      return ok({ employee, events: employee.pullDomainEvents(), changed: true });
     } catch (error) {
       return err(toHrError(error) as EmployeeNotFoundError | EmployeeStateTransitionError);
     }

@@ -220,3 +220,44 @@ describe('NotificationPolicy — hostile payloads', () => {
     expect(outcome.notifications[0]?.workspaceId).toBeUndefined();
   });
 });
+
+describe('NotificationPolicy — AI security blocks (ai.security.blocked)', () => {
+  it('projects a blocked AI action into the workspace activity feed with structured fields', () => {
+    const outcome = new NotificationPolicy().evaluate(
+      envelope('ai.security.blocked', {
+        payload: {
+          actorId: ACTOR,
+          agent: 'mcp',
+          invocationId: 'mcp_123',
+          organizationId: TENANT,
+          workspaceId: WORKSPACE,
+          toolId: 'nexora.projects.create',
+          action: 'tool.execute',
+          policyDecision: 'deny',
+          reasonCode: 'RESERVED_ARGUMENT',
+          reason: 'arguments may not set trusted scope or authority fields: organizationId',
+          outcome: 'blocked',
+        },
+      }),
+    );
+    expect(outcome.notifications).toEqual([]);
+    expect(outcome.activity).toHaveLength(1);
+    const item = outcome.activity[0];
+    expect(item?.workspaceId).toBe(WORKSPACE);
+    expect(item?.actorId).toBe(ACTOR);
+    expect(item?.title).toBe('AI action blocked: nexora.projects.create');
+    for (const line of [
+      'agent: mcp',
+      'invocation: mcp_123',
+      `organization: ${TENANT}`,
+      `workspace: ${WORKSPACE}`,
+      'tool: nexora.projects.create',
+      'action: tool.execute',
+      'policy decision: deny',
+      'reason: RESERVED_ARGUMENT — arguments may not set trusted scope or authority fields: organizationId',
+      'outcome: blocked',
+    ]) {
+      expect(item?.body).toContain(line);
+    }
+  });
+});

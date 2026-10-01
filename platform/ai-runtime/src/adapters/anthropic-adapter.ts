@@ -20,6 +20,7 @@ export interface AnthropicAdapterOptions {
 /** The Anthropic provider adapter (contract-only in Phase 1). */
 export class AnthropicAdapter implements ModelProvider {
   readonly id = 'anthropic';
+  readonly execution = 'cloud' as const;
   readonly name = 'Anthropic';
   readonly capabilities = ['chat', 'streaming'] as const;
   readonly models: readonly string[];

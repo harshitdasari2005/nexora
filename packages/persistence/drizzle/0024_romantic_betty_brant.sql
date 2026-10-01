@@ -1,0 +1,1 @@
+ALTER TABLE "workflow_instances" ADD COLUMN "allowed_capability_ids" jsonb;

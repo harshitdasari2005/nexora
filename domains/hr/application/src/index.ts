@@ -8,8 +8,10 @@
  */
 
 export * from './commands/create-employee.command.js';
+export * from './commands/revoke-hire.command.js';
 export * from './commands/command-handler.js';
 export * from './command-handlers/create-employee.handler.js';
+export * from './command-handlers/revoke-hire.handler.js';
 export * from './queries/find-employee-by-name.query.js';
 export * from './queries/list-employees.query.js';
 export * from './query-handlers/find-employee-by-name.handler.js';

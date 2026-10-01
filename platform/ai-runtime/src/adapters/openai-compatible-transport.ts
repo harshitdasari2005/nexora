@@ -96,11 +96,19 @@ export async function completeOpenAICompatible(
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
-    throw new ProviderError(`${options.providerId} request could not be sent`, {
-      model: options.model,
-      endpoint: url,
-      cause: errorMessage(error),
-    });
+    // A known timeout is reported as one (telemetry classifies MODEL_TIMEOUT),
+    // never as a generic transport failure.
+    const timeout =
+      error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+    throw new ProviderError(
+      `${options.providerId} request ${timeout ? 'timed out' : 'could not be sent'}`,
+      {
+        model: options.model,
+        endpoint: url,
+        cause: errorMessage(error),
+        ...(timeout ? { timeout: true } : {}),
+      },
+    );
   }
 
   if (!response.ok) {

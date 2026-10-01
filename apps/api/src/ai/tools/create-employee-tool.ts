@@ -26,7 +26,7 @@
 
 import type { TenantId, UserId } from '@nexora/contracts/common';
 import type { Tool, ToolExecutionContext, ToolManifest, ToolResult } from '@nexora/agent-sdk/tools';
-import type { CreateEmployeeHandler } from '@nexora/application-hr';
+import type { CreateEmployeeHandler, ListEmployeesByIdsHandler } from '@nexora/application-hr';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 
 /** Input contract: ONLY the user-controlled name (identity is never input). */
@@ -60,6 +60,8 @@ export const CREATE_EMPLOYEE_MANIFEST: ToolManifest = {
   sideEffectClass: 'consequential',
   idempotent: false,
   timeoutMs: 15_000,
+  // Read-back: the hired employee is re-read by id through the HR query surface.
+  verification: { source: 'state_readback' },
   inputSchema: {
     type: 'object',
     properties: { name: { type: 'string', minLength: 1, maxLength: 120 } },
@@ -80,15 +82,19 @@ export class CreateEmployeeTool implements Tool<CreateEmployeeInput, CreateEmplo
 
   readonly #createEmployee: CreateEmployeeHandler;
   readonly #listOrganizations: ListOrganizationsHandler;
+  readonly #listEmployeesByIds: ListEmployeesByIdsHandler;
 
   constructor(dependencies: {
     /** The application-layer create-employee command handler. */
     createEmployee: CreateEmployeeHandler;
+    /** The tenant-scoped by-id read-back handler (verification against persisted state). */
+    listEmployeesByIds: ListEmployeesByIdsHandler;
     /** Resolves the caller's organization memberships (authorization rule). */
     listOrganizations: ListOrganizationsHandler;
   }) {
     this.#createEmployee = dependencies.createEmployee;
     this.#listOrganizations = dependencies.listOrganizations;
+    this.#listEmployeesByIds = dependencies.listEmployeesByIds;
   }
 
   async execute(
@@ -131,7 +137,25 @@ export class CreateEmployeeTool implements Tool<CreateEmployeeInput, CreateEmplo
     //    of truth, and this check is defense-in-depth.
     const employee = result.value.employee;
     if (employee.organizationId !== context.tenantId) {
-      return this.#failure('Employee verification failed: unexpected organization');
+      return this.#verificationFailure('Employee verification failed: unexpected organization');
+    }
+
+    // 5. Read-back verification: re-read the employee by id from persisted
+    //    state within the trusted tenant. A handler that reported a hire that
+    //    is not actually persisted is surfaced as a failure, never success.
+    const readBack = await this.#listEmployeesByIds.handle({
+      organizationId: context.tenantId as TenantId,
+      ids: [employee.id],
+    });
+    const persisted =
+      readBack.ok &&
+      readBack.value.some(
+        (row) => row.id === employee.id && row.organizationId === context.tenantId,
+      );
+    if (!persisted) {
+      return this.#verificationFailure(
+        'Employee verification failed: hired employee not found on read-back',
+      );
     }
 
     return {
@@ -147,6 +171,11 @@ export class CreateEmployeeTool implements Tool<CreateEmployeeInput, CreateEmplo
       },
       completedAt: new Date().toISOString(),
     };
+  }
+
+  /** A failed read-back / result verification: failed AND unverified with the declared source. */
+  #verificationFailure(error: string): ToolResult<CreateEmployeeOutput> {
+    return { ...this.#failure(error), readBackFailed: true };
   }
 
   #failure(error: string): ToolResult<CreateEmployeeOutput> {

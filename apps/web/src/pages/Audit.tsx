@@ -33,7 +33,9 @@ import {
 import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
+import { DecisionTracePanel } from '../components/DecisionTrace.js';
 import { api, ApiError } from '../lib/api.js';
+import type { AuditScope } from '../lib/audit.js';
 import type { AuditEventDto, AuditEventSource, DashboardResponse } from '../lib/types.js';
 import { useSession } from '../session.js';
 
@@ -127,11 +129,15 @@ export function Audit(): JSX.Element {
       workspaceId={dashboard.workspace.id}
     >
       <AuditView
+        scope={{ organizationId: dashboard.organization.id, workspaceId: dashboard.workspace.id }}
         organizationName={dashboard.organization.name}
         workspaceName={dashboard.workspace.name}
         events={state.events}
         loading={state.loading}
         onRefresh={() => void load()}
+        {...(searchParams.get('event') === null
+          ? {}
+          : { initialEventId: searchParams.get('event') as string })}
       />
     </AppShell>
   );
@@ -199,6 +205,10 @@ export interface AuditViewProps {
   events: readonly AuditEventDto[];
   loading: boolean;
   onRefresh: () => void;
+  /** Tenant scope used to fetch decision traces; without it no trace is requested. */
+  scope?: AuditScope;
+  /** An event to open initially (deep link `?event=` from Runtime or the Guided Demo). */
+  initialEventId?: string;
 }
 
 /** The pure Audit Center content (exported for smoke tests). */
@@ -208,11 +218,13 @@ export function AuditView({
   events,
   loading,
   onRefresh,
+  scope,
+  initialEventId,
 }: AuditViewProps): JSX.Element {
   const [sourceFilter, setSourceFilter] = useState<AuditEventSource | 'all'>('all');
   const [approvalOnly, setApprovalOnly] = useState(false);
   const [query, setQuery] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialEventId ?? null);
 
   const summary = useMemo(() => {
     const bySource: Record<AuditEventSource, number> = {
@@ -453,7 +465,13 @@ export function AuditView({
         </div>
 
         <div className="nexora-audit-detail">
-          {selected === null ? (
+          {selected === null && selectedId !== null && scope !== undefined ? (
+            // A deep-linked event outside the loaded page: its decision trace is
+            // still fetched from the backend by id (nothing is assumed).
+            <Card>
+              <DecisionTracePanel eventId={selectedId} scope={scope} />
+            </Card>
+          ) : selected === null ? (
             <Card>
               <EmptyState
                 icon="🛡"
@@ -462,7 +480,7 @@ export function AuditView({
               />
             </Card>
           ) : (
-            <EventDetail event={selected} />
+            <EventDetail event={selected} scope={scope} />
           )}
         </div>
       </div>
@@ -567,7 +585,13 @@ function SummaryCard({
 }
 
 /** The full detail view of one selected audit event. */
-export function EventDetail({ event }: { event: AuditEventDto }): JSX.Element {
+export function EventDetail({
+  event,
+  scope,
+}: {
+  event: AuditEventDto;
+  scope?: AuditScope;
+}): JSX.Element {
   return (
     <Card>
       <Stack gap={4}>
@@ -616,6 +640,40 @@ export function EventDetail({ event }: { event: AuditEventDto }): JSX.Element {
               ) : null}
               {event.approvalOutcome.decisionReason !== undefined ? (
                 <DetailRow label="Reason" value={event.approvalOutcome.decisionReason} compact />
+              ) : null}
+            </Stack>
+          </Stack>
+        ) : null}
+
+        {event.policy !== undefined ? (
+          <Stack gap={1.5}>
+            <div
+              style={{
+                fontSize: typography.sizes.xs,
+                fontWeight: typography.weights.medium,
+                color: 'var(--nexora-textMuted)',
+              }}
+            >
+              Policy
+            </div>
+            <Stack
+              gap={1}
+              style={{
+                padding: '10px 12px',
+                background: 'var(--nexora-surfaceMuted)',
+                borderRadius: 8,
+              }}
+            >
+              <DetailRow label="Policy" value={event.policy.id} compact />
+              <DetailRow label="Version" value={event.policy.version} compact />
+              {event.policy.outcome !== undefined ? (
+                <DetailRow label="Outcome" value={event.policy.outcome} compact />
+              ) : null}
+              {event.policy.reason !== undefined ? (
+                <DetailRow label="Reason" value={event.policy.reason} compact />
+              ) : null}
+              {event.policy.rules !== undefined && event.policy.rules.length > 0 ? (
+                <DetailRow label="Rules" value={event.policy.rules.join(', ')} compact />
               ) : null}
             </Stack>
           </Stack>
@@ -694,6 +752,8 @@ export function EventDetail({ event }: { event: AuditEventDto }): JSX.Element {
             </Stack>
           </Stack>
         ) : null}
+
+        {scope !== undefined ? <DecisionTracePanel eventId={event.id} scope={scope} /> : null}
       </Stack>
     </Card>
   );

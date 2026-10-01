@@ -28,7 +28,20 @@
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import type { Tool, ToolExecutionContext, ToolManifest, ToolResult } from '@nexora/agent-sdk/tools';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
-import { HIRE_AND_ASSIGN_WORKFLOW_KEY, type StartWorkflowHandler } from '@nexora/module-workflow';
+import {
+  ASSIGN_EMPLOYEE_CAPABILITY,
+  FIND_PROJECT_CAPABILITY,
+  HIRE_AND_ASSIGN_WORKFLOW_KEY,
+  HIRE_EMPLOYEE_CAPABILITY,
+  describeWorkflowRollback,
+  type StartWorkflowHandler,
+} from '@nexora/module-workflow';
+import type { CompositePreflight } from '../workflow-preflight.js';
+import { verifyHireAndAssign, type WorkflowReadBackDependencies } from './workflow-readback.js';
+import {
+  authorizeWorkflowInitiator,
+  type InitiatorCapabilityResolver,
+} from '../workflow-initiator.js';
 
 /** Input contract: ONLY user-controlled business names (identity is never input). */
 export interface HireAndAssignWorkflowInput {
@@ -73,6 +86,12 @@ export const HIRE_AND_ASSIGN_WORKFLOW_MANIFEST: ToolManifest = {
   sideEffectClass: 'consequential',
   idempotent: false,
   timeoutMs: 30_000,
+  // A composite: each inner step is executed and journaled (and verified) on its own.
+  verification: {
+    source: 'state_readback',
+    limitation:
+      "after the workflow succeeded, the created records and the assignment are re-read through the tenant-scoped read handlers; the journal and each inner step's own verification are not re-derived",
+  },
   inputSchema: {
     type: 'object',
     properties: {
@@ -101,15 +120,41 @@ export class HireAndAssignWorkflowTool implements Tool<
 
   readonly #startWorkflow: StartWorkflowHandler;
   readonly #listOrganizations: ListOrganizationsHandler;
+  readonly #resolveInitiatorCapabilities?: InitiatorCapabilityResolver;
+  readonly #preflight?: CompositePreflight;
+  readonly #readBack: WorkflowReadBackDependencies;
 
   constructor(dependencies: {
     /** The workflow application start handler. */
     startWorkflow: StartWorkflowHandler;
     /** Resolves the caller's organization memberships (authorization rule). */
     listOrganizations: ListOrganizationsHandler;
+    /**
+     * Resolves the initiator's RBAC-granted executable capabilities (trusted
+     * membership → role → catalog). Without it the tool falls back to the
+     * invoking run's own ceiling and otherwise fails closed.
+     */
+    resolveInitiatorCapabilities?: InitiatorCapabilityResolver;
+    /**
+     * Preflights EVERY inner step's policy decision against the outer approval
+     * before anything runs (Prompt 9): inner approval governance the unit
+     * approval does not cover refuses with `WORKFLOW_INNER_APPROVAL_UNCOVERED`.
+     */
+    preflight?: CompositePreflight;
+    /** Tenant-scoped read handlers for the independent post-workflow read-back. */
+    listEmployeesByIds: WorkflowReadBackDependencies['listEmployeesByIds'];
+    listProjects: WorkflowReadBackDependencies['listProjects'];
+    listProjectMembers: WorkflowReadBackDependencies['listProjectMembers'];
   }) {
+    this.#readBack = {
+      listEmployeesByIds: dependencies.listEmployeesByIds,
+      listProjects: dependencies.listProjects,
+      listProjectMembers: dependencies.listProjectMembers,
+    };
     this.#startWorkflow = dependencies.startWorkflow;
     this.#listOrganizations = dependencies.listOrganizations;
+    this.#resolveInitiatorCapabilities = dependencies.resolveInitiatorCapabilities;
+    this.#preflight = dependencies.preflight;
   }
 
   async execute(
@@ -139,6 +184,45 @@ export class HireAndAssignWorkflowTool implements Tool<
       return this.#failure('You are not authorized to run this workflow in this organization');
     }
 
+    // 2b. Initiator authority (defense in depth): `workflows.execute` alone
+    //     grants none of the capabilities the workflow's inner steps use. The
+    //     server derives the initiator's executable capabilities from trusted
+    //     RBAC (narrowed by the invoking run's own ceiling) and requires ALL
+    //     of them before anything starts. The resulting ceiling is bound to
+    //     the workflow instance and bounds every inner step + compensation.
+    const authority = await authorizeWorkflowInitiator({
+      resolver: this.#resolveInitiatorCapabilities,
+      scope: {
+        userId: context.userId,
+        tenantId: context.tenantId,
+        ...(context.workspaceId === undefined ? {} : { workspaceId: context.workspaceId }),
+      },
+      ...(context.allowedCapabilityIds === undefined
+        ? {}
+        : { runCeiling: context.allowedCapabilityIds }),
+      required: [HIRE_EMPLOYEE_CAPABILITY, FIND_PROJECT_CAPABILITY, ASSIGN_EMPLOYEE_CAPABILITY],
+    });
+    if (!authority.ok) {
+      return this.#failure(
+        'Your current role does not have permission to perform every step of this workflow',
+      );
+    }
+
+    // 2c. Preflight every inner step's policy decision against the OUTER
+    //     approval BEFORE any step runs: approval governance targeting an inner
+    //     capability that the unit approval does not cover refuses here (nothing
+    //     is mutated). The baseline approval stays satisfied by the unit approval.
+    const refusal = await this.#preflight?.({
+      compositeToolId: this.manifest.id,
+      context,
+      steps: [HIRE_EMPLOYEE_CAPABILITY, FIND_PROJECT_CAPABILITY, ASSIGN_EMPLOYEE_CAPABILITY].map(
+        (capabilityId) => ({ capabilityId, toolId: capabilityId }),
+      ),
+    });
+    if (refusal !== undefined) {
+      return this.#failure(refusal.message);
+    }
+
     // 3. Delegate to the workflow application layer (the authoritative path).
     //    The workflow runs to a terminal state and the journaled outcome is
     //    returned. `correlationId` ties the workflow + its events to this
@@ -150,6 +234,15 @@ export class HireAndAssignWorkflowTool implements Tool<
         tenantId: context.tenantId as TenantId,
         workspaceId: context.workspaceId as WorkspaceId | undefined,
         correlationId: context.executionId,
+        // The initiator's RBAC ceiling: applied to EVERY inner step and
+        // compensation (an inner capability outside it fails closed).
+        allowedCapabilityIds: authority.ceiling,
+        // Prompt 4 attribution (trusted, from the executor): the agent
+        // principal, its delegation, the authorizing approval, and origin.
+        ...(context.origin === undefined ? {} : { origin: context.origin }),
+        ...(context.agent === undefined ? {} : { agentId: context.agent.agentId }),
+        ...(context.delegationId === undefined ? {} : { delegationId: context.delegationId }),
+        ...(context.approvalId === undefined ? {} : { approvalId: context.approvalId }),
       },
       input: { employeeName, projectName },
     });
@@ -161,7 +254,27 @@ export class HireAndAssignWorkflowTool implements Tool<
     //    success. The instance status is authoritative.
     const record = result.value;
     if (record.instance.status !== 'succeeded') {
-      return this.#failure(record.instance.error ?? `Workflow ended in ${record.instance.status}`);
+      // A failed workflow reports its rollback outcome too: what was undone
+      // and what (if anything) was left behind — never an implied rollback.
+      // The outcome travels as the tool-vetted `detail` (safe to show); the
+      // raw failure text stays in `error`.
+      const rollback = describeWorkflowRollback(record);
+      return this.#failure(
+        record.instance.error ?? `Workflow ended in ${record.instance.status}`,
+        rollback.length > 0 ? rollback : undefined,
+      );
+    }
+
+    // 5. Independent read-back: the journal says the instance succeeded; re-read
+    //    the persisted business state it claims to have produced.
+    const readBackError = await verifyHireAndAssign(
+      this.#readBack,
+      context.tenantId,
+      record.steps,
+      { employeeName },
+    );
+    if (readBackError !== undefined) {
+      return { ...this.#failure(readBackError), readBackFailed: true };
     }
 
     return {
@@ -187,8 +300,13 @@ export class HireAndAssignWorkflowTool implements Tool<
     };
   }
 
-  #failure(error: string): ToolResult<HireAndAssignWorkflowOutput> {
-    return { ok: false, error, completedAt: new Date().toISOString() };
+  #failure(error: string, detail?: string): ToolResult<HireAndAssignWorkflowOutput> {
+    return {
+      ok: false,
+      error,
+      ...(detail === undefined ? {} : { detail }),
+      completedAt: new Date().toISOString(),
+    };
   }
 }
 

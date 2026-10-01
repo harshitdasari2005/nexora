@@ -77,6 +77,39 @@ function readString(payload: unknown, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+function readNumber(payload: unknown, key: string): number | undefined {
+  if (payload === null || typeof payload !== 'object') {
+    return undefined;
+  }
+  const value = (payload as Payload)[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function readStringList(payload: unknown, key: string): readonly string[] {
+  if (payload === null || typeof payload !== 'object') {
+    return [];
+  }
+  const value = (payload as Payload)[key];
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+}
+
+/** Formats integer minor units (two decimals) with an ISO currency code. */
+function formatMoney(
+  minorUnits: number | undefined,
+  currency: string | undefined,
+): string | undefined {
+  if (minorUnits === undefined || currency === undefined || !/^[A-Z]{3}$/.test(currency)) {
+    return undefined;
+  }
+  const major = (minorUnits / 100).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${currency} ${major}`;
+}
+
 /** The in-app destination for an actionable notification. */
 const ACTION_DESTINATIONS: Record<string, string> = {
   approvals: '/app/workflows',
@@ -162,6 +195,49 @@ export class NotificationPolicy {
               type: event.type,
               title: 'Employee hired',
               body: `${name} was hired.`,
+              actorId,
+            },
+          ],
+        };
+      }
+      // Finance decisions are auditable business events: an expense being
+      // submitted, approved or rejected appears in the workspace activity feed
+      // (and therefore the Audit Center) with the trusted actor. Activity only —
+      // no notification (the approval flow already notifies the humans involved).
+      case 'finance.expense.submitted': {
+        const amount = formatMoney(
+          readNumber(event.payload, 'amountMinorUnits'),
+          readString(event.payload, 'currency'),
+        );
+        return {
+          notifications: [],
+          activity: [
+            {
+              workspaceId,
+              type: event.type,
+              title: 'Expense submitted',
+              body:
+                amount === undefined
+                  ? 'An expense was submitted.'
+                  : `An expense of ${amount} was submitted.`,
+              actorId,
+            },
+          ],
+        };
+      }
+      case 'finance.expense.approved':
+      case 'finance.expense.rejected': {
+        const approved = event.type === 'finance.expense.approved';
+        return {
+          notifications: [],
+          activity: [
+            {
+              workspaceId,
+              type: event.type,
+              title: approved ? 'Expense approved' : 'Expense rejected',
+              body: approved
+                ? 'An expense was approved and now counts against its budget.'
+                : 'An expense was rejected; it does not count against its budget.',
               actorId,
             },
           ],
@@ -438,6 +514,200 @@ export class NotificationPolicy {
               type: event.type,
               title: `${provider} action completed`,
               body: `${provider} ${toolId} completed.`,
+              actorId,
+            },
+          ],
+        };
+      }
+      case 'ai.security.blocked': {
+        // A blocked AI action (forged scope/authority in tool arguments, a
+        // capability outside the caller's ceiling, approved arguments that
+        // no longer match, a refused approval decision, a narration that
+        // disclosed system instructions). Projected as a workspace activity
+        // entry so the Audit Center shows it. The body is the structured
+        // decision metadata only — never argument values or secrets.
+        const field = (key: string) => readString(event.payload, key);
+        const target = field('capabilityId') ?? field('toolId') ?? field('action') ?? 'AI action';
+        const lines = [
+          `agent: ${field('agent') ?? 'unknown'}`,
+          ...(field('agentId') === undefined ? [] : [`agent id: ${field('agentId')}`]),
+          ...(field('delegationId') === undefined ? [] : [`delegation: ${field('delegationId')}`]),
+          `invocation: ${field('invocationId') ?? event.correlationId}`,
+          `organization: ${field('organizationId') ?? event.tenantId}`,
+          ...(field('workspaceId') === undefined ? [] : [`workspace: ${field('workspaceId')}`]),
+          ...(field('toolId') === undefined ? [] : [`tool: ${field('toolId')}`]),
+          `action: ${field('action') ?? 'unknown'}`,
+          ...(field('policyId') === undefined
+            ? []
+            : [`policy: ${field('policyId')}@${field('policyVersion') ?? '1'}`]),
+          ...(readStringList(event.payload, 'policyRules').length === 0
+            ? []
+            : [`policy rules: ${readStringList(event.payload, 'policyRules').join(' ')}`]),
+          `policy decision: ${field('policyDecision') ?? 'deny'}`,
+          `reason: ${field('reasonCode') ?? 'UNKNOWN'} — ${field('reason') ?? ''}`,
+          `outcome: ${field('outcome') ?? 'blocked'}`,
+        ];
+        return {
+          notifications: [],
+          activity: [
+            {
+              workspaceId,
+              type: event.type,
+              title: `AI action blocked: ${target}`,
+              body: lines.join('\n'),
+              actorId,
+            },
+          ],
+        };
+      }
+      case 'agent.created':
+      case 'agent.suspended':
+      case 'agent.reactivated':
+      case 'agent.revoked':
+      case 'agent.delegation.granted':
+      case 'agent.delegation.revoked': {
+        // Prompt 4: agent identity + delegation lifecycle — the audit trail
+        // of WHO created/suspended/revoked an agent and WHO granted/revoked
+        // WHICH capability, in WHICH scope, until WHEN. Structured fields
+        // only (ids, capability, scope, expiry) — never secrets.
+        const field = (key: string) => readString(event.payload, key);
+        const scope = event.payload as { resourceScope?: { kind?: string; id?: string } };
+        const agentName = field('agentName') ?? field('agentId') ?? 'agent';
+        const titles: Record<string, string> = {
+          'agent.created': `Agent created: ${agentName}`,
+          'agent.suspended': `Agent suspended: ${agentName}`,
+          'agent.reactivated': `Agent reactivated: ${agentName}`,
+          'agent.revoked': `Agent revoked: ${agentName}`,
+          'agent.delegation.granted': `Capability delegated to ${agentName}: ${field('capabilityId') ?? ''}`,
+          'agent.delegation.revoked': `Delegation revoked from ${agentName}: ${field('capabilityId') ?? ''}`,
+        };
+        const lines = [
+          `agent id: ${field('agentId') ?? 'unknown'}`,
+          ...(field('delegationId') === undefined ? [] : [`delegation: ${field('delegationId')}`]),
+          ...(field('capabilityId') === undefined ? [] : [`capability: ${field('capabilityId')}`]),
+          ...(scope.resourceScope?.kind === undefined
+            ? []
+            : [`resource scope: ${scope.resourceScope.kind} ${scope.resourceScope.id ?? ''}`]),
+          ...(field('expiresAt') === undefined ? [] : [`expires: ${field('expiresAt')}`]),
+          ...(field('definitionId') === undefined ? [] : [`definition: ${field('definitionId')}`]),
+          ...(field('status') === undefined ? [] : [`status: ${field('status')}`]),
+        ];
+        return {
+          notifications: [],
+          activity: [
+            {
+              workspaceId,
+              type: event.type,
+              title: titles[event.type] ?? event.type,
+              body: lines.join('\n'),
+              actorId,
+            },
+          ],
+        };
+      }
+      case 'policy.version_created':
+      case 'policy.enabled':
+      case 'policy.disabled': {
+        // Prompt 8: policy administration audit trail. Ids, versions, the
+        // change type, the config hash and the actor — NEVER configuration
+        // values (the hash proves integrity without disclosing content).
+        const field = (key: string) => readString(event.payload, key);
+        const version = readNumber(event.payload, 'version');
+        const policyId = field('policyId') ?? 'policy';
+        const titles: Record<string, string> = {
+          'policy.version_created': `Policy version created: ${policyId}${version === undefined ? '' : ` v${version}`}`,
+          'policy.enabled': `Policy enabled: ${policyId}${version === undefined ? '' : ` v${version}`}`,
+          'policy.disabled': `Policy disabled: ${policyId}${version === undefined ? '' : ` v${version}`}`,
+        };
+        const lines = [
+          `policy: ${policyId}`,
+          ...(version === undefined ? [] : [`version: ${version}`]),
+          ...(readNumber(event.payload, 'previousVersion') === undefined
+            ? []
+            : [`previous version: ${readNumber(event.payload, 'previousVersion')}`]),
+          `change type: ${field('changeType') ?? 'version'}`,
+          ...(field('configHash') === undefined ? [] : [`config hash: ${field('configHash')}`]),
+          `actor: ${field('actorId') ?? actorId ?? 'unknown'}`,
+          `organization: ${field('organizationId') ?? event.tenantId}`,
+          ...(field('workspaceId') === undefined ? [] : [`workspace: ${field('workspaceId')}`]),
+        ];
+        return {
+          notifications: [],
+          activity: [
+            {
+              workspaceId,
+              type: event.type,
+              title: titles[event.type] ?? event.type,
+              body: lines.join('\n'),
+              actorId,
+            },
+          ],
+        };
+      }
+      case 'policy.admin_denied': {
+        // An unauthorized policy administration attempt (read or mutate),
+        // recorded after the caller's scope membership was verified. No
+        // configuration values — only who, what, where and why.
+        const field = (key: string) => readString(event.payload, key);
+        const lines = [
+          `actor: ${field('actorId') ?? actorId ?? 'unknown'}`,
+          `organization: ${field('organizationId') ?? event.tenantId}`,
+          ...(field('workspaceId') === undefined ? [] : [`workspace: ${field('workspaceId')}`]),
+          `action: ${field('action') ?? 'unknown'}`,
+          `required capability: ${field('requiredCapability') ?? 'unknown'}`,
+          ...(field('policyId') === undefined ? [] : [`policy: ${field('policyId')}`]),
+          `reason: ${field('reasonCode') ?? 'FORBIDDEN'}`,
+          'outcome: blocked',
+        ];
+        return {
+          notifications: [],
+          activity: [
+            {
+              workspaceId,
+              type: event.type,
+              title: `Policy administration denied: ${field('action') ?? 'access'}`,
+              body: lines.join('\n'),
+              actorId,
+            },
+          ],
+        };
+      }
+      case 'approval.granted':
+      case 'approval.rejected':
+      case 'approval.expired':
+      case 'approval.recovery_required': {
+        // Prompt 8: approval lifecycle audit trail (published once per
+        // transition). Ids and classifications only — never the approved
+        // arguments or any payload.
+        const field = (key: string) => readString(event.payload, key);
+        const recovery = event.type === 'approval.recovery_required';
+        const verb = event.type.slice('approval.'.length);
+        const capability = field('capabilityId') ?? field('toolId') ?? 'action';
+        const lines = [
+          `approval: ${field('approvalId') ?? 'unknown'}`,
+          `capability: ${field('capabilityId') ?? 'unknown'}`,
+          ...(field('toolId') === undefined ? [] : [`tool: ${field('toolId')}`]),
+          ...(field('requesterId') === undefined ? [] : [`requester: ${field('requesterId')}`]),
+          ...(event.type === 'approval.expired' || recovery
+            ? []
+            : [`actor: ${field('decidedBy') ?? actorId ?? 'unknown'}`]),
+          ...(recovery
+            ? ['outcome: unknown; verify state before re-requesting (never auto-retried)']
+            : []),
+          ...(field('expiresAt') === undefined ? [] : [`expires: ${field('expiresAt')}`]),
+          `organization: ${field('organizationId') ?? event.tenantId}`,
+          ...(field('workspaceId') === undefined ? [] : [`workspace: ${field('workspaceId')}`]),
+        ];
+        return {
+          notifications: [],
+          activity: [
+            {
+              workspaceId,
+              type: event.type,
+              title: recovery
+                ? `Approval recovery required: ${capability}`
+                : `Approval ${verb}: ${capability}`,
+              body: lines.join('\n'),
               actorId,
             },
           ],

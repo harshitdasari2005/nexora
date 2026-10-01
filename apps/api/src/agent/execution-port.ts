@@ -59,6 +59,8 @@ export class ApiAgentExecutionPort implements AgentExecutionPort {
       workspaceId: context.workspaceId,
       // The capability bound the engine validated — the runtime discovery
       // can never widen it (an agent can never self-grant).
+      // (Empty-ceiling hardening: the intent's ceiling is a REQUIRED field; an
+      // empty one is "no authority" in the executor, never "unrestricted".)
       allowedCapabilityIds: intent.allowedCapabilityIds,
       businessContext,
       // Phase 10 remediation resume: the engine's recorded approval id for
@@ -66,6 +68,10 @@ export class ApiAgentExecutionPort implements AgentExecutionPort {
       // and claims it exactly once — a duplicate delivery replays the
       // stored result instead of re-running the action.
       approvalId: intent.approvalId,
+      // Prompt 4: the persisted agent principal the run executes AS (resolved
+      // server-side by the agent engine). Every tool invocation is then
+      // re-authorized against its delegations at execution time.
+      ...(intent.agent === undefined ? {} : { agent: intent.agent }),
     });
     return toAgentExecutionOutcome(response);
   }
@@ -84,7 +90,9 @@ export function toAgentExecutionOutcome(response: OrchestratorResponse): AgentEx
       status: step.status,
       output: step.output,
       error: step.error,
+      ...(step.errorCode === undefined ? {} : { errorCode: step.errorCode }),
       verified: step.verified,
+      ...(step.delegationId === undefined ? {} : { delegationId: step.delegationId }),
     })),
     approvals: response.approvals.map((approval) => ({
       id: approval.id,

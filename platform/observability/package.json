@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Nexora backend module: observability (bounded context per DOMAIN_MODEL.md).",
+  "description": "Nexora backend module: AI runtime observability \u2014 a small, deterministic run/stage/model/tool timing model, failure taxonomy, redaction, cost estimation and aggregation. It DESCRIBES how the runtime performed; it is never an input to authorization, policy or approval.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -16,9 +16,11 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run"
   },
   "devDependencies": {
-    "vitest": "^2.1.0"
-  }
+    "vitest": "^2.1.0",
+    "@types/node": "^20.0.0"
+  },
+  "dependencies": {}
 }

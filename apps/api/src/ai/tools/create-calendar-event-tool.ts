@@ -76,6 +76,8 @@ export const CREATE_CALENDAR_EVENT_MANIFEST: ToolManifest = {
   sideEffectClass: 'consequential',
   idempotent: false,
   timeoutMs: 15_000,
+  // Read-back: the created record is re-read from persisted state.
+  verification: { source: 'state_readback' },
   inputSchema: {
     type: 'object',
     properties: {
@@ -194,7 +196,7 @@ export class CreateCalendarEventTool implements Tool<
     //    of truth, and this check is defense-in-depth.
     const entry = result.value.entry;
     if (entry.organizationId !== context.tenantId || entry.workspaceId !== workspaceId) {
-      return this.#failure('Calendar event verification failed: unexpected scope');
+      return this.#verificationFailure('Calendar event verification failed: unexpected scope');
     }
 
     // 6. Read-back verification (S24 Phase 4): read the persisted state
@@ -214,7 +216,7 @@ export class CreateCalendarEventTool implements Tool<
           event.organizationId === context.tenantId,
       );
     if (!persisted) {
-      return this.#failure(
+      return this.#verificationFailure(
         'Calendar event verification failed: created event not found in the workspace',
       );
     }
@@ -234,6 +236,11 @@ export class CreateCalendarEventTool implements Tool<
       },
       completedAt: new Date().toISOString(),
     };
+  }
+
+  /** A failed read-back / result verification: failed AND unverified with the declared source. */
+  #verificationFailure(error: string): ToolResult<CreateCalendarEventOutput> {
+    return { ...this.#failure(error), readBackFailed: true };
   }
 
   #failure(error: string): ToolResult<CreateCalendarEventOutput> {

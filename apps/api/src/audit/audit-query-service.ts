@@ -37,6 +37,7 @@
  *   tables every other page reads, batched to avoid one query per row.
  */
 
+import type { AgentIdentityRepository } from '@nexora/module-agents';
 import type { AgentExecutionRecord } from '@nexora/contracts/agent';
 import type { AgentExecutionRecorder } from '@nexora/module-agents';
 import type { ApprovalEngine, ApprovalRequestRecord } from '@nexora/ai-runtime';
@@ -100,6 +101,30 @@ export interface AuditEventDto {
   /** A failure/error message, when the event recorded one. */
   error?: string;
   /**
+   * The AGENT principal that acted (Prompt 4), when the event was produced
+   * by — or on behalf of — an agent identity: its id, resolved name, and
+   * definition. Independent of the human `actorId` (who initiated it).
+   */
+  agent?: { id: string; name?: string; definitionId?: string };
+  /** The delegations that authorized the agent action, when known (Prompt 4). */
+  delegationIds?: readonly string[];
+  /**
+   * The POLICY that decided (Prompt 5): its stable id, the version it was
+   * evaluated at (as recorded at decision time — never recomputed, so a
+   * later policy change does not rewrite history), the outcome, a safe
+   * reason, and every matched rule. Answers "why was this denied / why did
+   * this need approval?" without any model reasoning.
+   */
+  policy?: {
+    id: string;
+    version: string;
+    outcome?: 'ALLOW' | 'DENY' | 'REQUIRE_APPROVAL';
+    reason?: string;
+    rules?: readonly string[];
+  };
+  /** The execution origin (`agent`, `orchestrator`, `mcp`, `rest`, …), when recorded. */
+  origin?: string;
+  /**
    * Technical reference ids (run/plan/problem/approval/workflow ids) —
    * shown in the detail panel only, for cross-referencing other Nexora
    * surfaces. Never used as the primary label.
@@ -118,6 +143,8 @@ export interface AuditEventFilters {
   to?: string;
   /** Case-insensitive substring match over action/object/detail/actorName. */
   q?: string;
+  /** Only events produced by (or on behalf of) this agent identity (Prompt 4). */
+  agentId?: string;
 }
 
 /** Dependencies of {@link AuditQueryService} — every one an EXISTING port. */
@@ -137,6 +164,8 @@ export interface AuditQueryServiceDependencies {
   users: UserRepository;
   workspaces: WorkspaceRepository;
   catalog: DomainCatalog;
+  /** Agent identities (Prompt 4) — resolves agent display names, tenant-scoped. */
+  agents?: AgentIdentityRepository;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -153,6 +182,7 @@ const STATUS_LABELS: Record<string, string> = {
   running: 'Running',
   succeeded: 'Succeeded',
   skipped: 'Skipped',
+  expired: 'Expired',
 };
 
 /** Humanizes a status value not in the fixed label table (fallback only). */
@@ -259,6 +289,7 @@ export class AuditQueryService {
     // id across the whole page, never per row).
     await this.#resolveActorNames(events);
     await this.#resolveWorkspaceNames(events);
+    await this.#resolveAgentNames(scope.tenantId, events);
 
     const filtered = events.filter((event) => this.#matchesFilters(event, filters));
     filtered.sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
@@ -269,6 +300,7 @@ export class AuditQueryService {
     if (filters.source !== undefined && event.source !== filters.source) return false;
     if (filters.status !== undefined && event.status !== filters.status) return false;
     if (filters.actorId !== undefined && event.actorId !== filters.actorId) return false;
+    if (filters.agentId !== undefined && event.agent?.id !== filters.agentId) return false;
     if (filters.from !== undefined && event.occurredAt < filters.from) return false;
     if (filters.to !== undefined && event.occurredAt > filters.to) return false;
     if (filters.q !== undefined && filters.q.trim().length > 0) {
@@ -297,6 +329,8 @@ export class AuditQueryService {
     if (record.proposalId !== undefined) references.proposalId = record.proposalId;
     if (record.planId !== undefined) references.planId = record.planId;
     if (record.problemId !== undefined) references.problemId = record.problemId;
+    if (record.agentIdentityId !== undefined) references.agentIdentityId = record.agentIdentityId;
+    if (record.approvalId !== undefined) references.approvalId = record.approvalId;
 
     return {
       id: `agx:${record.id}`,
@@ -325,6 +359,13 @@ export class AuditQueryService {
             },
       detail: record.reason,
       error: record.status === 'failed' ? record.reason : undefined,
+      ...(record.agentIdentityId === undefined
+        ? {}
+        : {
+            agent: { id: record.agentIdentityId, definitionId: record.agentId },
+            origin: 'agent',
+          }),
+      ...(record.delegationIds === undefined ? {} : { delegationIds: record.delegationIds }),
       references,
     };
   }
@@ -357,6 +398,19 @@ export class AuditQueryService {
       },
       detail: record.reason,
       error: record.error,
+      ...(record.agentId === undefined ? {} : { agent: { id: record.agentId }, origin: 'agent' }),
+      ...(record.delegationId === undefined ? {} : { delegationIds: [record.delegationId] }),
+      ...(record.policy === undefined
+        ? {}
+        : {
+            policy: {
+              id: record.policy.policyId,
+              version: record.policy.version,
+              outcome: record.policy.outcome,
+              reason: record.policy.reason,
+              rules: record.policy.rules,
+            },
+          }),
       references,
     };
   }
@@ -376,7 +430,17 @@ export class AuditQueryService {
       finishedAt?: string;
       error?: string;
     },
-    instance: { userId: string; workspaceId?: string; definitionKey: string } | undefined,
+    instance:
+      | {
+          userId: string;
+          workspaceId?: string;
+          definitionKey: string;
+          agentId?: string;
+          delegationId?: string;
+          origin?: string;
+          approvalId?: string;
+        }
+      | undefined,
   ): AuditEventDto {
     const references: Record<string, string> = {
       workflowId: row.workflowId,
@@ -402,7 +466,13 @@ export class AuditQueryService {
       approvalRequired: row.approvalId !== undefined,
       detail: row.attempt > 1 ? `Attempt ${row.attempt}` : undefined,
       error: row.error,
-      references,
+      ...(instance?.agentId === undefined ? {} : { agent: { id: instance.agentId } }),
+      ...(instance?.delegationId === undefined ? {} : { delegationIds: [instance.delegationId] }),
+      ...(instance?.origin === undefined ? {} : { origin: instance.origin }),
+      references:
+        instance?.approvalId === undefined
+          ? references
+          : { ...references, workflowApprovalId: instance.approvalId },
     };
   }
 
@@ -423,12 +493,17 @@ export class AuditQueryService {
       actorName: '',
       module: humanizeModule(item.type),
       action: item.title,
-      status: 'recorded',
-      statusLabel: 'Recorded',
+      // A blocked AI action is recorded as `blocked` (security decision),
+      // every other activity item as `recorded`.
+      ...activityStatus(item.type),
       workspaceId: item.workspaceId,
       workspaceName: undefined,
       approvalRequired: false,
       detail: item.body,
+      // Server-authored agent/security bodies carry `agent id: agt_…` and
+      // `delegation: dlg_…` lines (built from structured event fields).
+      ...agentFromActivity(item.type, item.body),
+      ...policyFromActivity(item.type, item.body),
       references: { sourceEventId: item.id },
     };
   }
@@ -469,6 +544,28 @@ export class AuditQueryService {
   }
 
   /** Batch-resolves workspace display names for a page of events. */
+  /** Batch-resolves agent display names + definitions (tenant-scoped reads). */
+  async #resolveAgentNames(tenantId: string, events: AuditEventDto[]): Promise<void> {
+    if (this.#deps.agents === undefined) return;
+    const ids = new Set<string>();
+    for (const event of events) {
+      if (event.agent !== undefined) ids.add(event.agent.id);
+    }
+    const resolved = new Map<string, { name: string; definitionId: string }>();
+    for (const id of ids) {
+      const agent = await this.#deps.agents.findById(tenantId, id);
+      if (agent !== undefined) {
+        resolved.set(id, { name: agent.name, definitionId: agent.definitionId });
+      }
+    }
+    for (const event of events) {
+      const found = event.agent === undefined ? undefined : resolved.get(event.agent.id);
+      if (event.agent !== undefined && found !== undefined) {
+        event.agent = { id: event.agent.id, name: found.name, definitionId: found.definitionId };
+      }
+    }
+  }
+
   async #resolveWorkspaceNames(events: AuditEventDto[]): Promise<void> {
     const workspaceIds = [
       ...new Set(
@@ -490,4 +587,66 @@ export class AuditQueryService {
       }
     }
   }
+}
+
+/** Activity types that record a refused action (shown as `blocked`). */
+const BLOCKED_ACTIVITY_TYPES: ReadonlySet<string> = new Set([
+  'ai.security.blocked',
+  'policy.admin_denied',
+]);
+
+/**
+ * Human status of an activity item: security refusals (a blocked AI action, an
+ * unauthorized policy administration attempt) are `blocked`; an approval
+ * expiry is `expired`; the rest are `recorded`.
+ */
+function activityStatus(type: string): Pick<AuditEventDto, 'status' | 'statusLabel'> {
+  if (BLOCKED_ACTIVITY_TYPES.has(type)) {
+    return { status: 'blocked', statusLabel: 'Blocked' };
+  }
+  if (type === 'approval.expired') {
+    return { status: 'expired', statusLabel: 'Expired' };
+  }
+  if (type === 'approval.recovery_required') {
+    return { status: 'failed', statusLabel: 'Recovery required' };
+  }
+  return { status: 'recorded', statusLabel: 'Recorded' };
+}
+
+/** Extracts the agent attribution from a server-authored activity body (Prompt 4). */
+function agentFromActivity(
+  type: string,
+  body: string,
+): Pick<AuditEventDto, 'agent' | 'delegationIds'> {
+  if (type !== 'ai.security.blocked' && !type.startsWith('agent.')) {
+    return {};
+  }
+  const agentId = body.match(/^agent id: (agt_[A-Za-z0-9_-]+)$/m)?.[1];
+  const delegationId = body.match(/^delegation: (dlg_[A-Za-z0-9_-]+)$/m)?.[1];
+  return {
+    ...(agentId === undefined ? {} : { agent: { id: agentId } }),
+    ...(delegationId === undefined ? {} : { delegationIds: [delegationId] }),
+  };
+}
+
+/** Extracts the deciding policy from a server-authored security body (Prompt 5). */
+function policyFromActivity(type: string, body: string): Pick<AuditEventDto, 'policy'> {
+  if (type !== 'ai.security.blocked') {
+    return {};
+  }
+  const match = body.match(/^policy: (POLICY_[A-Z_]+)@([^\s]+)$/m);
+  if (match === null) {
+    return {};
+  }
+  const reason = body.match(/^reason: (.+)$/m)?.[1];
+  const rules = body.match(/^policy rules: (.+)$/m)?.[1]?.split(' ');
+  return {
+    policy: {
+      id: match[1] as string,
+      version: match[2] as string,
+      outcome: 'DENY',
+      ...(reason === undefined ? {} : { reason }),
+      ...(rules === undefined ? {} : { rules }),
+    },
+  };
 }

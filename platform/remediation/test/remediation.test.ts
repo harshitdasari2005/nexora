@@ -251,6 +251,41 @@ describe('Phase 10 — approval routing + stepwise execution', () => {
     expect(execution.calls).toHaveLength(1); // the gated action never ran
   });
 
+  it('N2 — the routed approver role is passed to approvals.open (authoritative, SoD on)', async () => {
+    const { service, approvals } = buildService({ agent: executive });
+    const created = await service.createPlan(context, { problemId: 'prb_1' });
+    if (!created.ok) return;
+    await service.advance(context, created.plan.id);
+    await service.advance(context, created.plan.id);
+    expect(approvals.opened).toHaveLength(1);
+    expect(approvals.opened[0]?.requiredApproverRoleId).toBe('delivery.manager');
+    expect(approvals.opened[0]?.separationOfDuties).toBe(true);
+  });
+
+  it('N3 — an expired approval is a terminal not-granted outcome: the step never executes', async () => {
+    const { service, execution, approvals } = buildService({ agent: executive });
+    const created = await service.createPlan(context, { problemId: 'prb_1' });
+    if (!created.ok) return;
+    const planId = created.plan.id;
+    await service.advance(context, planId);
+    const waiting = await service.advance(context, planId);
+    if (!waiting.ok) return;
+    const request = [...approvals.requests.values()].find(
+      (r) => r.id === waiting.plan.steps[1]?.approvalId,
+    );
+    request!.status = 'expired';
+    const advanced = await service.advance(context, planId);
+    expect(advanced.ok).toBe(true);
+    if (!advanced.ok) return;
+    expect(advanced.plan.status).toBe('FAILED');
+    expect(advanced.plan.reason).toContain('expired');
+    expect(advanced.plan.steps[1]?.status).toBe('FAILED');
+    expect(execution.calls).toHaveLength(1); // the gated action never ran
+    // A further advance can never execute it either.
+    await service.advance(context, planId);
+    expect(execution.calls).toHaveLength(1);
+  });
+
   it('F — a verified step lets the plan proceed to the next step', async () => {
     const { service, execution } = buildService({ agent: executive });
     const created = await service.createPlan(context, { problemId: 'prb_1' });

@@ -359,22 +359,16 @@ describe('AI write slice (create workspace via approval)', () => {
     await client.app.close();
   });
 
-  it('missing name fails validation after approval with no workspace created', async () => {
+  it('missing name fails validation BEFORE any approval opens, with no workspace created', async () => {
     const client = await writeClient();
     const { workspaceId } = await onboardOrgAndWorkspace(client);
     const before = workspaceCount(client);
 
+    // The required name is missing, so the argument guard fails the step
+    // before an approval is opened — nobody is asked to approve invalid input.
     const { done } = await chat(client, { message: 'Create a workspace', workspaceId });
-    expect(done.status).toBe('blocked');
-    const approvalId = done.approvals[0]?.id as string;
-
-    const decision = await client.post(`/api/ai/approvals/${approvalId}/decision`, {
-      decision: 'approve',
-    });
-    const events = parseSse(decision.body as string);
-    const executed = events.find((event) => event.event === 'done')?.data as WriteDonePayload;
-    // The tool validates the empty input and fails — no workspace is created.
-    expect(executed.status).toBe('failed');
+    expect(done.status).toBe('failed');
+    expect(done.approvals).toEqual([]);
     expect(workspaceCount(client)).toBe(before);
     await client.app.close();
   });

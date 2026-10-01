@@ -372,22 +372,16 @@ describe('AI projects write slice (create project via approval)', () => {
     await client.app.close();
   });
 
-  it('missing name fails validation after approval with no project created', async () => {
+  it('missing name fails validation BEFORE any approval opens, with no project created', async () => {
     const client = await writeClient();
     const { workspaceId } = await onboardOrgAndWorkspace(client);
     const before = projectCount(client);
 
+    // The required name is missing, so the argument guard fails the step
+    // before an approval is opened — nobody is asked to approve invalid input.
     const { done } = await chat(client, { message: 'Create a project', workspaceId });
-    expect(done.status).toBe('blocked');
-    const approvalId = done.approvals[0]?.id as string;
-
-    const decision = await client.post(`/api/ai/approvals/${approvalId}/decision`, {
-      decision: 'approve',
-    });
-    const events = parseSse(decision.body as string);
-    const executed = events.find((event) => event.event === 'done')?.data as ProjectDonePayload;
-    // The tool validates the empty input and fails — no project is created.
-    expect(executed.status).toBe('failed');
+    expect(done.status).toBe('failed');
+    expect(done.approvals).toEqual([]);
     expect(projectCount(client)).toBe(before);
     await client.app.close();
   });

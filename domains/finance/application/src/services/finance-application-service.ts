@@ -349,6 +349,17 @@ export class FinanceApplicationService {
           }),
         );
       }
+      // An expense is denominated in its budget's currency: a mismatch would
+      // silently mix currencies in the budget's utilization (a sum of minor units).
+      if (command.currency !== budget.allocated.currency) {
+        return err(
+          new FinanceStateTransitionError('The expense currency must match the budget currency', {
+            budgetId: budget.id,
+            budgetCurrency: budget.allocated.currency,
+            expenseCurrency: command.currency,
+          }),
+        );
+      }
       const context = financeContext(
         command.actorId,
         command.correlationId,
@@ -394,6 +405,24 @@ export class FinanceApplicationService {
         command.organizationId,
         command.workspaceId,
       );
+      if (command.decision === 'approve') {
+        // Approving moves money against the budget NOW: the budget must still
+        // be in the trusted scope and open (it may have been closed after the
+        // expense was submitted). A foreign/missing budget is NOT FOUND.
+        const budget = await this.#requireVisibleBudget(
+          expense.budgetId,
+          command.organizationId,
+          command.workspaceId,
+        );
+        if (budget.status.isTerminal()) {
+          return err(
+            new FinanceStateTransitionError('Cannot approve an expense against a closed budget', {
+              budgetId: budget.id,
+              status: budget.status.value,
+            }),
+          );
+        }
+      }
       const decided =
         command.decision === 'approve'
           ? await this.#expensesService.approve(expense.id, command.decidedBy, context)

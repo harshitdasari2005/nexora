@@ -13,6 +13,7 @@ import { sql } from 'drizzle-orm';
 import { desc } from 'drizzle-orm';
 import {
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -316,6 +317,15 @@ export const workflowInstances = pgTable(
     userId: varchar('user_id', { length: 64 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 64 }),
     correlationId: varchar('correlation_id', { length: 128 }).notNull(),
+    // Prompt 4: the execution origin + the agent principal / delegation /
+    // approval a workflow ran under (never collapsed into `user_id`).
+    origin: varchar('origin', { length: 32 }),
+    agentId: varchar('agent_id', { length: 64 }),
+    delegationId: varchar('delegation_id', { length: 64 }),
+    approvalId: varchar('approval_id', { length: 64 }),
+    // Prompt 8: the initiating run's RBAC capability ceiling — bounds every
+    // inner step and compensation (null = no ceiling was bound).
+    allowedCapabilityIds: jsonb('allowed_capability_ids'),
     status: varchar('status', { length: 32 }).notNull(),
     input: jsonb('input').notNull(),
     state: jsonb('state').notNull().default({}),
@@ -782,11 +792,24 @@ export const approvalRequests = pgTable(
     intent: text('intent').notNull(),
     input: jsonb('input').notNull(),
     resumeKey: varchar('resume_key', { length: 128 }),
+    // Prompt 4: the agent principal whose run opened the approval (and the
+    // delegation that authorized the gated capability). A resumed approval
+    // executes AS this agent — re-validated at execution time.
+    agentId: varchar('agent_id', { length: 64 }),
+    delegationId: varchar('delegation_id', { length: 64 }),
+    // The policy decision the approval was opened under (Prompt 5): recorded,
+    // never recomputed, so history stays true after a policy changes.
+    policy: jsonb('policy'),
     status: varchar('status', { length: 32 }).notNull(),
     decision: varchar('decision', { length: 16 }),
     decisionReason: text('decision_reason'),
     decidedBy: varchar('decided_by', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    // Prompt 8: approval expiry + approver authority. NULL `expires_at` is a
+    // legacy row (the row mapper treats it as created_at + 24h).
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    requiredApproverRoleId: varchar('required_approver_role_id', { length: 96 }),
+    separationOfDuties: boolean('separation_of_duties').notNull().default(false),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
     executedAt: timestamp('executed_at', { withTimezone: true }),
     result: jsonb('result'),
@@ -797,6 +820,7 @@ export const approvalRequests = pgTable(
     index('approval_requests_tenant_idx').on(table.tenantId),
     index('approval_requests_conversation_idx').on(table.conversationId),
     index('approval_requests_user_idx').on(table.tenantId, table.userId),
+    index('approval_requests_expiry_idx').on(table.tenantId, table.status, table.expiresAt),
     // Cross-process resume dedupe (S24 Phase 6): at most one pending
     // approval per (tenant, resumeKey). NULL resume keys (AI one-shot
     // approvals) are distinct and unaffected.
@@ -913,7 +937,13 @@ export const agentExecutions = pgTable(
     tenantId: varchar('tenant_id', { length: 64 }).notNull(),
     userId: varchar('user_id', { length: 64 }).notNull(),
     workspaceId: varchar('workspace_id', { length: 64 }),
+    // The agent DEFINITION id (engine configuration, e.g. `finance`).
     agentId: varchar('agent_id', { length: 64 }).notNull(),
+    // Prompt 4: the agent IDENTITY (security principal, `agt_…`) that ran,
+    // and the delegations that authorized it. Null for historical rows.
+    agentIdentityId: varchar('agent_identity_id', { length: 64 }),
+    delegationIds: jsonb('delegation_ids'),
+    approvalId: varchar('approval_id', { length: 64 }),
     roleId: varchar('role_id', { length: 128 }).notNull(),
     domainId: varchar('domain_id', { length: 64 }).notNull(),
     proposalId: varchar('proposal_id', { length: 128 }),
@@ -1069,5 +1099,215 @@ export const remediationPlanSteps = pgTable(
   (table) => [
     index('remediation_steps_plan_idx').on(table.planId),
     index('remediation_steps_tenant_idx').on(table.tenantId),
+  ],
+);
+
+/**
+ * agents — AGENT IDENTITIES (Prompt 4). One row per automated security
+ * principal, owned by exactly one organization (tenant) and one workspace.
+ * An agent holds no authority of its own: `agent_delegations` grant it
+ * individual capabilities. Rows are never deleted — `revoked` is terminal
+ * and preserves the audit history of everything the agent did.
+ */
+export const agents = pgTable(
+  'agents',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    definitionId: varchar('definition_id', { length: 64 }).notNull(),
+    name: varchar('name', { length: 120 }).notNull(),
+    description: text('description').notNull(),
+    status: varchar('status', { length: 16 }).notNull(),
+    ownerUserId: varchar('owner_user_id', { length: 64 }).notNull(),
+    createdBy: varchar('created_by', { length: 64 }).notNull(),
+    statusChangedBy: varchar('status_changed_by', { length: 64 }),
+    statusReason: text('status_reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('agents_workspace_idx').on(table.organizationId, table.workspaceId),
+    index('agents_owner_idx').on(table.organizationId, table.ownerUserId),
+  ],
+);
+
+/**
+ * agent_delegations — explicit capability grants to an agent (Prompt 4).
+ * One row per (agent, capability, optional resource scope) grant, by one
+ * human, inside the agent's organization + workspace, optionally bounded in
+ * time. `expired` is never stored — it is derived at execution time from
+ * `expires_at`. Revocation sets `status = revoked` + `revoked_at`; the row is
+ * kept as evidence. The foreign key keeps a delegation from ever being
+ * orphaned from its agent record.
+ */
+export const agentDelegations = pgTable(
+  'agent_delegations',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    agentId: varchar('agent_id', { length: 64 })
+      .notNull()
+      .references(() => agents.id, { onDelete: 'restrict' }),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    grantedByUserId: varchar('granted_by_user_id', { length: 64 }).notNull(),
+    capabilityId: varchar('capability_id', { length: 128 }).notNull(),
+    resourceScope: jsonb('resource_scope'),
+    status: varchar('status', { length: 16 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    revokedBy: varchar('revoked_by', { length: 64 }),
+    revokeReason: text('revoke_reason'),
+    metadata: jsonb('metadata').notNull().default({}),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('agent_delegations_agent_idx').on(table.agentId, table.status),
+    index('agent_delegations_workspace_idx').on(table.organizationId, table.workspaceId),
+  ],
+);
+
+/**
+ * policy_settings — organization policy configuration (Prompt 5).
+ *
+ * APPEND-ONLY, versioned per (organization, policy): a change inserts a new
+ * version and never rewrites an old one, so a historical decision that names
+ * `POLICY_X@config.2` can always be explained exactly as it was. The current
+ * configuration is the highest version. Only the policy engine's rules read
+ * it (tenant-scoped by `organization_id`); nothing here grants authority —
+ * configuration can only tighten what RBAC and delegation already allow.
+ */
+export const policySettings = pgTable(
+  'policy_settings',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    policyId: varchar('policy_id', { length: 96 }).notNull(),
+    version: integer('version').notNull(),
+    config: jsonb('config').notNull(),
+    // Prompt 8: a disable is a NEW version with enabled=false (rows are only inserted).
+    enabled: boolean('enabled').notNull().default(true),
+    reason: varchar('reason', { length: 500 }),
+    configHash: varchar('config_hash', { length: 64 }),
+    changeType: varchar('change_type', { length: 24 }).notNull().default('version'),
+    createdBy: varchar('created_by', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    uniqueIndex('policy_settings_version_unique').on(
+      table.organizationId,
+      table.policyId,
+      table.version,
+    ),
+  ],
+);
+
+/**
+ * lineage_records — append-only evidence + data lineage (Prompt 6).
+ *
+ * One row per lineage fact: a retrieved piece of EVIDENCE (source type + exact
+ * source id, version, fingerprint, retrieval time), a PLANNED_ACTION, an
+ * actual EXECUTION, its separate VERIFICATION, a LINK edge, or a derived
+ * FINDING. Rows are only ever inserted (the repository has no update or
+ * delete), so a source that changes later never rewrites what was recorded:
+ * a historical record keeps the version and fingerprint that were true then.
+ * `data` holds compact structured facts only — ids, versions, fingerprints —
+ * never raw documents, secrets, or model reasoning. Nothing here is read by
+ * any authorization path. Reads are tenant-scoped (workspace optional).
+ */
+export const lineageRecords = pgTable(
+  'lineage_records',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }),
+    runId: varchar('run_id', { length: 96 }).notNull(),
+    kind: varchar('kind', { length: 24 }).notNull(),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+    seq: integer('seq').notNull(),
+    actorId: varchar('actor_id', { length: 64 }),
+    agentId: varchar('agent_id', { length: 64 }),
+    delegationId: varchar('delegation_id', { length: 64 }),
+    approvalId: varchar('approval_id', { length: 64 }),
+    invocationId: varchar('invocation_id', { length: 64 }),
+    subjectType: varchar('subject_type', { length: 48 }),
+    subjectId: varchar('subject_id', { length: 200 }),
+    fingerprint: varchar('fingerprint', { length: 64 }),
+    data: jsonb('data').notNull(),
+  },
+  (table) => [
+    index('lineage_tenant_run_idx').on(table.tenantId, table.runId),
+    index('lineage_tenant_approval_idx').on(table.tenantId, table.approvalId),
+    index('lineage_tenant_workspace_time_idx').on(
+      table.tenantId,
+      table.workspaceId,
+      table.occurredAt,
+    ),
+    index('lineage_tenant_subject_idx').on(
+      table.tenantId,
+      table.kind,
+      table.subjectType,
+      table.subjectId,
+    ),
+    index('lineage_tenant_invocation_idx').on(table.tenantId, table.invocationId),
+  ],
+);
+
+/**
+ * runtime_runs — append-only AI runtime observability (Prompt 7).
+ *
+ * One immutable row per orchestrated run (or MCP tool call): end-to-end and
+ * per-stage timing, the model calls (provider, model, latency, token usage
+ * only when reported, cost only from trusted pricing), the tools called, the
+ * approval wait (separate from run latency), and — when it failed — WHERE and
+ * WHY. Rows are only ever inserted (no update or delete path). The jsonb
+ * columns hold ids, codes, counts, durations and fingerprints only — never
+ * prompts, tool arguments, documents, secrets or model reasoning. Nothing here
+ * is read by any authorization path. Reads are tenant-scoped.
+ */
+export const runtimeRuns = pgTable(
+  'runtime_runs',
+  {
+    id: varchar('id', { length: 96 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }),
+    requestId: varchar('request_id', { length: 96 }),
+    correlationId: varchar('correlation_id', { length: 96 }),
+    actorId: varchar('actor_id', { length: 64 }).notNull(),
+    agentId: varchar('agent_id', { length: 64 }),
+    delegationId: varchar('delegation_id', { length: 64 }),
+    origin: varchar('origin', { length: 24 }).notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }).notNull(),
+    durationMs: doublePrecision('duration_ms').notNull(),
+    status: varchar('status', { length: 16 }).notNull(),
+    failureStage: varchar('failure_stage', { length: 24 }),
+    failureCode: varchar('failure_code', { length: 48 }),
+    failureClass: varchar('failure_class', { length: 24 }),
+    provider: varchar('provider', { length: 48 }),
+    model: varchar('model', { length: 128 }),
+    modelExecution: varchar('model_execution', { length: 12 }),
+    verified: boolean('verified'),
+    tokensAvailable: boolean('tokens_available').notNull(),
+    totalTokens: integer('total_tokens').notNull(),
+    cost: doublePrecision('cost'),
+    /** The full immutable RuntimeRun (stages, models, tools, retrievals, policies, approval). */
+    record: jsonb('record').notNull(),
+  },
+  (table) => [
+    index('runtime_runs_tenant_time_idx').on(table.tenantId, table.startedAt),
+    index('runtime_runs_tenant_workspace_time_idx').on(
+      table.tenantId,
+      table.workspaceId,
+      table.startedAt,
+    ),
+    index('runtime_runs_tenant_status_idx').on(table.tenantId, table.status),
+    index('runtime_runs_tenant_failure_stage_idx').on(table.tenantId, table.failureStage),
+    index('runtime_runs_tenant_provider_model_idx').on(table.tenantId, table.provider, table.model),
+    index('runtime_runs_tenant_agent_idx').on(table.tenantId, table.agentId),
+    index('runtime_runs_tenant_request_idx').on(table.tenantId, table.requestId),
   ],
 );

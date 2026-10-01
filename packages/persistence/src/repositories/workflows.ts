@@ -59,6 +59,13 @@ function rowToWorkflowSnapshot(
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
     version: row.version,
+    ...(row.origin === null ? {} : { origin: row.origin }),
+    ...(row.agentId === null ? {} : { agentId: row.agentId }),
+    ...(row.delegationId === null ? {} : { delegationId: row.delegationId }),
+    ...(row.approvalId === null ? {} : { approvalId: row.approvalId }),
+    ...(row.allowedCapabilityIds === null || !Array.isArray(row.allowedCapabilityIds)
+      ? {}
+      : { allowedCapabilityIds: row.allowedCapabilityIds as string[] }),
   };
 }
 
@@ -86,6 +93,12 @@ function workflowSnapshotToRow(
     createdAt: toDate(snapshot.createdAt),
     updatedAt: toDate(snapshot.updatedAt),
     version: snapshot.version,
+    origin: snapshot.origin ?? null,
+    agentId: snapshot.agentId ?? null,
+    delegationId: snapshot.delegationId ?? null,
+    approvalId: snapshot.approvalId ?? null,
+    allowedCapabilityIds:
+      snapshot.allowedCapabilityIds === undefined ? null : [...snapshot.allowedCapabilityIds],
   };
 }
 

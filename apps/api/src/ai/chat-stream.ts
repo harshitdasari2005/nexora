@@ -73,6 +73,12 @@ export interface ChatApprovalPayload {
   sideEffectClass: string;
   /** The user-controlled action input (e.g. `{ name }` — never identity). */
   input?: Record<string, unknown>;
+  /** ISO-8601 expiry of the recorded approval. */
+  expiresAt?: string;
+  /** The role a decider must hold, when the policy requires one. */
+  requiredApproverRoleId?: string;
+  /** Whether the decider must differ from the requester. */
+  separationOfDuties?: boolean;
 }
 
 /** A safe display step of a plan (never identity or chain-of-thought). */
@@ -101,6 +107,18 @@ export interface ChatStepPayload {
   status: string;
   /** The tool output (includes the workflow journal for workflow steps). */
   output?: unknown;
+  /** The stable policy/failure code of a failed step (never argument values). */
+  errorCode?: string;
+}
+
+/** A retrieved source the answer rests on (structured provenance; ids only, no text). */
+export interface ChatSourcePayload {
+  stepId: string;
+  toolId: string;
+  sourceId: string;
+  kind?: string;
+  version?: number;
+  title?: string;
 }
 
 /** The chat response payload streamed in the terminal `done` event. */
@@ -114,6 +132,8 @@ export interface ChatDonePayload {
   /** The committed plan (safe display steps — the UI renders a plan card). */
   plan: readonly ChatPlanStepPayload[];
   /** Per-step outcomes, in execution order. */
+  /** The retrieved sources the narration was given (Prompt 6). */
+  sources?: readonly ChatSourcePayload[];
   steps: readonly ChatStepPayload[];
   /** Approval gate outcomes (present when a gate is pending/granted/rejected). */
   approvals: readonly ChatApprovalPayload[];

@@ -75,3 +75,13 @@ export class WorkflowApprovalError extends WorkflowError {
     super('WORKFLOW_APPROVAL_ERROR', message);
   }
 }
+
+/** Recovery was requested for a workflow with nothing recoverable. */
+export class WorkflowRecoveryNotApplicableError extends WorkflowError {
+  constructor(input: { workflowId: string; reason: string }) {
+    super(
+      'WORKFLOW_RECOVERY_NOT_APPLICABLE',
+      `Workflow ${input.workflowId} has nothing to recover: ${input.reason}`,
+    );
+  }
+}

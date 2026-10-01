@@ -42,6 +42,14 @@ export interface WorkflowStep {
   assigneeRole?: string;
   /** Next step ids by outcome; decision steps route by condition. */
   next: Readonly<Record<string, string>>;
+  /**
+   * Whether the step changes state (default `true` — a step is presumed to
+   * mutate unless declared read-only). Only mutating steps need
+   * compensation when a later step fails; read-only steps (lookups) leave
+   * nothing behind, so declaring `false` keeps them out of rollback and out
+   * of the "partially completed" report.
+   */
+  mutatesState?: boolean;
   /** Retry budget for the step, when retryable (SAD.md §12.6). */
   retryPolicy?: {
     /** Maximum attempts before the step fails. */
@@ -73,8 +81,60 @@ export interface CompensationSpec {
   forStepId: string;
   /** Capability/skill id invoked to compensate. */
   capabilityId: string;
-  /** Whether compensation itself requires approval (side effects). */
+  /**
+   * Tool invoked to compensate (defaults to {@link capabilityId}). A
+   * compensating tool is workflow-internal: it is registered for execution
+   * but is never a discoverable capability, so no user request can select it.
+   */
+  toolId?: string;
+  /**
+   * Compensation input template. `{{path}}` placeholders resolve from the
+   * workflow input or the accumulated step state; a dotted path reaches into
+   * a step's recorded output (e.g. `{{hire_employee.employee.id}}` — the id
+   * of the entity that step created). Identity/tenant never appear here.
+   */
+  input?: Record<string, unknown>;
+  /**
+   * Whether compensation itself requires a separate human approval. When
+   * `true` the engine never runs it automatically: the step is reported as
+   * outstanding (recovery required) instead of being undone unattended.
+   */
   requiresApproval: boolean;
+}
+
+/** A completed, state-changing step that has NOT been undone. */
+export interface WorkflowOutstandingStep {
+  /** The step id. */
+  stepId: string;
+  /** The step name. */
+  name: string;
+  /** Why it was not undone (no compensation defined / needs approval / failed). */
+  reason: string;
+}
+
+/**
+ * The rollback ledger of a failed workflow — an explicit statement of what
+ * was and was not undone, never an implied rollback.
+ *
+ * - `not_required` — no state-changing step had completed; nothing to undo.
+ * - `compensated`  — every completed state-changing step was undone.
+ * - `partial`      — at least one completed step has no automatic
+ *   compensation (or one needing approval): the workflow is PARTIALLY
+ *   COMPLETED and {@link WorkflowCompensationRecord.outstanding} lists what
+ *   remains.
+ * - `failed`       — a compensation was attempted and failed; retryable
+ *   through workflow recovery (compensation is idempotent).
+ */
+export type WorkflowCompensationStatus = 'not_required' | 'compensated' | 'partial' | 'failed';
+
+/** The recorded rollback outcome of a workflow instance. */
+export interface WorkflowCompensationRecord {
+  /** The overall rollback status. */
+  status: WorkflowCompensationStatus;
+  /** Step ids whose effects were undone. */
+  compensatedSteps: readonly string[];
+  /** Completed state-changing steps that were NOT undone, with the reason. */
+  outstanding: readonly WorkflowOutstandingStep[];
 }
 
 /**
@@ -147,10 +207,20 @@ export interface WorkflowInstance {
   currentStepId?: string;
   /** The failure message, when the instance failed (read model). */
   error?: string;
+  /** The rollback ledger, present once a failure triggered compensation. */
+  compensation?: WorkflowCompensationRecord;
   /** ISO-8601 UTC time the instance started. */
   startedAt: Timestamp;
   /** ISO-8601 UTC time the instance finished, when finished. */
   finishedAt?: Timestamp;
+  /** Execution origin (`agent`, `orchestrator`, `rest`, …) — Prompt 4. */
+  origin?: string;
+  /** The agent principal the workflow ran under, when started by an agent. */
+  agentId?: string;
+  /** The delegation that authorized the workflow capability for that agent. */
+  delegationId?: string;
+  /** The approval that authorized the workflow, when gated. */
+  approvalId?: string;
 }
 
 /**

@@ -355,6 +355,8 @@ export function extractIntentParameters(input: {
   toolId: string;
   /** The matched capability id. */
   capabilityId: string;
+  /** The clock time-relative phrases ("tomorrow") resolve against (tests inject one). */
+  now?: Date;
 }): Record<string, unknown> {
   if (
     input.toolId === 'workflow.hire_and_assign_employee' ||
@@ -390,12 +392,83 @@ export function extractIntentParameters(input: {
     return extractKnowledgeQuestionParameters(input);
   }
   if (input.toolId === 'calendar.create_event' || input.capabilityId === 'calendar.create_event') {
-    return extractCreateCalendarEventParameters(input);
+    return extractCreateCalendarEventParameters(input, input.now);
   }
   if (input.toolId === 'projects.find_project' || input.capabilityId === 'projects.find_project') {
     return extractFindProjectParameters(input);
   }
+  if (
+    input.toolId === 'finance.submit_expense' ||
+    input.capabilityId === 'finance.submit_expense'
+  ) {
+    return extractSubmitExpenseParameters(input.intent);
+  }
+  if (input.toolId.startsWith('github.') || input.toolId.startsWith('slack.')) {
+    return extractConnectorParameters(input.toolId, input.intent);
+  }
   return {};
+}
+
+/** A GitHub `owner/repo` reference (never a URL path segment). */
+const GITHUB_REPOSITORY =
+  /(?<![\w/:.])([A-Za-z0-9][A-Za-z0-9-]{0,38})\/([A-Za-z0-9._-]{1,100})(?![\w/])/;
+
+/** A Slack channel reference (`#engineering`). */
+const SLACK_CHANNEL = /(?:^|\s)#([a-z0-9][a-z0-9_-]{0,79})\b/i;
+
+/**
+ * Extracts connector tool arguments (GitHub / Slack) from the intent.
+ *
+ * Only the business values the connector schema names are ever produced:
+ * a repository written as `owner/repo`, an issue title ("titled …" /
+ * "called …" / "for …"), a Slack `#channel`, and message text ("saying …").
+ * Anything the utterance does not state is left OUT — the executor's
+ * argument guard then rejects the call against the tool's required fields,
+ * so an incomplete request fails closed instead of reaching the provider
+ * with empty values (previously `/repos//issues`).
+ */
+export function extractConnectorParameters(
+  toolId: string,
+  intent: string,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (toolId.startsWith('github.') && toolId !== 'github.repositories.list') {
+    const repository = intent.match(GITHUB_REPOSITORY);
+    if (repository !== null) {
+      out['owner'] = repository[1];
+      out['repo'] = repository[2]?.replace(/\.+$/, '');
+    }
+    if (toolId === 'github.issues.list') {
+      const state = intent.match(/\b(open|closed)\b/i)?.[1]?.toLowerCase();
+      if (state !== undefined) {
+        out['state'] = state;
+      }
+    }
+    if (toolId === 'github.issues.create') {
+      const title = intent.match(
+        /\b(?:titled|called|named|issue\s+(?:for|about))\s+["'`]?(.+?)["'`]?(?=\s+(?:in|on|to|at)\s+[A-Za-z0-9-]+\/|,|;|\s+then\b|$)/i,
+      )?.[1];
+      const bounded = title?.trim();
+      if (bounded !== undefined && bounded.length > 0 && bounded.length <= 200) {
+        out['title'] = bounded;
+      }
+    }
+  }
+  if (toolId === 'slack.messages.send' || toolId === 'slack.messages.recent') {
+    const channel = intent.match(SLACK_CHANNEL)?.[1];
+    if (channel !== undefined) {
+      out['channel'] = `#${channel}`;
+    }
+    if (toolId === 'slack.messages.send') {
+      const text = intent.match(
+        /\b(?:saying|that says|with the text)\s+["'`]?(.+?)["'`]?\s*$/i,
+      )?.[1];
+      if (text !== undefined && text.trim().length > 0 && text.length <= 4000) {
+        out['text'] = text.trim();
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -454,4 +527,69 @@ export function extractKnowledgeQuestionParameters(input: {
     return { question: question.slice(0, 1000) };
   }
   return { question };
+}
+
+/** Currency symbols recognised in an expense request. */
+const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = {
+  '₹': 'INR',
+  $: 'USD',
+  '€': 'EUR',
+  '£': 'GBP',
+};
+
+/**
+ * Extracts `finance.submit_expense` arguments from an expense request such as
+ * "Submit an expense of ₹75,000 for the Q3 campaign against budget bud_x".
+ *
+ * Only the four business values the tool schema names are ever produced, and
+ * only when the utterance states them: the amount (converted to minor units,
+ * two decimals), the currency (a code or a symbol), the description ("for
+ * …"), and the budget id ("against budget …"). The budget id is a LOOKUP
+ * KEY only — the policy engine and the tool resolve it inside the trusted
+ * organization/workspace, so naming another tenant's id resolves to nothing.
+ * Whatever is missing is left out and the executor's argument guard fails the
+ * request closed against the tool's required fields.
+ */
+export function extractSubmitExpenseParameters(intent: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  // The budget clause is removed first so digits inside a budget id can never
+  // be mistaken for the amount; the amount must be introduced explicitly
+  // ("of 1,000", a currency symbol, or a currency code) so digits inside
+  // ordinary words ("Q3", "bud-123") are never read as money.
+  const withoutBudget = intent.replace(
+    /\b(?:against|on|from)\s+budget\s+[A-Za-z0-9_-]{1,64}/gi,
+    ' ',
+  );
+  const amount =
+    withoutBudget.match(
+      /(?<![\w.-])(₹|\$|€|£)\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(INR|USD|EUR|GBP)?(?![\w-])/i,
+    ) ??
+    withoutBudget.match(
+      /\bof\s+(?:(₹|\$|€|£)\s*)?(\d[\d,]*(?:\.\d{1,2})?)\s*(INR|USD|EUR|GBP)?(?![\w-])/i,
+    ) ??
+    withoutBudget.match(/(?<![\w.-])()(\d[\d,]*(?:\.\d{1,2})?)\s*(INR|USD|EUR|GBP)(?![\w-])/i);
+  if (amount !== null) {
+    const value = Number((amount[2] ?? '').replace(/,/g, ''));
+    if (Number.isFinite(value) && value > 0) {
+      out['amountMinorUnits'] = Math.round(value * 100);
+    }
+    const currency = (amount[3] ?? CURRENCY_SYMBOLS[amount[1] ?? ''] ?? '').toUpperCase();
+    if (currency.length === 3) {
+      out['currency'] = currency;
+    }
+  }
+  const budget = intent.match(/\b(?:against|on|from)\s+budget\s+([A-Za-z0-9_-]{1,64})/i);
+  if (budget !== null) {
+    out['budgetId'] = budget[1];
+  }
+  const description = intent.match(
+    /\bfor\s+(.{1,120}?)(?=\s+(?:against|on|from)\s+budget\b|[.?!]?$)/i,
+  );
+  if (description !== null) {
+    const text = (description[1] ?? '').trim();
+    if (text.length > 0) {
+      out['description'] = text.slice(0, 120);
+    }
+  }
+  return out;
 }

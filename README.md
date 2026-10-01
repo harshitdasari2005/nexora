@@ -113,6 +113,8 @@ pnpm lint             # eslint
 pnpm typecheck        # tsc --noEmit
 pnpm test             # vitest run (all packages)
 pnpm scan:secrets     # secret-pattern gate
+pnpm eval:run         # scenario evaluation (hermetic) → evaluation-results/latest.json
+pnpm scenarios:seed   # deterministic scenario dataset into Postgres (scenarios:reset to reseed)
 ```
 
 Database (Drizzle, in `@nexora/persistence`):
@@ -124,6 +126,30 @@ pnpm --filter @nexora/persistence db:studio
 ```
 
 The API auto-runs migrations on boot when `DATABASE_AUTO_MIGRATE=true` (default in `.env.example`).
+
+## Guided Demo (demo mode)
+
+Set `NEXORA_DEMO_MODE=true` on the API to enable the gated demo experience. At
+boot the API seeds one deterministic, isolated demo organization — **Lumen
+Capital (Demo)** — with four real seeded accounts (CEO, Team Manager, Finance
+Controller, CFO), two workspaces (Engineering Delivery, Finance), projects,
+employees, a budget and the organization's approval-authority policy. The
+landing page then shows **Start demo** (`/demo`); the in-app **Guided demo**
+(`/app/demo`) walks the story Request → Plan → Governance → Approval →
+Execution → Verification → Trace, deriving every stage from backend state.
+
+- Persona switching starts a **real session** for a seeded account
+  (`POST /api/demo/login` with a persona key from the server's allowlist — never
+  an email or user id); authorization then runs the normal pipeline.
+- **Reset demo** (`POST /api/demo/reset`) restores only the demo organization
+  (the browser names no target), is serialized and idempotent, and records the
+  reset as an activity item. Earlier demo audit history is cleared with the data.
+- With demo mode off, `/api/demo/*` answers 404 and nothing else changes.
+
+```bash
+NEXORA_DEMO_MODE=true pnpm dev:api   # API with the demo world
+pnpm dev:web                          # then open http://localhost:5173 → Start demo
+```
 
 ## Development Conventions
 

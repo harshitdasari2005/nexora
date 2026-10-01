@@ -17,11 +17,15 @@ import { prefixedId } from '@nexora/shared/ids';
 import { nowIso } from '@nexora/shared/time';
 import type { EventEnvelope } from '@nexora/shared/events';
 import type { CorrelationId, TenantId, WorkspaceId } from '@nexora/contracts/common';
-import type { WorkflowInstance as WorkflowInstanceContract } from '@nexora/contracts/workflow';
+import type {
+  WorkflowCompensationRecord,
+  WorkflowInstance as WorkflowInstanceContract,
+} from '@nexora/contracts/workflow';
 
 import type { WorkflowEventContext } from '../events/index.js';
 import {
   workflowCancelledEvent,
+  workflowCompensatedEvent,
   workflowCompletedEvent,
   workflowCreatedEvent,
   workflowFailedEvent,
@@ -30,6 +34,14 @@ import {
 } from '../events/index.js';
 import { WorkflowStateTransitionError } from './errors.js';
 import { canTransition, isTerminal, type WorkflowStatus } from './workflow-status.js';
+
+/**
+ * The reserved state key holding the rollback ledger. Step outputs are
+ * merged under their step ids; this key can never collide with one because
+ * step ids are identifiers and this one is not. It lives in the persisted
+ * state document, so the ledger survives a restart with no schema change.
+ */
+export const COMPENSATION_STATE_KEY = '__compensation';
 
 /** Input for creating a {@link WorkflowInstance}. */
 export interface CreateWorkflowInstanceInput {
@@ -49,6 +61,22 @@ export interface CreateWorkflowInstanceInput {
   correlationId: CorrelationId;
   /** The workflow input payload (user-controlled business values). */
   input: Record<string, unknown>;
+  /** Execution origin (`agent`, `orchestrator`, `rest`, …) — Prompt 4 attribution. */
+  origin?: string;
+  /** The agent principal the workflow runs under, when started by an agent. */
+  agentId?: string;
+  /** The delegation that authorized the workflow capability for that agent. */
+  delegationId?: string;
+  /** The approval that authorized the workflow, when gated. */
+  approvalId?: string;
+  /**
+   * The initiating run's RBAC capability ceiling (trusted, server-derived).
+   * Every inner step and compensation is bounded by it; `[]` (present but
+   * empty) means NO capability is permitted (fail closed). Absent = the
+   * instance carries no ceiling (engine-level tests only; the API always
+   * supplies one).
+   */
+  allowedCapabilityIds?: readonly string[];
 }
 
 /** A persistence snapshot of the {@link WorkflowInstance} aggregate. */
@@ -87,6 +115,22 @@ export interface WorkflowInstanceSnapshot {
   createdAt: string;
   updatedAt: string;
   version: number;
+  /** Execution origin (`agent`, `orchestrator`, `rest`, …) — Prompt 4 attribution. */
+  origin?: string;
+  /** The agent principal the workflow runs under, when started by an agent. */
+  agentId?: string;
+  /** The delegation that authorized the workflow capability for that agent. */
+  delegationId?: string;
+  /** The approval that authorized the workflow, when gated. */
+  approvalId?: string;
+  /**
+   * The initiating run's RBAC capability ceiling (trusted, server-derived).
+   * Every inner step and compensation is bounded by it; `[]` (present but
+   * empty) means NO capability is permitted (fail closed). Absent = the
+   * instance carries no ceiling (engine-level tests only; the API always
+   * supplies one).
+   */
+  allowedCapabilityIds?: readonly string[];
 }
 
 /**
@@ -101,6 +145,11 @@ export class WorkflowInstance {
   readonly #userId: string;
   readonly #workspaceId?: WorkspaceId;
   readonly #correlationId: CorrelationId;
+  readonly #origin?: string;
+  readonly #agentId?: string;
+  readonly #delegationId?: string;
+  readonly #approvalId?: string;
+  readonly #allowedCapabilityIds?: readonly string[];
   #status: WorkflowStatus;
   readonly #input: Record<string, unknown>;
   #state: Record<string, unknown>;
@@ -123,6 +172,12 @@ export class WorkflowInstance {
     this.#userId = input.userId;
     this.#workspaceId = input.workspaceId;
     this.#correlationId = input.correlationId;
+    this.#origin = input.origin;
+    this.#agentId = input.agentId;
+    this.#delegationId = input.delegationId;
+    this.#approvalId = input.approvalId;
+    this.#allowedCapabilityIds =
+      input.allowedCapabilityIds === undefined ? undefined : [...input.allowedCapabilityIds];
     this.#status = 'created';
     this.#input = { ...input.input };
     this.#state = {};
@@ -192,6 +247,31 @@ export class WorkflowInstance {
   /** Correlation id of the originating execution. */
   get correlationId(): CorrelationId {
     return this.#correlationId;
+  }
+
+  /** Execution origin (attribution). */
+  get origin(): string | undefined {
+    return this.#origin;
+  }
+
+  /** The agent principal the workflow runs under, when any. */
+  get agentId(): string | undefined {
+    return this.#agentId;
+  }
+
+  /** The delegation that authorized the workflow for its agent, when any. */
+  get delegationId(): string | undefined {
+    return this.#delegationId;
+  }
+
+  /** The approval that authorized the workflow, when gated. */
+  get approvalId(): string | undefined {
+    return this.#approvalId;
+  }
+
+  /** The initiating run's RBAC capability ceiling, when the instance carries one. */
+  get allowedCapabilityIds(): readonly string[] | undefined {
+    return this.#allowedCapabilityIds;
   }
 
   /** The lifecycle status. */
@@ -352,6 +432,63 @@ export class WorkflowInstance {
     );
   }
 
+  /** The rollback ledger, when a failure triggered compensation. */
+  get compensation(): WorkflowCompensationRecord | undefined {
+    return this.#state[COMPENSATION_STATE_KEY] as WorkflowCompensationRecord | undefined;
+  }
+
+  /**
+   * Records the rollback ledger (what was and was not undone). Allowed
+   * while the instance is failing (`running | awaiting_approval`) and after
+   * it failed (recovery) — never on a succeeded/cancelled instance.
+   */
+  recordCompensation(record: WorkflowCompensationRecord, now = nowIso()): void {
+    if (this.#status === 'succeeded' || this.#status === 'cancelled') {
+      throw new WorkflowStateTransitionError({
+        workflowId: this.#id,
+        from: this.#status,
+        to: 'compensated',
+        action: 'record compensation for',
+      });
+    }
+    this.#state = { ...this.#state, [COMPENSATION_STATE_KEY]: record };
+    this.#bump(now);
+  }
+
+  /**
+   * Ends a failed workflow whose completed steps were all undone:
+   * `running|awaiting_approval|failed → compensated`. Records BOTH
+   * {@link workflowFailedEvent} (the workflow did fail — notifications and
+   * detection depend on it) and {@link workflowCompensatedEvent} (nothing was
+   * left behind). `failed → compensated` is taken only by recovery, which
+   * emits just the compensated fact (the failure was already announced).
+   */
+  compensate(error: string, context: WorkflowEventContext, now = nowIso()): void {
+    const recovering = this.#status === 'failed';
+    this.#transitionTo('compensated', 'compensate', now);
+    this.#error = error;
+    this.#finishedAt = this.#finishedAt ?? now;
+    if (!recovering) {
+      this.#events.push(
+        workflowFailedEvent(context, this.#id, {
+          workflowId: this.#id,
+          definitionKey: this.#definitionKey,
+          tenantId: this.#tenantId,
+          error,
+        }),
+      );
+    }
+    this.#events.push(
+      workflowCompensatedEvent(context, this.#id, {
+        workflowId: this.#id,
+        definitionKey: this.#definitionKey,
+        tenantId: this.#tenantId,
+        error,
+        compensatedSteps: this.compensation?.compensatedSteps ?? [],
+      }),
+    );
+  }
+
   /** Cancels the workflow: `running|awaiting_approval → cancelled`. */
   cancel(context: WorkflowEventContext, now = nowIso()): void {
     this.#transitionTo('cancelled', 'cancel', now);
@@ -387,6 +524,13 @@ export class WorkflowInstance {
       createdAt: instance.createdAt,
       updatedAt: instance.updatedAt,
       version: instance.version,
+      ...(instance.origin === undefined ? {} : { origin: instance.origin }),
+      ...(instance.agentId === undefined ? {} : { agentId: instance.agentId }),
+      ...(instance.delegationId === undefined ? {} : { delegationId: instance.delegationId }),
+      ...(instance.approvalId === undefined ? {} : { approvalId: instance.approvalId }),
+      ...(instance.allowedCapabilityIds === undefined
+        ? {}
+        : { allowedCapabilityIds: [...instance.allowedCapabilityIds] }),
     };
   }
 
@@ -402,6 +546,13 @@ export class WorkflowInstance {
         workspaceId: snapshot.workspaceId as WorkspaceId | undefined,
         correlationId: snapshot.correlationId,
         input: snapshot.input,
+        ...(snapshot.origin === undefined ? {} : { origin: snapshot.origin }),
+        ...(snapshot.agentId === undefined ? {} : { agentId: snapshot.agentId }),
+        ...(snapshot.delegationId === undefined ? {} : { delegationId: snapshot.delegationId }),
+        ...(snapshot.approvalId === undefined ? {} : { approvalId: snapshot.approvalId }),
+        ...(snapshot.allowedCapabilityIds === undefined
+          ? {}
+          : { allowedCapabilityIds: snapshot.allowedCapabilityIds }),
       },
       snapshot.createdAt,
     );
@@ -431,8 +582,13 @@ export class WorkflowInstance {
       status: this.status,
       currentStepId: this.currentStepId,
       error: this.error,
+      ...(this.compensation === undefined ? {} : { compensation: this.compensation }),
       startedAt: this.startedAt,
       finishedAt: this.finishedAt,
+      ...(this.origin === undefined ? {} : { origin: this.origin }),
+      ...(this.agentId === undefined ? {} : { agentId: this.agentId }),
+      ...(this.delegationId === undefined ? {} : { delegationId: this.delegationId }),
+      ...(this.approvalId === undefined ? {} : { approvalId: this.approvalId }),
     };
   }
 

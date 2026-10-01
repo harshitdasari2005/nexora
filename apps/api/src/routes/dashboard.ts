@@ -3,15 +3,21 @@
  *
  * The first-run dashboard read model (FRONTEND.md §5): current user, current
  * organization, current workspace, installed apps (empty in v1), and recent
- * activity (empty in v1). Selection: explicit ids win; otherwise the first
- * membership / first workspace.
+ * activity (empty in v1). Selection is MEMBERSHIP-AWARE: the workspace is
+ * only ever one the caller is a genuine member of. An explicit `workspaceId`
+ * wins only if it is one of the caller's memberships (a forged or foreign id
+ * is ignored, never echoed); otherwise the first membership whose business
+ * role resolves (the same default as /api/role-context `current`), else the
+ * first membership. No membership → `workspace: null`.
  */
 
 import type { FastifyInstance } from 'fastify';
-import type { TenantId } from '@nexora/contracts/common';
+import type { TenantId, UserId } from '@nexora/contracts/common';
 import type { GetCurrentUserHandler } from '@nexora/application-identity';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
-import type { ListWorkspacesHandler } from '@nexora/application-workspaces';
+import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
+
+import type { MembershipBusinessRoleResolver } from '../business-context/business-role-resolver.js';
 
 import { requireAuth } from '../plugins/auth.js';
 import { toHttpError } from '../http/errors.js';
@@ -20,7 +26,10 @@ import { toHttpError } from '../http/errors.js';
 export interface DashboardRoutesDependencies {
   getCurrentUser: GetCurrentUserHandler;
   listOrganizations: ListOrganizationsHandler;
-  listWorkspaces: ListWorkspacesHandler;
+  /** The caller's OWN workspace memberships (never the org-wide list). */
+  listMyWorkspaces: ListMyWorkspacesHandler;
+  /** Optional: prefers a workspace whose business role resolves (role-context parity). */
+  roleResolver?: MembershipBusinessRoleResolver;
 }
 
 /** Registers the dashboard route. */
@@ -49,7 +58,8 @@ export function registerDashboardRoutes(
 
     let workspace = null;
     if (organization !== null) {
-      const workspaces = await dependencies.listWorkspaces.handle({
+      const workspaces = await dependencies.listMyWorkspaces.handle({
+        userId: auth.userId,
         organizationId: organization.id as TenantId,
       });
       if (!workspaces.ok) {
@@ -57,8 +67,21 @@ export function registerDashboardRoutes(
         return reply.code(http.statusCode).send(http.body);
       }
       const workspaceList = workspaces.value;
-      workspace =
-        workspaceList.find((item) => item.id === query.workspaceId) ?? workspaceList[0] ?? null;
+      workspace = workspaceList.find((item) => item.id === query.workspaceId) ?? null;
+      if (workspace === null && dependencies.roleResolver !== undefined) {
+        for (const item of workspaceList) {
+          const roleId = await dependencies.roleResolver.resolve({
+            userId: auth.userId as UserId,
+            tenantId: organization.id,
+            workspaceId: item.id,
+          });
+          if (roleId !== undefined) {
+            workspace = item;
+            break;
+          }
+        }
+      }
+      workspace ??= workspaceList[0] ?? null;
     }
 
     return {

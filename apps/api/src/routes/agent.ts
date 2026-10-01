@@ -41,6 +41,8 @@ import {
   type PermissionResolverDependencies,
 } from '../business-context/permissions.js';
 import { sendForbidden } from './permission-response.js';
+import { auditAgentExecutionRefusal, sendAgentExecutionResult } from './agents.js';
+import type { SecurityDecisionSink } from '@nexora/ai-runtime/execution';
 
 /** Dependencies of the business-agent routes. */
 export interface AgentRoutesDependencies {
@@ -54,6 +56,8 @@ export interface AgentRoutesDependencies {
   listMyWorkspaces: ListMyWorkspacesHandler;
   /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
   permissions: PermissionResolverDependencies;
+  /** Records refused agent executions in the audit trail (Prompt 4). */
+  securitySink?: SecurityDecisionSink;
 }
 
 /** The proposal-execution params schema. */
@@ -83,7 +87,11 @@ export function registerAgentRoutes(
 ): void {
   app.get('/api/agent', async (request, reply) => {
     const auth = requireAuth(request);
-    const query = request.query as { organizationId?: string; workspaceId?: string };
+    const query = request.query as {
+      organizationId?: string;
+      workspaceId?: string;
+      agentId?: string;
+    };
 
     const scope = await resolveTrustedScope(
       dependencies,
@@ -128,7 +136,11 @@ export function registerAgentRoutes(
     async (request, reply) => {
       const auth = requireAuth(request);
       const { proposalId } = request.params as { proposalId: string };
-      const query = request.query as { organizationId?: string; workspaceId?: string };
+      const query = request.query as {
+        organizationId?: string;
+        workspaceId?: string;
+        agentId?: string;
+      };
 
       const scope = await resolveTrustedScope(
         dependencies,
@@ -154,16 +166,28 @@ export function registerAgentRoutes(
           tenantId: scope.tenantId as TenantId,
           workspaceId: scope.workspaceId,
         },
-        { proposalId },
+        // Prompt 4: execution runs AS a persisted agent identity (required).
+        { proposalId, ...(query.agentId === undefined ? {} : { agentId: query.agentId }) },
       );
-      return sendExecutionResult(reply, request.id, result);
+      await auditAgentExecutionRefusal(dependencies.securitySink, {
+        userId: auth.userId,
+        organizationId: scope.tenantId,
+        workspaceId: scope.workspaceId,
+        agentId: query.agentId,
+        result,
+      });
+      return sendAgentExecutionResult(reply, request.id, result);
     },
   );
 
   app.post('/api/agent/execute', { schema: executeSchema }, async (request, reply) => {
     const auth = requireAuth(request);
     const body = request.body as { utterance: string };
-    const query = request.query as { organizationId?: string; workspaceId?: string };
+    const query = request.query as {
+      organizationId?: string;
+      workspaceId?: string;
+      agentId?: string;
+    };
 
     const scope = await resolveTrustedScope(
       dependencies,
@@ -189,9 +213,20 @@ export function registerAgentRoutes(
         tenantId: scope.tenantId as TenantId,
         workspaceId: scope.workspaceId,
       },
-      { utterance: body.utterance },
+      // Prompt 4: execution runs AS a persisted agent identity (required).
+      {
+        utterance: body.utterance,
+        ...(query.agentId === undefined ? {} : { agentId: query.agentId }),
+      },
     );
-    return sendExecutionResult(reply, request.id, result);
+    await auditAgentExecutionRefusal(dependencies.securitySink, {
+      userId: auth.userId,
+      organizationId: scope.tenantId,
+      workspaceId: scope.workspaceId,
+      agentId: query.agentId,
+      result,
+    });
+    return sendAgentExecutionResult(reply, request.id, result);
   });
 }
 
@@ -265,50 +300,4 @@ async function resolveTrustedScope(
     return { tenantId, workspaceId: workspaceIdQuery };
   }
   return { tenantId };
-}
-
-/** Maps an execution result to the stable HTTP surface (fail closed). */
-function sendExecutionResult(
-  reply: { code(status: number): { send(body: unknown): unknown } },
-  requestId: string,
-  result: Awaited<ReturnType<ExecuteBusinessAgentHandler['handle']>>,
-): unknown {
-  if (result.ok) {
-    return { agent: result.agent, outcome: result.outcome };
-  }
-  switch (result.reason) {
-    case 'capability-escalation':
-      return reply.code(403).send({
-        error: {
-          code: 'AUTHORIZATION_ERROR',
-          message: 'The proposal requires a capability outside your agent',
-          requestId,
-        },
-      });
-    case 'no-proposal':
-      return reply.code(404).send({
-        error: {
-          code: 'NOT_FOUND',
-          message: 'Proposal not found',
-          requestId,
-        },
-      });
-    case 'not-configured':
-      return reply.code(503).send({
-        error: {
-          code: 'SERVICE_UNAVAILABLE',
-          message: 'Agent execution is not configured',
-          requestId,
-        },
-      });
-    case 'no-role':
-    case 'no-agent':
-      return reply.code(404).send({
-        error: {
-          code: 'NOT_FOUND',
-          message: 'No agent is configured for your role',
-          requestId,
-        },
-      });
-  }
 }

@@ -229,6 +229,23 @@ export class WorkflowStepExecution {
   }
 
   /** Records a successful execution. */
+  /**
+   * Re-opens a FAILED execution for another attempt (`failed → pending`),
+   * clearing the failure. Only failed executions re-open — a succeeded one
+   * never re-runs (idempotent replay). Used to retry a failed compensation;
+   * the attempt counter keeps increasing, so each attempt has its own
+   * idempotency key.
+   */
+  reopenForRetry(now = nowIso()): void {
+    if (this.#status !== 'failed') {
+      throw new Error(`Step execution ${this.#id} is ${this.#status}; only a failed one re-opens`);
+    }
+    this.#status = 'pending';
+    this.#error = undefined;
+    this.#finishedAt = undefined;
+    this.#bump(now);
+  }
+
   succeed(output: unknown, now = nowIso()): void {
     this.#status = 'succeeded';
     this.#output = output;

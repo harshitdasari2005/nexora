@@ -41,4 +41,12 @@ export interface NexoraMCPContext {
   capabilityIds: readonly string[];
   /** Correlation/run id for tracing and approval correlation. */
   correlationId: string;
+  /**
+   * The TRUSTED agent principal the session operates as (Prompt 4), when the
+   * session was opened for an agent. Resolved and validated by the server
+   * from persisted state (organization, workspace, status) — never from a
+   * tool argument. Every tool call is re-authorized against the agent's
+   * delegations at execution time.
+   */
+  agent?: { agentId: string; definitionId: string; name: string };
 }

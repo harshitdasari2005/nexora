@@ -27,6 +27,7 @@ export interface ModuleDefinition {
 export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   { navLabel: 'Command Center' },
   { navLabel: 'Agent', requiredPermission: 'agent.use' },
+  { navLabel: 'Agents', requiredPermission: 'agent.use' },
   { navLabel: 'Problems', requiredPermission: 'problems.read' },
   { navLabel: 'Projects', requiredPermission: 'projects.read' },
   { navLabel: 'Employees', requiredPermission: 'employees.read' },
@@ -36,6 +37,9 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   { navLabel: 'Calendar', requiredPermission: 'calendar.read' },
   { navLabel: 'Finance', requiredPermission: 'budgets.read' },
   { navLabel: 'Audit', requiredPermission: 'audit.read' },
+  { navLabel: 'Runtime', requiredPermission: 'audit.read' },
+  { navLabel: 'Policy', requiredPermission: 'policy.read' },
+  { navLabel: 'Approval Queue', requiredPermission: 'approvals.decide' },
   { navLabel: 'Apps' },
   { navLabel: 'Integrations' },
   { navLabel: 'Insights', requiredPermission: 'insights.read' },

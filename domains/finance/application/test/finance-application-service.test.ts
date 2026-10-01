@@ -489,6 +489,137 @@ describe('FinanceApplicationService.submitExpense / decideExpense', () => {
   });
 });
 
+describe('FinanceApplicationService — money invariants (Prompt 9)', () => {
+  async function openBudget(service: FinanceApplicationService, overrides = {}): Promise<string> {
+    const created = await service.createBudget(
+      createBudgetCommand(overrides) as Parameters<typeof service.createBudget>[0],
+    );
+    if (!created.ok) throw new Error('expected create to succeed');
+    return created.value.budget.id;
+  }
+  const submitCommand = (budgetId: string, overrides: Record<string, unknown> = {}) => ({
+    organizationId: TENANT,
+    workspaceId: WORKSPACE,
+    budgetId,
+    submittedBy: USER,
+    description: 'Conference travel',
+    amountMinorUnits: 25_000,
+    currency: 'INR',
+    actorId: USER,
+    correlationId: 'corr_inv',
+    ...overrides,
+  });
+  const decideCommand = (expenseId: string, decision: 'approve' | 'reject') => ({
+    expenseId,
+    organizationId: TENANT,
+    workspaceId: WORKSPACE,
+    decision,
+    decidedBy: APPROVER,
+    actorId: APPROVER,
+    correlationId: 'corr_inv_decide',
+  });
+  const spent = async (service: FinanceApplicationService, budgetId: string): Promise<number> => {
+    const utilization = await service.listBudgetUtilization({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+    });
+    if (!utilization.ok) throw new Error('utilization failed');
+    return utilization.value.find((entry) => entry.budgetId === budgetId)?.spentMinorUnits ?? -1;
+  };
+
+  it('rejects an expense in a currency other than the budget currency (nothing stored)', async () => {
+    const { service, expenses } = setup();
+    const budgetId = await openBudget(service);
+    const mismatch = await service.submitExpense(submitCommand(budgetId, { currency: 'USD' }));
+    expect(mismatch.ok).toBe(false);
+    if (mismatch.ok) return;
+    expect(mismatch.error.code).toBe('BUSINESS_RULE_VIOLATION');
+    expect(expenses.expenses.size).toBe(0);
+    // Positive control: the SAME expense in the budget currency is accepted.
+    expect((await service.submitExpense(submitCommand(budgetId))).ok).toBe(true);
+    expect(expenses.expenses.size).toBe(1);
+  });
+
+  it('a budget of another workspace cannot be used to submit (NOT FOUND, nothing stored)', async () => {
+    const { service, expenses } = setup();
+    const foreign = await service.createBudget(
+      createBudgetCommand({ workspaceId: OTHER_WORKSPACE }) as Parameters<
+        typeof service.createBudget
+      >[0],
+    );
+    if (!foreign.ok) throw new Error('expected create to succeed');
+    const denied = await service.submitExpense(submitCommand(foreign.value.budget.id));
+    expect(denied.ok).toBe(false);
+    if (denied.ok) return;
+    expect(denied.error.code).toBe('NOT_FOUND');
+    expect(expenses.expenses.size).toBe(0);
+  });
+
+  it('a budget closed AFTER submission cannot receive the approval; the expense stays pending', async () => {
+    const { service } = setup();
+    const budgetId = await openBudget(service);
+    const submitted = await service.submitExpense(submitCommand(budgetId));
+    if (!submitted.ok) throw new Error('expected submit to succeed');
+    await service.closeBudget({
+      budgetId,
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: USER,
+      correlationId: 'corr_close',
+    });
+    const approve = await service.decideExpense(
+      decideCommand(submitted.value.expense.id, 'approve'),
+    );
+    expect(approve.ok).toBe(false);
+    if (approve.ok) return;
+    expect(approve.error.code).toBe('BUSINESS_RULE_VIOLATION');
+    expect(await spent(service, budgetId)).toBe(0);
+    // Control: rejecting the pending expense of a closed budget is still allowed.
+    const reject = await service.decideExpense(decideCommand(submitted.value.expense.id, 'reject'));
+    expect(reject.ok).toBe(true);
+  });
+
+  it('an expense of another workspace cannot be decided (NOT FOUND)', async () => {
+    const { service } = setup();
+    const budgetId = await openBudget(service, { workspaceId: OTHER_WORKSPACE });
+    const submitted = await service.submitExpense(
+      submitCommand(budgetId, { workspaceId: OTHER_WORKSPACE }),
+    );
+    if (!submitted.ok) throw new Error('expected submit to succeed');
+    const denied = await service.decideExpense(
+      decideCommand(submitted.value.expense.id, 'approve'),
+    );
+    expect(denied.ok).toBe(false);
+    if (denied.ok) return;
+    expect(denied.error.code).toBe('NOT_FOUND');
+  });
+
+  it('executed amount == approved amount == the utilization delta; a rejection changes nothing', async () => {
+    const { service } = setup();
+    const budgetId = await openBudget(service);
+    const first = await service.submitExpense(
+      submitCommand(budgetId, { amountMinorUnits: 12_345 }),
+    );
+    const second = await service.submitExpense(
+      submitCommand(budgetId, { amountMinorUnits: 4_000 }),
+    );
+    if (!first.ok || !second.ok) throw new Error('expected submits to succeed');
+    // Pending expenses never count.
+    expect(await spent(service, budgetId)).toBe(0);
+
+    const before = await spent(service, budgetId);
+    const approved = await service.decideExpense(decideCommand(first.value.expense.id, 'approve'));
+    if (!approved.ok) throw new Error('expected approval');
+    expect(approved.value.expense.amount.minorUnits).toBe(12_345);
+    expect((await spent(service, budgetId)) - before).toBe(12_345);
+
+    const beforeReject = await spent(service, budgetId);
+    const rejected = await service.decideExpense(decideCommand(second.value.expense.id, 'reject'));
+    expect(rejected.ok).toBe(true);
+    expect(await spent(service, budgetId)).toBe(beforeReject);
+  });
+});
+
 describe('FinanceApplicationService reads', () => {
   it('lists only the budgets and expenses of the requested workspace', async () => {
     const { service } = setup();

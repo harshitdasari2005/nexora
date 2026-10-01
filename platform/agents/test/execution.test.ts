@@ -16,6 +16,7 @@ import type {
   ActionProposal,
   AgentExecutionIntent,
   AgentExecutionOutcome,
+  AgentPrincipal,
 } from '@nexora/contracts/agent';
 import type { BusinessProblemDto } from '@nexora/contracts/detection';
 import { createInitialCatalog } from '@nexora/module-domains';
@@ -27,6 +28,7 @@ import {
   type AgentExecutionPort,
   type AgentExecutionRecorder,
   type AgentPermissionResolver,
+  type AgentPrincipalResolver,
   type AgentProblemProvider,
   type AgentProposalProvider,
   type BusinessAgentContext,
@@ -46,6 +48,35 @@ const context: BusinessAgentContext = {
 const roleResolver: BusinessAgentRoleResolver = {
   resolve: async () => 'executive.ceo',
 };
+
+/**
+ * Prompt 4: execution runs AS a persisted agent principal. The default
+ * principal is an active Executive agent in the caller's workspace.
+ */
+const EXECUTIVE_AGENT: AgentPrincipal = {
+  id: 'agt_exec',
+  organizationId: 'org_acme',
+  workspaceId: 'wsp_eng',
+  definitionId: 'executive',
+  name: 'Executive Agent',
+  description: 'test',
+  status: 'active',
+  ownerUserId: 'usr_alice',
+  createdBy: 'usr_alice',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+};
+
+/** A principal resolver over a fixed set of agents (tenant-scoped). */
+function principalsOf(...agents: AgentPrincipal[]): AgentPrincipalResolver {
+  return {
+    findById: async (organizationId, agentId) =>
+      agents.find((agent) => agent.id === agentId && agent.organizationId === organizationId),
+  };
+}
+
+/** The standard execution request fields: run as the Executive agent. */
+const AS_AGENT = { agentId: EXECUTIVE_AGENT.id } as const;
 
 /** A proposal provider with a controllable proposal set. */
 function providerWith(proposals: readonly ActionProposal[]): AgentProposalProvider {
@@ -109,6 +140,7 @@ function buildService(deps: {
   recorder?: AgentExecutionRecorder;
   problems?: AgentProblemProvider;
   permissionResolver?: AgentPermissionResolver;
+  principals?: AgentPrincipalResolver;
 }): BusinessAgentApplicationService {
   const registry = new BusinessAgentRegistry(catalog);
   for (const agent of INITIAL_AGENTS) {
@@ -125,6 +157,7 @@ function buildService(deps: {
     ...(deps.permissionResolver === undefined
       ? {}
       : { permissionResolver: deps.permissionResolver }),
+    principals: deps.principals ?? principalsOf(EXECUTIVE_AGENT),
   });
 }
 
@@ -144,7 +177,10 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     const { port, intents } = capturingPort();
     const service = buildService({ proposals: [inSetProposal], port });
 
-    const result = await service.execute(context, { proposalId: 'propose_review_attention' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      proposalId: 'propose_review_attention',
+    });
     expect(result.ok).toBe(true);
     if (!result.ok) {
       return;
@@ -163,6 +199,7 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     const service = buildService({ port });
 
     const result = await service.execute(context, {
+      ...AS_AGENT,
       utterance: 'What needs my attention across the organization?',
     });
     expect(result.ok).toBe(true);
@@ -183,7 +220,10 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     };
     const service = buildService({ port, permissionResolver });
 
-    const result = await service.execute(context, { utterance: 'What needs my attention?' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      utterance: 'What needs my attention?',
+    });
     expect(result.ok).toBe(true);
     // Order follows the AGENT's own registered order (the filter preserves
     // it), not the RBAC list's order.
@@ -200,7 +240,10 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     const permissionResolver: AgentPermissionResolver = { resolve: async () => [] };
     const service = buildService({ port, permissionResolver });
 
-    const result = await service.execute(context, { utterance: 'What needs my attention?' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      utterance: 'What needs my attention?',
+    });
     expect(result.ok).toBe(true);
     expect(intents[0]?.allowedCapabilityIds).toEqual([]);
   });
@@ -214,8 +257,11 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     };
     const service = buildService({ proposals: [inSetProposal], port, permissionResolver });
 
-    const result = await service.execute(context, { proposalId: inSetProposal.id });
-    expect(result).toEqual({ ok: false, reason: 'capability-escalation' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      proposalId: inSetProposal.id,
+    });
+    expect(result).toMatchObject({ ok: false, reason: 'capability-escalation' });
     expect(intents).toHaveLength(0);
   });
 
@@ -224,7 +270,10 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     const { port, intents } = capturingPort();
     const service = buildService({ port }); // no permissionResolver
 
-    const result = await service.execute(context, { utterance: 'What needs my attention?' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      utterance: 'What needs my attention?',
+    });
     expect(result.ok).toBe(true);
     expect(intents[0]?.allowedCapabilityIds).toEqual([...(executive?.capabilityIds ?? [])]);
   });
@@ -233,8 +282,11 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     const { port, intents } = capturingPort();
     const service = buildService({ proposals: [inSetProposal], port });
 
-    const result = await service.execute(context, { proposalId: 'propose_forged' });
-    expect(result).toEqual({ ok: false, reason: 'no-proposal' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      proposalId: 'propose_forged',
+    });
+    expect(result).toMatchObject({ ok: false, reason: 'no-proposal' });
     expect(intents).toHaveLength(0);
   });
 
@@ -249,16 +301,22 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     };
     const service = buildService({ proposals: [escalated], port });
 
-    const result = await service.execute(context, { proposalId: 'propose_forge_ceo' });
-    expect(result).toEqual({ ok: false, reason: 'capability-escalation' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      proposalId: 'propose_forge_ceo',
+    });
+    expect(result).toMatchObject({ ok: false, reason: 'capability-escalation' });
     expect(intents).toHaveLength(0);
   });
 
   it('rejects a free-form request with no utterance', async () => {
     const { port } = capturingPort();
     const service = buildService({ port });
-    const result = await service.execute(context, { utterance: '   ' });
-    expect(result).toEqual({ ok: false, reason: 'no-proposal' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      utterance: '   ',
+    });
+    expect(result).toMatchObject({ ok: false, reason: 'no-proposal' });
   });
 
   it('journals the outcome through the recorder and surfaces it in recentRuns', async () => {
@@ -266,7 +324,10 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     const { recorder, records } = recordingRecorder();
     const service = buildService({ proposals: [inSetProposal], port, recorder });
 
-    const executed = await service.execute(context, { proposalId: 'propose_review_attention' });
+    const executed = await service.execute(context, {
+      ...AS_AGENT,
+      proposalId: 'propose_review_attention',
+    });
     expect(executed.ok).toBe(true);
     if (!executed.ok) {
       return;
@@ -295,8 +356,11 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
 
   it('fails safely with not-configured when no execution port is wired', async () => {
     const service = buildService({ proposals: [inSetProposal] });
-    const result = await service.execute(context, { proposalId: 'propose_review_attention' });
-    expect(result).toEqual({ ok: false, reason: 'not-configured' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      proposalId: 'propose_review_attention',
+    });
+    expect(result).toMatchObject({ ok: false, reason: 'not-configured' });
   });
 
   it('fails safely when the caller has no business role', async () => {
@@ -311,9 +375,13 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
       roleResolver: { resolve: async () => undefined },
       proposalProvider: providerWith([inSetProposal]),
       execution: port,
+      principals: principalsOf(EXECUTIVE_AGENT),
     });
-    const result = await service.execute(context, { proposalId: 'propose_review_attention' });
-    expect(result).toEqual({ ok: false, reason: 'no-role' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      proposalId: 'propose_review_attention',
+    });
+    expect(result).toMatchObject({ ok: false, reason: 'no-role' });
   });
 
   it('surfaces detected problems in the agent DTO (S27)', async () => {
@@ -416,13 +484,13 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     const noAgent = new BusinessAgentApplicationService({
       registry,
       catalog,
-      roleResolver: { resolve: async () => 'people.hr' },
+      roleResolver: { resolve: async () => 'security.ciso' },
       proposalProvider: providerWith([]),
     });
     expect(await noAgent.resolveCapabilities(context)).toEqual({ ok: false, reason: 'no-agent' });
   });
 
-  it('fails safely when the role has no agent registered', async () => {
+  it("fails safely when the agent's definition is not registered", async () => {
     const { port } = capturingPort();
     const registry = new BusinessAgentRegistry(catalog);
     for (const agent of INITIAL_AGENTS) {
@@ -431,12 +499,62 @@ describe('BusinessAgentApplicationService.execute (S26 Phase 8)', () => {
     const service = new BusinessAgentApplicationService({
       registry,
       catalog,
-      // people.hr has no agent — fails safe.
       roleResolver: { resolve: async () => 'people.hr' },
       proposalProvider: providerWith([inSetProposal]),
       execution: port,
+      // A persisted agent whose definition no longer exists — fails safe.
+      principals: principalsOf({ ...EXECUTIVE_AGENT, definitionId: 'legal' }),
     });
-    const result = await service.execute(context, { proposalId: 'propose_review_attention' });
-    expect(result).toEqual({ ok: false, reason: 'no-agent' });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      proposalId: 'propose_review_attention',
+    });
+    expect(result).toMatchObject({ ok: false, reason: 'no-agent' });
+  });
+});
+
+describe('empty capability ceiling on agent execution (fail closed)', () => {
+  it('an unresolvable caller permission set yields an EMPTY ceiling, never the full definition', async () => {
+    const { port, intents } = capturingPort();
+    const service = buildService({
+      port,
+      permissionResolver: { resolve: async () => undefined },
+    });
+    const result = await service.execute(context, {
+      ...AS_AGENT,
+      utterance: 'What needs attention?',
+    });
+    expect(result.ok).toBe(true);
+    expect(intents[0]?.allowedCapabilityIds).toEqual([]);
+  });
+
+  it('a caller with no overlapping capability yields an EMPTY ceiling (no authority)', async () => {
+    const { port, intents } = capturingPort();
+    const service = buildService({
+      port,
+      permissionResolver: { resolve: async () => ['calendar.unrelated'] },
+    });
+    await service.execute(context, { ...AS_AGENT, utterance: 'What needs attention?' });
+    expect(intents[0]?.allowedCapabilityIds).toEqual([]);
+  });
+});
+
+describe('HR agent definition (the only ceiling containing hr.create_employee)', () => {
+  it('is the sole definition that can hire, and never holds a non-delegable capability', () => {
+    const holders = INITIAL_AGENTS.filter((a) => a.capabilityIds.includes('hr.create_employee'));
+    expect(holders.map((a) => a.id)).toEqual(['hr']);
+    const hr = holders[0];
+    for (const forbidden of [
+      'approvals.decide',
+      'agents.manage',
+      'agents.delegate',
+      'audit.read',
+    ]) {
+      expect(hr?.capabilityIds).not.toContain(forbidden);
+    }
+    // The composite's inner capabilities are inside the same ceiling.
+    for (const inner of ['projects.find_project', 'projects.assign_employee']) {
+      expect(hr?.capabilityIds).toContain(inner);
+    }
   });
 });

@@ -10,7 +10,7 @@
  *
  *   created → planning → ready → running → awaiting_approval ⇄ running
  *                                 ├──→ succeeded
- *                                 ├──→ failed
+ *                                 ├──→ failed ──→ compensated (recovery only)
  *                                 ├──→ cancelled
  *                                 └──→ compensated
  */
@@ -43,9 +43,12 @@ export const WORKFLOW_TRANSITIONS: Readonly<Record<WorkflowStatus, readonly Work
   planning: ['ready'],
   ready: ['running'],
   running: ['awaiting_approval', 'succeeded', 'failed', 'cancelled', 'compensated'],
-  awaiting_approval: ['running', 'failed', 'cancelled'],
+  awaiting_approval: ['running', 'failed', 'cancelled', 'compensated'],
   succeeded: [],
-  failed: [],
+  // `failed → compensated` is the ONLY move out of a terminal state: it is
+  // taken by workflow recovery when a previously failed rollback finally
+  // completes (see `WorkflowRuntime.recover`). No other status changes.
+  failed: ['compensated'],
   cancelled: [],
   compensated: [],
 };

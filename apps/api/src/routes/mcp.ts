@@ -33,6 +33,7 @@ import type { FastifyInstance } from 'fastify';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import type { AIBusinessContext } from '@nexora/ai-runtime';
 import type { NexoraMCPContext, NexoraMCPServer } from '@nexora/mcp';
+import type { SecurityDecisionSink, SecurityReasonCode } from '@nexora/ai-runtime/execution';
 import { prefixedId } from '@nexora/shared/ids';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
@@ -57,6 +58,28 @@ export interface McpRoutesDependencies {
     tenantId: string;
     workspaceId?: string;
   }) => Promise<AIBusinessContext | undefined>;
+  /**
+   * Prompt 4: validates an `X-Nexora-Agent` session binding server-side —
+   * the agent must exist in the caller's organization, belong to the
+   * selected workspace, be active, and the caller must hold `agent.execute`.
+   * Returns the agent's CURRENT effective capabilities (delegations ∩
+   * definition ∩ grantor authority). Absent: agent sessions are refused.
+   */
+  resolveAgent?: (input: {
+    userId: string;
+    tenantId: string;
+    workspaceId: string;
+    agentId: string;
+  }) => Promise<
+    | {
+        ok: true;
+        agent: { agentId: string; definitionId: string; name: string };
+        effectiveCapabilityIds: readonly string[];
+      }
+    | { ok: false; reasonCode: SecurityReasonCode; message: string }
+  >;
+  /** Records refused agent session bindings (Prompt 4). */
+  securitySink?: SecurityDecisionSink;
 }
 
 /** Registers the authenticated remote MCP surface. */
@@ -117,10 +140,69 @@ export function registerMcpRoutes(app: FastifyInstance, dependencies: McpRoutesD
         workspaceId = rawWorkspace;
       }
 
+      // Agent session binding (Prompt 4): a client may ask to operate AS a
+      // persisted agent. The id is only a lookup key — the server validates
+      // the agent (organization, workspace, status) and the caller's
+      // permission, and the session is then bounded by the agent's
+      // delegations (every tool call is re-authorized at execution time).
+      const agentHeader = request.headers['x-nexora-agent'];
+      const rawAgent = Array.isArray(agentHeader) ? agentHeader[0] : agentHeader;
+      let agentBinding:
+        | {
+            agent: { agentId: string; definitionId: string; name: string };
+            effectiveCapabilityIds: readonly string[];
+          }
+        | undefined;
+      if (rawAgent !== undefined && rawAgent.trim().length > 0) {
+        const refuse = async (reasonCode: SecurityReasonCode, message: string) => {
+          try {
+            await dependencies.securitySink?.({
+              actorId: auth.userId,
+              agentId: rawAgent,
+              origin: 'mcp',
+              invocationId: request.id,
+              organizationId: tenantId,
+              ...(workspaceId === undefined ? {} : { workspaceId }),
+              action: 'mcp.agent_session',
+              policyDecision: 'deny',
+              reasonCode,
+              reason: message,
+              outcome: 'blocked',
+              occurredAt: new Date().toISOString(),
+            });
+          } catch {
+            // Audit is best-effort; the refusal stands.
+          }
+          return reply.code(403).send({
+            error: { code: 'AUTHORIZATION_ERROR', message, requestId: request.id },
+          });
+        };
+        if (workspaceId === undefined) {
+          return refuse('AGENT_OUT_OF_SCOPE', 'An agent session requires X-Nexora-Workspace');
+        }
+        if (dependencies.resolveAgent === undefined) {
+          return refuse('AGENT_AUTHORITY_UNAVAILABLE', 'Agent sessions are not available');
+        }
+        const resolved = await dependencies.resolveAgent({
+          userId: auth.userId,
+          tenantId,
+          workspaceId,
+          agentId: rawAgent.trim(),
+        });
+        if (!resolved.ok) {
+          return refuse(resolved.reasonCode, resolved.message);
+        }
+        agentBinding = {
+          agent: resolved.agent,
+          effectiveCapabilityIds: resolved.effectiveCapabilityIds,
+        };
+      }
+
       const identity = {
         userId: auth.userId,
         tenantId,
         ...(workspaceId === undefined ? {} : { workspaceId }),
+        ...(agentBinding === undefined ? {} : { agentId: agentBinding.agent.agentId }),
       };
 
       // Hijack: the MCP transport owns the response stream from here.
@@ -138,8 +220,16 @@ export function registerMcpRoutes(app: FastifyInstance, dependencies: McpRoutesD
                 : { workspaceId: id.workspaceId as WorkspaceId }),
               businessDomain: business?.domainId,
               businessRole: business?.roleId,
-              capabilityIds: business?.capabilityIds ?? [],
+              // An agent session sees only what the agent could do: the
+              // user's authority ∩ the agent's effective delegated authority.
+              capabilityIds:
+                agentBinding === undefined
+                  ? (business?.capabilityIds ?? [])
+                  : (business?.capabilityIds ?? []).filter((id) =>
+                      agentBinding.effectiveCapabilityIds.includes(id),
+                    ),
               correlationId: prefixedId('mcp'),
+              ...(agentBinding === undefined ? {} : { agent: agentBinding.agent }),
             };
           },
         });

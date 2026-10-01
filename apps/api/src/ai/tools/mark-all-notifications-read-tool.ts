@@ -21,7 +21,10 @@
 
 import type { Tool, ToolExecutionContext, ToolManifest, ToolResult } from '@nexora/agent-sdk/tools';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
-import type { MarkAllNotificationsReadHandler } from '@nexora/module-notifications';
+import type {
+  MarkAllNotificationsReadHandler,
+  UnreadNotificationsCountHandler,
+} from '@nexora/module-notifications';
 
 /** Output contract of {@link MarkAllNotificationsReadTool}. */
 export interface MarkAllNotificationsReadOutput {
@@ -37,6 +40,8 @@ export const MARK_ALL_NOTIFICATIONS_READ_MANIFEST: ToolManifest = {
   sideEffectClass: 'consequential',
   idempotent: true,
   timeoutMs: 10_000,
+  // Read-back: the unread count is re-read after the write and must be zero.
+  verification: { source: 'state_readback' },
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
 };
 
@@ -51,12 +56,16 @@ export class MarkAllNotificationsReadTool implements Tool<
   readonly manifest = MARK_ALL_NOTIFICATIONS_READ_MANIFEST;
 
   readonly #markAllRead: MarkAllNotificationsReadHandler;
+  readonly #unreadCount: UnreadNotificationsCountHandler;
 
   constructor(dependencies: {
+    /** The unread-count query (read-back verification against persisted state). */
+    unreadCount: UnreadNotificationsCountHandler;
     /** The application-layer mark-all-read command handler. */
     markAllRead: MarkAllNotificationsReadHandler;
   }) {
     this.#markAllRead = dependencies.markAllRead;
+    this.#unreadCount = dependencies.unreadCount;
   }
 
   async execute(
@@ -72,6 +81,16 @@ export class MarkAllNotificationsReadTool implements Tool<
       return {
         ok: false,
         error: 'Could not clear the notification backlog',
+        completedAt: new Date().toISOString(),
+      };
+    }
+    // Read-back: re-count the caller's unread notifications in the same scope.
+    const remaining = await this.#unreadCount.handle({ userId, tenantId, workspaceId });
+    if (!remaining.ok || remaining.value.count !== 0) {
+      return {
+        ok: false,
+        error: 'Notification clearing verification failed: unread notifications remain',
+        readBackFailed: true,
         completedAt: new Date().toISOString(),
       };
     }

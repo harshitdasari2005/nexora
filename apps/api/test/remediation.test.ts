@@ -33,11 +33,13 @@ import { nowIso } from '@nexora/shared/time';
 import {
   buildTestApp,
   chatClient,
+  chatClientWithSecondUser,
   currentUserId,
   login,
   onboardOrgAndWorkspace,
   seedOrganizationMembership,
   seedProject,
+  seedWorkspace,
   seedWorkspaceMembership,
   type ChatClient,
 } from './helpers.js';
@@ -546,7 +548,7 @@ describe('Phase 10 remediation — stepwise execution', () => {
       `/api/plans/rpl_forged/advance?organizationId=${organizationId}&workspaceId=${workspaceId}`,
       {},
     );
-    expect(advance.statusCode).toBe(409);
+    expect(advance.statusCode).toBe(404);
     const replan = await client.post(
       `/api/plans/rpl_forged/replan?organizationId=${organizationId}&workspaceId=${workspaceId}`,
       {},
@@ -592,14 +594,127 @@ describe('Phase 10 remediation — stepwise execution', () => {
   });
 });
 
+describe('Prompt 9 remediation — plan operations are workspace-scoped', () => {
+  async function planInWorkspaceA() {
+    const client = await chatClient();
+    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);
+    seedDegradingWorkflowMeasurements(client, organizationId);
+    await createAndPublishArticle(
+      client,
+      { organizationId, workspaceId },
+      {
+        title: 'AUTH-017 Authentication correction',
+        body: 'When the employee-onboarding workflow degrades, correct the authentication configuration.',
+      },
+    );
+    const scanned = await client.postEmpty(
+      `/api/problems/scan?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+    );
+    const problem = (scanned.json() as { problems: BusinessProblemDto[] }).problems.find(
+      (p) => p.signalId === 'workflow_degradation',
+    );
+    const created = await client.post(
+      `/api/problems/${problem?.id}/plans?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+      {},
+    );
+    const planId = (created.json() as { plan: RemediationPlanDto }).plan.id;
+    // The SAME user is also a member of a second workspace of the organization.
+    const otherWorkspaceId = 'wsp_second_scope';
+    await seedWorkspace(client.repos, {
+      id: otherWorkspaceId,
+      organizationId,
+      slug: 'second-scope',
+    });
+    await seedWorkspaceMembership(client.repos, {
+      workspaceId: otherWorkspaceId,
+      userId: currentUserId(client),
+      role: 'admin',
+      organizationId,
+    });
+    return { client, organizationId, workspaceId, otherWorkspaceId, planId };
+  }
+
+  it('another workspace of the same tenant cannot get / advance / replan / cancel the plan (404, unchanged); the owning workspace still can', async () => {
+    const { client, organizationId, workspaceId, otherWorkspaceId, planId } =
+      await planInWorkspaceA();
+    const other = `organizationId=${organizationId}&workspaceId=${otherWorkspaceId}`;
+    const own = `organizationId=${organizationId}&workspaceId=${workspaceId}`;
+
+    expect((await client.get(`/api/plans/${planId}?${other}`)).statusCode).toBe(404);
+    expect((await client.postEmpty(`/api/plans/${planId}/advance?${other}`)).statusCode).toBe(404);
+    expect((await client.postEmpty(`/api/plans/${planId}/replan?${other}`)).statusCode).toBe(404);
+    expect((await client.postEmpty(`/api/plans/${planId}/cancel?${other}`)).statusCode).toBe(404);
+
+    // Nothing changed, and the plan does not appear in the other workspace's list.
+    const still = await client.get(`/api/plans/${planId}?${own}`);
+    expect(still.statusCode).toBe(200);
+    expect((still.json() as { plan: RemediationPlanDto }).plan.status).not.toBe('CANCELLED');
+    const otherList = await client.get(`/api/plans?${other}`);
+    expect((otherList.json() as { plans: { id: string }[] }).plans.map((p) => p.id)).not.toContain(
+      planId,
+    );
+
+    // Control: the owning workspace can operate it (advance runs, cancel stops it).
+    expect((await client.postEmpty(`/api/plans/${planId}/advance?${own}`)).statusCode).toBe(200);
+  });
+
+  it('a caller naming no workspace gets the plan’s own workspace derived (membership-checked); a non-member gets 404', async () => {
+    const { client, organizationId, workspaceId, planId } = await planInWorkspaceA();
+    const noWorkspace = `organizationId=${organizationId}`;
+    // Derived from the plan; the caller IS a member of it.
+    const derived = await client.get(`/api/plans/${planId}?${noWorkspace}`);
+    expect(derived.statusCode).toBe(200);
+    expect((derived.json() as { plan: { id: string } }).plan.id).toBe(planId);
+
+    // Remove the caller's membership of the plan's workspace: same 404 as a missing plan.
+    const memberships = (
+      client.repos.workspaceMemberships as unknown as {
+        memberships: Map<string, { workspaceId: string }>;
+      }
+    ).memberships;
+    for (const [key, value] of [...memberships]) {
+      if (value.workspaceId === workspaceId) memberships.delete(key);
+    }
+    const gone = await client.get(`/api/plans/${planId}?${noWorkspace}`);
+    expect(gone.statusCode).toBe(404);
+    expect((await client.postEmpty(`/api/plans/${planId}/cancel?${noWorkspace}`)).statusCode).toBe(
+      404,
+    );
+  });
+
+  it('a workspace-less GET /api/plans never lists plans of a workspace the caller is not a member of', async () => {
+    const { client, organizationId, workspaceId, planId } = await planInWorkspaceA();
+    const listIds = async (query: string) =>
+      ((await client.get(`/api/plans?${query}`)).json() as { plans: { id: string }[] }).plans.map(
+        (p) => p.id,
+      );
+    // Control: a member sees the plan without naming a workspace.
+    expect(await listIds(`organizationId=${organizationId}`)).toContain(planId);
+
+    const memberships = (
+      client.repos.workspaceMemberships as unknown as {
+        memberships: Map<string, { workspaceId: string }>;
+      }
+    ).memberships;
+    for (const [key, value] of [...memberships]) {
+      if (value.workspaceId === workspaceId) memberships.delete(key);
+    }
+    expect(await listIds(`organizationId=${organizationId}`)).not.toContain(planId);
+  });
+});
+
 describe('Phase 10 remediation — end-to-end resolution (approval gate + real fix)', () => {
   it(
     'project_attention: investigate → known solution → plan → approve → ' +
       'execute → verify → RESOLVED, through a real state-changing capability',
     async () => {
-      const client = await chatClient();
+      const client = await chatClientWithSecondUser();
+      const approver = client.second;
       const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);
       const userId = currentUserId(client);
+      // Separation of duties (Prompt 8): `notifications.` routes to
+      // delivery.manager, so the approver is a DISTINCT workspace admin.
+      await approver.join({ organizationId, workspaceId, workspaceRole: 'admin' });
 
       // Real persisted state: an active project + an unread notification for
       // the caller — exactly the `project_attention` condition.
@@ -680,7 +795,37 @@ describe('Phase 10 remediation — end-to-end resolution (approval gate + real f
 
       // Approve through the EXISTING chat approval surface (the same
       // decision endpoint every other governed write uses).
-      const decision = await client.post(`/api/ai/approvals/${approvalId}/decision`, {
+      // The plan opener cannot approve their own gate: refused (403) and
+      // audited with the wrong-approver-role reason (their role is
+      // executive.ceo, the gate requires delivery.manager).
+      const selfDecision = await client.post(`/api/ai/approvals/${approvalId}/decision`, {
+        decision: 'approve',
+      });
+      expect(selfDecision.statusCode).toBe(403);
+      const auditRes = await client.get(
+        `/api/audit/events?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+      );
+      const blocked = (
+        auditRes.json() as { events: { status: string; detail?: string }[] }
+      ).events.filter(
+        (event) =>
+          event.status === 'blocked' &&
+          (event.detail?.includes('WRONG_APPROVER_ROLE') === true ||
+            event.detail?.includes('SELF_APPROVAL_FORBIDDEN') === true),
+      );
+      expect(blocked.length).toBeGreaterThanOrEqual(1);
+      // Still pending after the refusal.
+      const stillPending = (
+        (
+          await client.get(
+            `/api/plans/${planId}?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+          )
+        ).json() as { plan: RemediationPlanDto }
+      ).plan;
+      expect(stillPending.status).toBe('AWAITING_APPROVAL');
+
+      // Positive control: a distinct approver holding the required role decides.
+      const decision = await approver.post(`/api/ai/approvals/${approvalId}/decision`, {
         decision: 'approve',
       });
       expect(decision.statusCode).toBe(200);
@@ -873,10 +1018,17 @@ describe('Phase 10 remediation — Finance vertical (S35): budget overrun → re
 
       // Approve through the EXISTING chat approval surface (the same
       // decision endpoint every other governed write uses) — the CFO
-      // approves their own domain's consequential action (S35 routing).
-      const decision = await client.post(`/api/ai/approvals/${approvalId}/decision`, {
-        decision: 'approve',
-      });
+      // approves the consequential action in their domain (S35 routing).
+      // The CFO-scoped approver is a DIFFERENT user from the plan opener
+      // (separation of duties, Prompt 8).
+      const decision = await inject(
+        'POST',
+        `/api/ai/approvals/${approvalId}/decision`,
+        approverCookie,
+        {
+          decision: 'approve',
+        },
+      );
       expect(decision.statusCode).toBe(200);
 
       // The now-approved step executes through the SAME governed advance

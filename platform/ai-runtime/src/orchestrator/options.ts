@@ -10,6 +10,9 @@ import type { ConfigManager } from '@nexora/config';
 import type { PlanningStrategy } from '../planner/planning-strategy.js';
 import type { CapabilityDiscovery } from '../discovery/capability-discovery.js';
 import type { ToolExecutor } from '../execution/tool-executor.js';
+import type { RunTelemetryHub } from '@nexora/module-observability';
+import type { LineagePort } from '../execution/lineage-port.js';
+import type { SecurityDecisionSink } from '../execution/security-decision.js';
 import type { ExecutionVerifier } from '../verification/execution-verifier.js';
 import type { ConversationManager } from '../conversation/conversation-manager.js';
 import type { ProviderRegistry } from '../providers/provider-registry.js';
@@ -49,6 +52,19 @@ export interface OrchestratorOptions {
    * Without it, gates fall back to the request-level auto-approve test hook.
    */
   approvals?: ApprovalEngine;
+  /**
+   * Receives a record of every security block the orchestrator makes
+   * (forged arguments before an approval opens, approved arguments that no
+   * longer match, a narration that disclosed system instructions).
+   */
+  securitySink?: SecurityDecisionSink;
+  /** Receives a PLANNED_ACTION lineage event per step (Prompt 6); best-effort, one-way. */
+  lineage?: LineagePort;
+  /**
+   * Collects per-run timing, model and tool telemetry (Prompt 7) and persists
+   * each finished run best-effort. Descriptive only.
+   */
+  runTelemetry?: RunTelemetryHub;
 }
 
 /** Runtime configuration keys read from the ConfigManager (BKD.md §11). */

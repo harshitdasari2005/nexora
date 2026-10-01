@@ -55,6 +55,12 @@ import {
 } from '../business-context/permissions.js';
 import { toHttpError } from '../http/errors.js';
 import { sendForbidden } from './permission-response.js';
+import {
+  enforceRestPolicy,
+  sendRestPolicyRefusal,
+  type RestPolicyDependencies,
+} from '../policy/rest-policy.js';
+import { SUBMIT_EXPENSE_CAPABILITY } from '@nexora/module-policy';
 
 /** Request body schema for POST /api/finance/budgets. */
 const createBudgetSchema: FastifySchema = {
@@ -161,6 +167,28 @@ const decideExpenseSchema: FastifySchema = {
   },
 };
 
+/** Per-key promise chains: serializes expense approvals within this process. */
+const approvalLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Runs `task` after every earlier task with the same key settled (in-process
+ * only: a multi-instance deployment still races between the policy read and
+ * the approval write — see the finance rest-mutation-classes residual).
+ */
+async function withApprovalLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const previous = approvalLocks.get(key) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(task);
+  const tail = run.catch(() => undefined);
+  approvalLocks.set(key, tail);
+  try {
+    return await run;
+  } finally {
+    if (approvalLocks.get(key) === tail) {
+      approvalLocks.delete(key);
+    }
+  }
+}
+
 /** Dependencies of the finance routes. */
 export interface FinanceRoutesDependencies {
   createBudget: CreateBudgetHandler;
@@ -179,6 +207,11 @@ export interface FinanceRoutesDependencies {
   listMyWorkspaces: ListMyWorkspacesHandler;
   /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
   permissions: PermissionResolverDependencies;
+  /**
+   * The central policy stack a REST mutation consults (Prompt 8). A lazy
+   * accessor: the policy layer is composed after the route registration.
+   */
+  restPolicy: () => RestPolicyDependencies;
 }
 
 /**
@@ -608,6 +641,33 @@ export function registerFinanceRoutes(
       return sendForbidden(reply, request.id, 'submit an expense');
     }
 
+    // Central policy (origin `rest`): a direct human submission is never a way
+    // around a policy DENY (closed / unresolvable budget, org-configured
+    // budget-limit deny). The budget id is only a lookup key inside the
+    // trusted, membership-verified scope. REQUIRE_APPROVAL (money movement,
+    // BR-19) is satisfied by the domain's own pending -> decided approval
+    // flow: the expense stays `pending` until ANOTHER actor with
+    // `expenses.decide` decides it — so the request proceeds and the decision
+    // is recorded in the response.
+    const policy = await enforceRestPolicy(dependencies.restPolicy(), {
+      capabilityId: SUBMIT_EXPENSE_CAPABILITY,
+      organizationId: body.organizationId,
+      workspaceId: body.workspaceId,
+      userId: auth.userId,
+      requestId: request.id,
+      // A budget that is not in the trusted scope is a plain NOT_FOUND from
+      // the domain (missing / foreign / cross-workspace are indistinguishable).
+      deferReasonCodes: ['BUDGET_UNRESOLVABLE'],
+      input: {
+        budgetId: body.budgetId,
+        amountMinorUnits: body.amountMinorUnits,
+        currency: body.currency,
+      },
+    });
+    if (!policy.ok) {
+      return sendRestPolicyRefusal(reply, request.id, policy);
+    }
+
     const result = await dependencies.submitExpense.handle({
       organizationId: body.organizationId as TenantId,
       workspaceId: body.workspaceId as WorkspaceId,
@@ -623,7 +683,9 @@ export function registerFinanceRoutes(
       const http = toHttpError(result.error, request.id);
       return reply.code(http.statusCode).send(http.body);
     }
-    return reply.code(201).send({ expense: toExpenseDto(result.value.expense) });
+    return reply
+      .code(201)
+      .send({ expense: toExpenseDto(result.value.expense), policy: policy.record });
   });
 
   app.get('/api/finance/expenses', async (request, reply) => {
@@ -748,15 +810,67 @@ export function registerFinanceRoutes(
         return sendForbidden(reply, request.id, 'decide this expense');
       }
 
-      const result = await dependencies.decideExpense.handle({
-        expenseId: params.id,
-        organizationId: body.organizationId as TenantId,
-        workspaceId: body.workspaceId as WorkspaceId,
-        decision: body.decision,
-        decidedBy: auth.userId,
-        actorId: auth.userId,
-        correlationId: request.id,
-      });
+      // Approve-time policy (Prompt 8 follow-up). The submit-time check is
+      // only a snapshot: N pending expenses can each pass it, and only the
+      // approval moves money against the budget. So an APPROVE re-evaluates the
+      // SAME central policy (origin `rest`) over the CURRENT persisted facts —
+      // the persisted expense's own amount/currency/budget (never a request
+      // operand) against the budget's persisted approved spend (which does not
+      // include this still-pending expense). DENY (e.g. a configured
+      // POLICY_FINANCE_BUDGET_LIMIT `deny` that this approval would breach) is
+      // final: an approval cannot override it. REQUIRE_APPROVAL (baseline money
+      // movement, budget under review, limit mode `require_approval`) is
+      // satisfied by THIS act: the decider is the separate, authorized human
+      // (the domain already forbids the submitter). A rejection moves no money
+      // and needs no policy. Closed/unresolvable budgets keep their domain
+      // refusals (deferred). The approved amount is never changed here.
+      const decideInLock = async () => {
+        if (body.decision === 'approve') {
+          const existing = await dependencies.getExpense.handle({
+            expenseId: params.id,
+            organizationId: body.organizationId as TenantId,
+            workspaceId: body.workspaceId as WorkspaceId,
+          });
+          // A missing/foreign/already-decided expense is answered by the domain.
+          if (existing.ok && existing.value.status === 'pending') {
+            const policy = await enforceRestPolicy(dependencies.restPolicy(), {
+              capabilityId: SUBMIT_EXPENSE_CAPABILITY,
+              organizationId: body.organizationId,
+              workspaceId: body.workspaceId,
+              userId: auth.userId,
+              requestId: request.id,
+              deferReasonCodes: ['BUDGET_UNRESOLVABLE', 'BUDGET_CLOSED'],
+              input: {
+                budgetId: existing.value.budgetId,
+                amountMinorUnits: existing.value.amountMinorUnits,
+                currency: existing.value.currency,
+              },
+            });
+            if (!policy.ok) {
+              return { refusal: policy, result: undefined } as const;
+            }
+          }
+        }
+        return {
+          refusal: undefined,
+          result: await dependencies.decideExpense.handle({
+            expenseId: params.id,
+            organizationId: body.organizationId as TenantId,
+            workspaceId: body.workspaceId as WorkspaceId,
+            decision: body.decision,
+            decidedBy: auth.userId,
+            actorId: auth.userId,
+            correlationId: request.id,
+          }),
+        } as const;
+      };
+      // Serialize approvals within this process so two concurrent approvals of
+      // the same tenant's expenses cannot both read the same "approved spend".
+      const outcome = await withApprovalLock(`${body.organizationId}`, decideInLock);
+      if (outcome.refusal !== undefined) {
+        return sendRestPolicyRefusal(reply, request.id, outcome.refusal);
+      }
+      const result = outcome.result;
       if (!result.ok) {
         const http = toHttpError(result.error, request.id);
         return reply.code(http.statusCode).send(http.body);

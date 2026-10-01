@@ -174,13 +174,16 @@ export class FakeWorkflowApprovalPort implements WorkflowApprovalPort {
     return record;
   }
 
-  decisionStatus(id: string): 'pending' | 'granted' | 'rejected' | undefined {
+  decisionStatus(id: string): 'pending' | 'granted' | 'rejected' | 'expired' | undefined {
     const request = this.requests.get(id);
     if (request === undefined) {
       return undefined;
     }
     if (request.status === 'rejected') {
       return 'rejected';
+    }
+    if (request.status === 'expired') {
+      return 'expired';
     }
     if (request.status === 'approved' || request.status === 'executing') {
       return 'granted';
@@ -215,6 +218,14 @@ export class FakeWorkflowApprovalPort implements WorkflowApprovalPort {
       result: outcome.result,
       error: outcome.error,
     });
+  }
+
+  /** Marks an approval expired (test helper). */
+  expire(id: string): void {
+    const request = this.requests.get(id);
+    if (request !== undefined) {
+      this.requests.set(id, { ...request, status: 'expired' });
+    }
   }
 
   /** Records a decision (test helper). */

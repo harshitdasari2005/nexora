@@ -152,3 +152,97 @@ describe('GovernedWriteAdapter — approval lifecycle', () => {
     expect(approvals.listByConversation('mcp:run_mcp_1')).toHaveLength(2);
   });
 });
+
+describe('GovernedWriteAdapter — a terminal approval never blocks a new request', () => {
+  const LATER_RUN: NexoraMCPContext = { ...TRUSTED_CONTEXT, correlationId: 'run_mcp_2' };
+
+  /** A resume-by-key engine (the durable engine's contract) over the in-memory store. */
+  function keyedEngine(clock?: () => Date) {
+    return new InMemoryApprovalEngine(clock === undefined ? {} : { clock: { now: clock } });
+  }
+  function adapterOver(approvals: InMemoryApprovalEngine) {
+    const executor = fakeExecutor();
+    const adapter = new GovernedWriteAdapter({
+      executor: executor as unknown as ToolExecutor,
+      approvals,
+      toolId: 'calendar.create_event',
+      capabilityId: 'calendar.create_event',
+      intent: 'Create a calendar event',
+    });
+    return { adapter, executor };
+  }
+  const grantedCalls = (executor: { execute: ReturnType<typeof vi.fn> }) =>
+    executor.execute.mock.calls.filter((call) => call[1] === true);
+
+  it('rejected: the run that was refused hears it; a LATER run re-requests with a NEW approval (attempt :2)', async () => {
+    const approvals = keyedEngine();
+    const { adapter, executor } = adapterOver(approvals);
+    const first = await adapter.invoke(ARGS, TRUSTED_CONTEXT);
+    const firstId = first.error?.details?.approvalId as string;
+    approvals.decide(firstId, { decision: 'reject', decidedBy: 'usr_bob' });
+
+    // Same run: the outcome is reported (control — the rejection is real).
+    const sameRun = await adapter.invoke(ARGS, TRUSTED_CONTEXT);
+    expect(sameRun.error?.code).toBe('APPROVAL_DENIED');
+    expect(sameRun.error?.details?.approvalId).toBe(firstId);
+
+    // A later run of the same action opens a fresh approval — never the rejected one.
+    const later = await adapter.invoke(ARGS, LATER_RUN);
+    expect(later.error?.code).toBe('APPROVAL_REQUIRED');
+    const secondId = later.error?.details?.approvalId as string;
+    expect(secondId).not.toBe(firstId);
+    expect(approvals.byId(firstId)?.status).toBe('rejected');
+    expect(approvals.byId(secondId)?.resumeKey).toMatch(/:2$/);
+    expect(grantedCalls(executor)).toHaveLength(0);
+
+    // The new attempt is a normal approval: grant it and it executes exactly once.
+    approvals.decide(secondId, { decision: 'grant', decidedBy: 'usr_bob' });
+    const executed = await adapter.invoke(ARGS, LATER_RUN);
+    expect(executed.ok).toBe(true);
+    expect(grantedCalls(executor)).toHaveLength(1);
+    expect(approvals.byId(secondId)?.status).toBe('completed');
+  });
+
+  it('expired: the same run is told to request again; a later run gets a NEW approval', async () => {
+    let now = Date.parse('2026-09-01T09:00:00.000Z');
+    const approvals = keyedEngine(() => new Date(now));
+    const { adapter } = adapterOver(approvals);
+    const first = await adapter.invoke(ARGS, TRUSTED_CONTEXT);
+    const firstId = first.error?.details?.approvalId as string;
+    now += 25 * 60 * 60 * 1000;
+    const sameRun = await adapter.invoke(ARGS, TRUSTED_CONTEXT);
+    expect(sameRun.error?.code).toBe('APPROVAL_EXPIRED');
+    const later = await adapter.invoke(ARGS, LATER_RUN);
+    expect(later.error?.code).toBe('APPROVAL_REQUIRED');
+    expect(later.error?.details?.approvalId).not.toBe(firstId);
+    expect(approvals.byId(later.error?.details?.approvalId as string)?.status).toBe(
+      'awaiting_approval',
+    );
+  });
+
+  it('completed: a later run REPLAYS the stored result (never a second approval or execution)', async () => {
+    const approvals = keyedEngine();
+    const { adapter, executor } = adapterOver(approvals);
+    const first = await adapter.invoke(ARGS, TRUSTED_CONTEXT);
+    approvals.decide(first.error?.details?.approvalId as string, {
+      decision: 'grant',
+      decidedBy: 'usr_bob',
+    });
+    const executed = await adapter.invoke(ARGS, TRUSTED_CONTEXT);
+    expect(executed.ok).toBe(true);
+    const replayed = await adapter.invoke(ARGS, LATER_RUN);
+    expect(replayed.ok).toBe(true);
+    expect(replayed.output).toEqual(executed.output);
+    expect(grantedCalls(executor)).toHaveLength(1);
+    expect(approvals.listByConversation('mcp:run_mcp_2')).toHaveLength(0);
+  });
+
+  it('a live (awaiting) approval is reused by a later run — no duplicate gate', async () => {
+    const approvals = keyedEngine();
+    const { adapter } = adapterOver(approvals);
+    const first = await adapter.invoke(ARGS, TRUSTED_CONTEXT);
+    const again = await adapter.invoke(ARGS, LATER_RUN);
+    expect(again.error?.code).toBe('APPROVAL_REQUIRED');
+    expect(again.error?.details?.approvalId).toBe(first.error?.details?.approvalId);
+  });
+});

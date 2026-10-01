@@ -138,15 +138,14 @@ describe('RBAC route enforcement (HTTP)', () => {
       organizationId,
     });
 
-    // people.hr HAS `agent.use`, so the RBAC check itself must pass here —
-    // the response is 404 only because no agent is REGISTERED for
-    // people.hr (a business-logic fact, not a permission denial; a 403
-    // here would mean the wrong thing was rejected).
+    // people.hr HAS `agent.use`, so the RBAC check itself passes and the HR
+    // agent definition (the only one that can hire, via explicit delegation)
+    // is shown to it.
     const getAgent = await client.get(
       `/api/agent?organizationId=${organizationId}&workspaceId=${hrWorkspaceId}`,
     );
-    expect(getAgent.statusCode).toBe(404);
-    expect(getAgent.json().error.message).toContain('No agent is configured');
+    expect(getAgent.statusCode).toBe(200);
+    expect(getAgent.json().id).toBe('hr');
 
     const execute = await client.post(
       `/api/agent/execute?organizationId=${organizationId}&workspaceId=${hrWorkspaceId}`,

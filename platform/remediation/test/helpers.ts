@@ -5,6 +5,7 @@
 import type { AgentExecutionIntent, AgentExecutionOutcome } from '@nexora/contracts/agent';
 import type { BusinessProblemDto } from '@nexora/contracts/detection';
 
+import type { LineageRepository } from '@nexora/module-lineage';
 import { RemediationApplicationService } from '../src/application/remediation-application-service.js';
 import { DefaultApprovalRoutingPolicy } from '../src/application/approval-routing.js';
 import { InMemoryPlanStore } from '../src/application/plan-store.js';
@@ -170,12 +171,15 @@ export class FakeRecorder implements RemediationExecutionRecorder {
 export class FakeApprovalEngine implements RemediationApprovalEngine {
   requests = new Map<string, { id: string; status: string; resumeKey: string; tenantId: string }>();
   nextStatus = 'pending';
+  /** Every `open` input, for asserting the authoritative approver requirement. */
+  opened: Array<Parameters<RemediationApprovalEngine['open']>[0]> = [];
 
   async open(input: Parameters<RemediationApprovalEngine['open']>[0]) {
     const existing = this.requests.get(input.resumeKey);
     if (existing !== undefined) {
       return { id: existing.id };
     }
+    this.opened.push(input);
     const id = `apr_${this.requests.size + 1}`;
     this.requests.set(input.resumeKey, {
       id,
@@ -196,6 +200,9 @@ export class FakeApprovalEngine implements RemediationApprovalEngine {
       if (request.id === id) {
         if (request.status === 'rejected') {
           return 'rejected';
+        }
+        if (request.status === 'expired') {
+          return 'expired';
         }
         if (request.status === 'granted' || request.status === 'approved') {
           return 'granted';
@@ -300,6 +307,7 @@ export function buildService(
     recorder?: FakeRecorder;
     approvals?: FakeApprovalEngine;
     store?: InMemoryPlanStore;
+    lineage?: LineageRepository;
   } = {},
 ) {
   const problems =
@@ -321,6 +329,7 @@ export function buildService(
     approvals,
     execution,
     recorder,
+    ...(overrides.lineage === undefined ? {} : { lineage: overrides.lineage }),
   });
   return { service, problems, reevaluator, lifecycle, execution, recorder, approvals, store };
 }

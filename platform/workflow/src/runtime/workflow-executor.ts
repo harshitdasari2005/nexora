@@ -37,9 +37,39 @@ export interface WorkflowStepInvocation {
     runId: string;
     /** Autonomy tier of the invoking run. */
     autonomyTier?: AutonomyTier;
+    /**
+     * The INITIATING run's RBAC capability ceiling (trusted). Applied to every
+     * inner step and compensation; an inner capability outside it fails
+     * closed. `[]` permits nothing. Absent = no ceiling was bound.
+     */
+    allowedCapabilityIds?: readonly string[];
+    /** Attribution (lineage only, never authority): the agent principal the run executed under. */
+    agentId?: string;
+    /** Attribution: the delegation that authorized the workflow capability. */
+    delegationId?: string;
+    /** Attribution: the approval that authorized the workflow (approval engine). */
+    approvalId?: string;
   };
   /** Whether approval was granted for this step (gate decisions). */
   approvalGranted: boolean;
+  /**
+   * Why approval is treated as granted: `approval_engine` (the workflow/step
+   * was approved through the approval engine) or `direct_human` (a direct,
+   * RBAC-authorized start by a human operator with no approval record — which
+   * satisfies only the baseline side-effect gate, never an approval that an
+   * organization policy requires).
+   */
+  approvalBasis?: 'approval_engine' | 'direct_human';
+  /**
+   * Whether this is a forward step or a compensation (rollback) of an earlier
+   * step — recorded in lineage so a partial failure reads as it happened.
+   */
+  purpose?: 'step' | 'compensation';
+  /**
+   * For a compensation: the capability of the forward step it undoes. The
+   * compensation is bounded by the ceiling through THIS capability.
+   */
+  compensatesCapabilityId?: string;
 }
 
 /** The outcome of a step invocation. */

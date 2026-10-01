@@ -23,6 +23,12 @@ export interface ModelProvider {
   readonly capabilities: readonly ProviderCapability[];
   /** The models this provider can serve (ids). */
   readonly models: readonly string[];
+  /**
+   * Whether requests to this provider leave the deployment boundary
+   * (`cloud`) or stay inside it (`local`). Telemetry records it; nothing
+   * decides authorization from it.
+   */
+  readonly execution?: 'local' | 'cloud';
   /** The chat capability, when offered. */
   readonly chat?: ChatProvider;
   /** The embedding capability, when offered. */

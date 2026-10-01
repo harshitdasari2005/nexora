@@ -1,8 +1,16 @@
 /**
- * @nexora/module-observability — platform module entry (scaffold placeholder).
+ * @nexora/module-observability — AI runtime observability (Prompt 7).
  *
- * Public contracts for this module are exported here (API_CONTRACTS.md §2).
- * Platform capability scaffold placeholder (ROADMAP.md §7 Wave C).
+ * Audit = what happened. Lineage = what data/results were connected.
+ * Observability = how the runtime PERFORMED. Descriptive only; never an input
+ * to authorization, policy or approval. See
+ * `platform/ai-runtime/docs/TRUST_MODEL.md` §11.
  */
 
-export {};
+export * from './aggregate.js';
+export * from './collector.js';
+export * from './contracts.js';
+export * from './failure.js';
+export * from './memory-repository.js';
+export * from './pricing.js';
+export * from './redact.js';

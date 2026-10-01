@@ -134,6 +134,48 @@
       "when": 1787806509152,
       "tag": "0018_new_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790693825322,
+      "tag": "0019_grey_ghost_rider",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790699076823,
+      "tag": "0020_lethal_leech",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790704024342,
+      "tag": "0021_gifted_ezekiel",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790706741699,
+      "tag": "0022_perpetual_mister_fear",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790709759717,
+      "tag": "0023_noisy_green_goblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790730357976,
+      "tag": "0024_romantic_betty_brant",
+      "breakpoints": true
     }
   ]
 }

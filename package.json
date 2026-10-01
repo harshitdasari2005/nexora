@@ -26,7 +26,10 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "dev:api": "pnpm --filter @nexora/app-api dev",
     "dev:web": "pnpm --filter @nexora/app-web dev",
-    "demo:reset": "pnpm --filter @nexora/app-api demo:reset"
+    "demo:reset": "pnpm --filter @nexora/app-api demo:reset",
+    "scenarios:seed": "pnpm --filter @nexora/app-api scenarios:seed",
+    "scenarios:reset": "pnpm --filter @nexora/app-api scenarios:reset",
+    "eval:run": "pnpm --filter @nexora/app-api eval:run"
   },
   "devDependencies": {
     "eslint": "^9.0.0",

@@ -26,6 +26,7 @@ export * from './repositories/workflow-repository.js';
 export * from './runtime/workflow-approval.js';
 export * from './runtime/workflow-executor.js';
 export * from './runtime/workflow-runtime.js';
+export * from './runtime/rollback-summary.js';
 
 // Application
 export * from './application/workflow-application-service.js';

@@ -36,6 +36,7 @@ import type {
   ToolContract,
 } from '@nexora/contracts/ai';
 import { GroqAdapter, OllamaAdapter } from '@nexora/ai-runtime/adapters';
+import type { RunTelemetryHub } from '@nexora/module-observability';
 import type { EventPublisher } from '@nexora/shared/events';
 import type {
   WorkflowInstanceRepository,
@@ -57,9 +58,15 @@ import type {
   AssignEmployeeToProjectHandler,
   CreateProjectHandler,
   FindProjectByNameHandler,
+  ListProjectMembersHandler,
   ListProjectsHandler,
 } from '@nexora/application-projects';
-import type { CreateEmployeeHandler, FindEmployeeByNameHandler } from '@nexora/application-hr';
+import type {
+  CreateEmployeeHandler,
+  FindEmployeeByNameHandler,
+  ListEmployeesByIdsHandler,
+  RevokeHireHandler,
+} from '@nexora/application-hr';
 import type { RetrieveKnowledgeHandler } from '@nexora/application-knowledge';
 import type {
   CreateCalendarEventHandler,
@@ -67,6 +74,7 @@ import type {
 } from '@nexora/application-calendar';
 import type {
   FlagOverBudgetItemsHandler,
+  ListBudgetsHandler,
   ListExpensesHandler,
   SubmitExpenseHandler,
 } from '@nexora/application-finance';
@@ -91,12 +99,22 @@ import {
   WORKFLOW_TOOL_ID,
 } from './workflow-planner.js';
 import { WorkflowToolStepExecutor } from './workflow-executor.js';
+import { createCompositePreflight } from './workflow-preflight.js';
+import type { InitiatorCapabilityResolver } from './workflow-initiator.js';
 import { AssignEmployeeToProjectTool } from './tools/assign-employee-tool.js';
 import { CreateProjectAndAssignWorkflowTool } from './tools/create-project-and-assign-tool.js';
 import { CreateCalendarEventTool } from './tools/create-calendar-event-tool.js';
 import { SubmitExpenseTool } from './tools/submit-expense-tool.js';
 import { FlagOverBudgetItemsTool } from './tools/flag-over-budget-items-tool.js';
 import { CreateEmployeeTool } from './tools/create-employee-tool.js';
+import { RevokeHireTool } from './tools/revoke-hire-tool.js';
+import { createSecurityAuditSink } from './security-audit.js';
+import type {
+  AgentAuthorityPort,
+  LineagePort,
+  PolicyPort,
+  SecurityDecisionSink,
+} from '@nexora/ai-runtime/execution';
 import { CreateProjectTool } from './tools/create-project-tool.js';
 import { HireAndAssignWorkflowTool } from './tools/hire-and-assign-tool.js';
 import { CreateWorkspaceTool } from './tools/create-workspace-tool.js';
@@ -718,6 +736,8 @@ export interface AiRuntimeDependencies {
   assignEmployeeToProject: AssignEmployeeToProjectHandler;
   /** The application-layer create-employee handler (HR write tool). */
   createEmployee: CreateEmployeeHandler;
+  /** Hire compensation used by the workflow engine's rollback (not AI-discoverable). */
+  revokeHire: RevokeHireHandler;
   /** The application-layer create-calendar-event handler (Calendar write tool). */
   createCalendarEvent: CreateCalendarEventHandler;
   /** The workspace-scoped calendar read-back handler (Calendar write tool verification). */
@@ -728,6 +748,12 @@ export interface AiRuntimeDependencies {
   listExpenses: ListExpensesHandler;
   /** The deterministic remediation handler (Finance flag-over-budget-items tool). */
   flagOverBudgetItems: FlagOverBudgetItemsHandler;
+  /** The workspace-scoped budget read-back handler (flag-over-budget-items verification). */
+  listBudgets: ListBudgetsHandler;
+  /** The tenant-scoped employee by-id read-back handler (hire verification). */
+  listEmployeesByIds: ListEmployeesByIdsHandler;
+  /** The project member read-back handler (assignment verification). */
+  listProjectMembers: ListProjectMembersHandler;
   /** The permission-filtered knowledge retrieval handler (Knowledge read tool). */
   retrieveKnowledge: RetrieveKnowledgeHandler;
   /** Resolves organization memberships (the write tools' authorization rule). */
@@ -740,6 +766,12 @@ export interface AiRuntimeDependencies {
   listActivity: ListActivityHandler;
   /** The mark-all-read command handler (clear-attention-backlog write tool). */
   markAllNotificationsRead: MarkAllNotificationsReadHandler;
+  /**
+   * Resolves an initiator's RBAC-granted executable capabilities, so the
+   * composite workflow tools can verify — server-side — that the initiator
+   * holds every inner capability before a workflow starts.
+   */
+  resolveInitiatorCapabilities?: InitiatorCapabilityResolver;
   /** Workflow instance persistence (workflow vertical slice). */
   workflowInstances: WorkflowInstanceRepository;
   /** Workflow step-journal persistence. */
@@ -764,6 +796,22 @@ export interface AiRuntimeDependencies {
    * configured credentials): no external surface is advertised.
    */
   connectors?: ConnectorConnectionStore;
+  /**
+   * Execution-time agent authority (Prompt 4): decides every invocation that
+   * runs AS an agent principal against its persisted delegations. Without
+   * it, agent invocations fail closed.
+   */
+  agentAuthority?: AgentAuthorityPort;
+  /** Central policy decisions (Prompt 5). */
+  policy?: PolicyPort;
+  /** Evidence + lineage recording (Prompt 6). */
+  lineage?: LineagePort;
+  /** Runtime observability collector (Prompt 7). */
+  runTelemetry?: RunTelemetryHub;
+  /** The clock "tomorrow"-style phrases resolve against (tests/evaluation inject one). */
+  extractionClock?: () => Date;
+  /** Approval expiry clock for the default in-memory engine (Prompt 8). */
+  approvalClock?: () => Date;
 }
 
 /** The composed AI runtime surface exposed to routes. */
@@ -782,6 +830,16 @@ export interface AiRuntime {
   approvals: ApprovalEngine;
   /** The workflow application service (the workflow vertical slice surface). */
   workflows: WorkflowApplicationService;
+  /** Records AI security blocks in the audit trail (`ai.security.blocked`). */
+  securitySink: SecurityDecisionSink;
+  /** The execution-time agent authority (shared with the MCP executor). */
+  agentAuthority?: AgentAuthorityPort;
+  /** The central policy port (shared with the MCP executor). */
+  policy?: PolicyPort;
+  /** The lineage port (shared with the MCP executor). */
+  lineage?: LineagePort;
+  /** The runtime telemetry hub (shared with the MCP executor). */
+  runTelemetry?: RunTelemetryHub;
 }
 
 /**
@@ -1120,6 +1178,8 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
     new CreateWorkspaceTool({
       createWorkspace: dependencies.createWorkspace,
       listOrganizations: dependencies.listOrganizations,
+      // Independent read-back of the created workspace.
+      listMyWorkspaces: dependencies.listMyWorkspaces,
     }),
   );
   tools.register(
@@ -1152,12 +1212,29 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
     }),
   );
   tools.register(
-    new MarkAllNotificationsReadTool({ markAllRead: dependencies.markAllNotificationsRead }),
+    new MarkAllNotificationsReadTool({
+      markAllRead: dependencies.markAllNotificationsRead,
+      // Read-back: the unread count is re-read after the write.
+      unreadCount: dependencies.unreadNotifications,
+    }),
   );
   tools.register(
     new CreateEmployeeTool({
       createEmployee: dependencies.createEmployee,
       listOrganizations: dependencies.listOrganizations,
+      // Read-back verification against persisted state.
+      listEmployeesByIds: dependencies.listEmployeesByIds,
+    }),
+  );
+  // Workflow-internal compensation of the hire step: executable by the
+  // workflow engine's rollback, but with NO capability (never discoverable by
+  // the planner) and not in the MCP tool list.
+  tools.register(
+    new RevokeHireTool({
+      revokeHire: dependencies.revokeHire,
+      listOrganizations: dependencies.listOrganizations,
+      // Independent read-back: the employee must be persisted as offboarded.
+      listEmployeesByIds: dependencies.listEmployeesByIds,
     }),
   );
   tools.register(
@@ -1166,6 +1243,8 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
       findEmployeeByName: dependencies.findEmployeeByName,
       findProjectByName: dependencies.findProjectByName,
       listOrganizations: dependencies.listOrganizations,
+      // Read-back verification against persisted state.
+      listProjectMembers: dependencies.listProjectMembers,
     }),
   );
   tools.register(
@@ -1191,6 +1270,8 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
       flagOverBudgetItems: dependencies.flagOverBudgetItems,
       listOrganizations: dependencies.listOrganizations,
       listMyWorkspaces: dependencies.listMyWorkspaces,
+      // Read-back verification against persisted state.
+      listBudgets: dependencies.listBudgets,
     }),
   );
 
@@ -1200,13 +1281,33 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
   // engine gates workflow step approval points — one approval system. The
   // platform injects the durable PostgreSQL engine (S24 Phase 6); without
   // one, the in-memory engine keeps tests/local development hermetic.
-  const approvals = dependencies.approvals ?? new InMemoryApprovalEngine();
+  const approvals =
+    dependencies.approvals ??
+    new InMemoryApprovalEngine(
+      dependencies.approvalClock === undefined
+        ? {}
+        : { clock: { now: dependencies.approvalClock } },
+    );
 
   // Workflow runtime: the journaled engine executes workflow steps through
   // the SAME ToolExecutor pipeline as AI tool calls (one execution path).
   // The workflow module stays free of Projects/HR logic — it orchestrates
   // capabilities by id through this adapter.
-  const executor = new ToolExecutor({ tools });
+  // Every security block (forged scope in arguments, a capability outside
+  // the caller's ceiling, approved arguments that no longer match, a
+  // narration that disclosed system instructions) is published as
+  // `ai.security.blocked` → projected into the audited activity feed.
+  const securitySink = createSecurityAuditSink(dependencies.publisher);
+  const executor = new ToolExecutor({
+    tools,
+    securitySink,
+    ...(dependencies.agentAuthority === undefined
+      ? {}
+      : { agentAuthority: dependencies.agentAuthority }),
+    ...(dependencies.policy === undefined ? {} : { policy: dependencies.policy }),
+    ...(dependencies.lineage === undefined ? {} : { lineage: dependencies.lineage }),
+    ...(dependencies.runTelemetry === undefined ? {} : { telemetry: dependencies.runTelemetry }),
+  });
   const workflowExecutor = new WorkflowToolStepExecutor(executor, tools);
   const workflowDefinitions = new WorkflowDefinitionRegistry([
     createProjectAndAssignWorkflowDefinition(),
@@ -1221,16 +1322,43 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
     publisher: dependencies.publisher,
   });
   const workflows = new WorkflowApplicationService(workflowRuntime);
+  // Composite approval preflight (Prompt 9): inner-step approval governance the
+  // outer (unit) approval does not cover refuses before any step runs.
+  const compositePreflight =
+    dependencies.policy === undefined
+      ? undefined
+      : createCompositePreflight({
+          policy: dependencies.policy,
+          approvals,
+          sideEffectOf: (toolId) => tools.resolve(toolId)?.manifest.sideEffectClass,
+          securitySink,
+        });
   tools.register(
     new CreateProjectAndAssignWorkflowTool({
       startWorkflow: new StartWorkflowHandler(workflows),
       listOrganizations: dependencies.listOrganizations,
+      // Independent post-workflow read-back of the created records + assignment.
+      listEmployeesByIds: dependencies.listEmployeesByIds,
+      listProjects: dependencies.listProjects,
+      listProjectMembers: dependencies.listProjectMembers,
+      ...(dependencies.resolveInitiatorCapabilities === undefined
+        ? {}
+        : { resolveInitiatorCapabilities: dependencies.resolveInitiatorCapabilities }),
+      ...(compositePreflight === undefined ? {} : { preflight: compositePreflight }),
     }),
   );
   tools.register(
     new HireAndAssignWorkflowTool({
       startWorkflow: new StartWorkflowHandler(workflows),
       listOrganizations: dependencies.listOrganizations,
+      // Independent post-workflow read-back of the created records + assignment.
+      listEmployeesByIds: dependencies.listEmployeesByIds,
+      listProjects: dependencies.listProjects,
+      listProjectMembers: dependencies.listProjectMembers,
+      ...(dependencies.resolveInitiatorCapabilities === undefined
+        ? {}
+        : { resolveInitiatorCapabilities: dependencies.resolveInitiatorCapabilities }),
+      ...(compositePreflight === undefined ? {} : { preflight: compositePreflight }),
     }),
   );
 
@@ -1312,13 +1440,22 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
     prompts,
     narrationPromptId: NARRATION_PROMPT_ID,
     approvals,
+    securitySink,
+    ...(dependencies.lineage === undefined ? {} : { lineage: dependencies.lineage }),
+    ...(dependencies.runTelemetry === undefined ? {} : { runTelemetry: dependencies.runTelemetry }),
     // Deterministic parameter binding: user-controlled business fields are
     // extracted per tool (workspace name / project name + description);
     // identity/tenant/scope stay trusted-context. Workflow intents are
     // detected by the deterministic workflow planner and planned as ONE
     // workflow-orchestrating step (the runtime executes the internal steps).
     planner: new SequentialPlanner({
-      parameterExtractor: extractIntentParameters,
+      parameterExtractor: (input) =>
+        extractIntentParameters({
+          ...input,
+          ...(dependencies.extractionClock === undefined
+            ? {}
+            : { now: dependencies.extractionClock() }),
+        }),
       workflowPlanner: createWorkflowProposalDetector({
         workflows: defaultWorkflowPlannerSpecs(),
         getDefinition: (key) => workflowDefinitions.getByKey(key),
@@ -1326,7 +1463,22 @@ export function buildAiRuntime(dependencies: AiRuntimeDependencies): AiRuntime {
     }),
   });
 
-  return { orchestrator, conversations, registry, tools, store, approvals, workflows };
+  return {
+    orchestrator,
+    conversations,
+    registry,
+    tools,
+    store,
+    approvals,
+    workflows,
+    securitySink,
+    ...(dependencies.agentAuthority === undefined
+      ? {}
+      : { agentAuthority: dependencies.agentAuthority }),
+    ...(dependencies.policy === undefined ? {} : { policy: dependencies.policy }),
+    ...(dependencies.lineage === undefined ? {} : { lineage: dependencies.lineage }),
+    ...(dependencies.runTelemetry === undefined ? {} : { runTelemetry: dependencies.runTelemetry }),
+  };
 }
 
 /** Builds the minimal projects agent manifest for the registry. */

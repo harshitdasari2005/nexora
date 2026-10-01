@@ -28,6 +28,7 @@ import type { NexoraMCPContext, NexoraMCPTool, NexoraMCPToolResult } from '@nexo
 import { toolError } from '@nexora/mcp';
 
 import { GovernedWriteAdapter } from './governed-write-adapter.js';
+import { mcpRunKeyField } from './mcp-run-scope.js';
 
 /** The canonical tool → MCP tool mapping (explicit, stable names). */
 const MCP_TOOL_MAP = [
@@ -195,7 +196,8 @@ export function buildNexoraMCPTools(options: BuildNexoraMCPToolsOptions): readon
     }
     return {
       definition,
-      handle: (args, context) => readToolInvoke(options.executor, entry.toolId, args, context),
+      handle: (args, context) =>
+        readToolInvoke(options.executor, entry.toolId, entry.requiredCapability, args, context),
     };
   });
 }
@@ -214,6 +216,7 @@ function isOptionalConnectorEntry(entry: { toolId: string }): boolean {
 async function readToolInvoke(
   executor: ToolExecutor,
   toolId: string,
+  capabilityId: string,
   args: Record<string, unknown>,
   context: NexoraMCPContext,
 ): Promise<NexoraMCPToolResult> {
@@ -225,7 +228,15 @@ async function readToolInvoke(
       tenantId: context.tenantId,
       workspaceId: context.workspaceId,
       runId: context.correlationId,
+      ...mcpRunKeyField(),
       autonomyTier: 'supervised',
+      // The capability the MCP tool is advertised under — the ceiling check
+      // binds to it (not to the raw tool id), exactly like the write adapter.
+      capabilityId,
+      origin: 'mcp',
+      // Prompt 4: an agent-bound session executes AS the agent (re-authorized
+      // against its delegations at execution time).
+      ...(context.agent === undefined ? {} : { agent: context.agent }),
       // S34: the MCP surface bypasses discovery entirely (direct tool
       // invocation by name) — the executor's own RBAC ceiling check is the
       // ONLY enforcement point for it.

@@ -16,8 +16,16 @@
  * Consistency model: no distributed transactions. The instance is the
  * journal — the workflow-level authorization (a single granted approval for
  * the whole workflow unit) covers internal step mutations; each step's
- * mutation goes through the owning bounded context. Compensation is recorded
- * but not destructive in v1 (see module README).
+ * mutation goes through the owning bounded context.
+ *
+ * Failure model (saga): when a step fails, every COMPLETED state-changing
+ * step is compensated in reverse order through its declared compensating
+ * capability — never guessed. The outcome is an explicit ledger on the
+ * instance (`compensated` / `partial` / `failed`): a step with no safe
+ * compensation is reported as outstanding, not silently forgotten, and a
+ * failed compensation stays retryable through {@link WorkflowRuntime.recover}.
+ * Each compensation is journaled as its own step (`compensate:<stepId>`),
+ * so it appears in the audit trail like any other execution.
  */
 
 import { err, ok, type Result } from '@nexora/shared/result';
@@ -32,8 +40,10 @@ import {
   WorkflowError,
   WorkflowInstanceNotFoundError,
   WorkflowNotRunningError,
+  WorkflowRecoveryNotApplicableError,
 } from '../domain/errors.js';
 import { resolveStepInput } from '../domain/input-resolver.js';
+import { COMPENSATION_STEP_PREFIX } from '../domain/workflow-definition.js';
 import { WorkflowInstance } from '../domain/workflow-instance.js';
 import { WorkflowStepExecution } from '../domain/workflow-step-execution.js';
 import type {
@@ -47,11 +57,18 @@ import {
   workflowStepStartedEvent,
 } from '../events/index.js';
 import type {
+  WorkflowCompensationRecord,
+  WorkflowDefinition,
   WorkflowExecutionRecord,
   WorkflowInstance as WorkflowInstanceContract,
+  WorkflowOutstandingStep,
 } from '@nexora/contracts/workflow';
 import type { WorkflowApprovalPort } from './workflow-approval.js';
-import type { WorkflowStepExecutor, WorkflowStepResult } from './workflow-executor.js';
+import type {
+  WorkflowStepExecutor,
+  WorkflowStepInvocation,
+  WorkflowStepResult,
+} from './workflow-executor.js';
 
 /** The trusted execution context of a workflow run. */
 export interface WorkflowRunContext {
@@ -63,6 +80,23 @@ export interface WorkflowRunContext {
   workspaceId?: WorkspaceId;
   /** Correlation id of the originating execution (trusted). */
   correlationId: string;
+  /**
+   * Execution attribution (Prompt 4), all trusted server-side values: the
+   * entry point (`agent`, `orchestrator`, `rest`, …), the agent principal
+   * and delegation the workflow runs under, and the approval that
+   * authorized it. Recorded on the instance — never collapsed into userId.
+   */
+  origin?: string;
+  agentId?: string;
+  delegationId?: string;
+  approvalId?: string;
+  /**
+   * The initiating run's RBAC capability ceiling (trusted). It is persisted
+   * on the instance and applied to EVERY inner step and compensation: an
+   * inner capability outside it fails closed (`FORBIDDEN`). `[]` permits
+   * nothing.
+   */
+  allowedCapabilityIds?: readonly string[];
 }
 
 /** Input for starting a workflow instance. */
@@ -104,6 +138,8 @@ export class WorkflowRuntime {
   readonly #approvals?: WorkflowApprovalPort;
   readonly #publisher: EventPublisher;
   readonly #now: () => string;
+  /** Workflow ids whose recovery is in flight (single-flight guard). */
+  readonly #recovering = new Set<string>();
 
   constructor(dependencies: WorkflowRuntimeDependencies) {
     this.#definitions = dependencies.definitions;
@@ -113,6 +149,30 @@ export class WorkflowRuntime {
     this.#approvals = dependencies.approvals;
     this.#publisher = dependencies.publisher;
     this.#now = dependencies.now ?? (() => new Date().toISOString());
+  }
+
+  /**
+   * The forward-step capability/tool ids of a registered definition, in step
+   * order (deduplicated), or `undefined` for an unknown key. Compensations are
+   * not listed: they are bounded through the forward capability they undo.
+   */
+  requiredCapabilities(
+    definitionKey: string,
+  ): readonly { capabilityId: string; toolId: string }[] | undefined {
+    const definition = this.#definitions.getByKey(definitionKey);
+    if (definition === undefined) {
+      return undefined;
+    }
+    const seen = new Set<string>();
+    const out: { capabilityId: string; toolId: string }[] = [];
+    for (const step of definition.steps) {
+      if (step.capabilityId === undefined || seen.has(step.capabilityId)) {
+        continue;
+      }
+      seen.add(step.capabilityId);
+      out.push({ capabilityId: step.capabilityId, toolId: step.toolId ?? step.capabilityId });
+    }
+    return out;
   }
 
   /**
@@ -131,6 +191,18 @@ export class WorkflowRuntime {
       if (missing.length > 0) {
         return err(new WorkflowApprovalError(`Workflow input is missing: ${missing.join(', ')}`));
       }
+      // Only the input keys the definition declares are accepted: an
+      // undeclared key (e.g. one named after a step id, or the reserved
+      // compensation ledger key) is refused before any instance exists.
+      const declared = declaredInputKeys(definition);
+      const undeclared = Object.keys(input.input).filter((key) => !declared.has(key));
+      if (undeclared.length > 0) {
+        return err(
+          new WorkflowApprovalError(
+            `Workflow input has undeclared fields: ${undeclared.slice(0, 5).join(', ')}`,
+          ),
+        );
+      }
 
       const context = this.#eventContext(input.context);
       const instance = WorkflowInstance.create(
@@ -143,6 +215,17 @@ export class WorkflowRuntime {
           workspaceId: input.context.workspaceId,
           correlationId: input.context.correlationId,
           input: input.input,
+          ...(input.context.origin === undefined ? {} : { origin: input.context.origin }),
+          ...(input.context.agentId === undefined ? {} : { agentId: input.context.agentId }),
+          ...(input.context.delegationId === undefined
+            ? {}
+            : { delegationId: input.context.delegationId }),
+          ...(input.context.approvalId === undefined
+            ? {}
+            : { approvalId: input.context.approvalId }),
+          ...(input.context.allowedCapabilityIds === undefined
+            ? {}
+            : { allowedCapabilityIds: input.context.allowedCapabilityIds }),
         },
         context,
         this.#now(),
@@ -190,11 +273,16 @@ export class WorkflowRuntime {
         return err(new WorkflowApprovalError('Approval does not belong to this workflow'));
       }
       const disposition = await this.#approvals?.decisionStatus(input.approvalId);
-      if (disposition === 'rejected') {
+      if (disposition === 'rejected' || disposition === 'expired') {
+        // Rejected OR expired: a terminal NOT-granted outcome — nothing runs.
         const context = this.#eventContext(this.#contextOf(instance));
-        instance.fail('A required approval was rejected', context, this.#now());
-        await this.#instances.save(instance);
-        await this.#publish(instance.pullDomainEvents());
+        await this.#failWorkflow(
+          instance,
+          disposition === 'expired'
+            ? 'A required approval expired before it was granted'
+            : 'A required approval was rejected',
+          context,
+        );
         return ok(await this.#record(instance.id));
       }
       if (disposition !== 'granted') {
@@ -327,22 +415,18 @@ export class WorkflowRuntime {
           await this.#publish(instance.pullDomainEvents());
         } else if (failedExecution !== undefined) {
           const error = failedExecution.error ?? `Step ${failedExecution.stepId} failed`;
-          instance.fail(
+          await this.#failWorkflow(
+            instance,
             `Workflow failed at step ${failedExecution.stepId}: ${error}`,
             context,
-            this.#now(),
           );
-          await this.#instances.save(instance);
-          await this.#publish(instance.pullDomainEvents());
         } else if (definition.steps.every((step) => succeeded.has(step.id))) {
           // All steps succeeded — the accumulated state is the output.
           instance.complete({ ...instance.state }, context, this.#now());
           await this.#instances.save(instance);
           await this.#publish(instance.pullDomainEvents());
         } else {
-          instance.fail('Workflow stalled without progress', context, this.#now());
-          await this.#instances.save(instance);
-          await this.#publish(instance.pullDomainEvents());
+          await this.#failWorkflow(instance, 'Workflow stalled without progress', context);
         }
         return;
       }
@@ -474,17 +558,20 @@ export class WorkflowRuntime {
           // The SAME bound input recorded on the approval/execution record is
           // executed — the approval `input` always matches what ran.
           input: boundInput,
-          context: {
-            userId: instance.userId,
-            tenantId: instance.tenantId,
-            workspaceId: instance.workspaceId,
-            runId: instance.correlationId,
-            autonomyTier: 'supervised',
-          },
+          purpose: 'step',
+          context: this.#invocationContext(instance),
           // Steps execute under the workflow-level authorization (the whole
           // workflow is a gated unit). Step-level approval points add an
-          // extra human-control gate handled above/by resume.
+          // extra human-control gate handled above/by resume. The basis
+          // records WHY approval is treated as granted: through the approval
+          // engine (workflow/step approval) or only by the direct, RBAC-
+          // authorized start of a human operator (which never satisfies an
+          // approval that policy requires beyond the baseline side-effect gate).
           approvalGranted: true,
+          approvalBasis:
+            instance.approvalId !== undefined || existing?.approvalId !== undefined
+              ? 'approval_engine'
+              : 'direct_human',
         });
 
         if (result.ok && !result.blocked) {
@@ -533,9 +620,11 @@ export class WorkflowRuntime {
             error,
           }),
         ]);
-        instance.fail(`Step ${step.id} (${step.name}) failed: ${error}`, context, this.#now());
-        await this.#instances.save(instance);
-        await this.#publish(instance.pullDomainEvents());
+        await this.#failWorkflow(
+          instance,
+          `Step ${step.id} (${step.name}) failed: ${error}`,
+          context,
+        );
         return 'failed';
       } catch (caught) {
         const error = toWorkflowError(caught);
@@ -553,17 +642,273 @@ export class WorkflowRuntime {
             error: error.message,
           }),
         ]);
-        instance.fail(
+        await this.#failWorkflow(
+          instance,
           `Step ${step.id} (${step.name}) failed: ${error.message}`,
           context,
-          this.#now(),
         );
-        await this.#instances.save(instance);
-        await this.#publish(instance.pullDomainEvents());
         return 'failed';
       }
     }
     return 'failed';
+  }
+
+  /**
+   * Retries the outstanding compensation of a failed workflow. Applicable
+   * only to an instance whose rollback FAILED (`compensation.status ===
+   * 'failed'`): a `partial` rollback has no automatic compensating action to
+   * retry (the ledger says what a human must recover), and anything else has
+   * nothing to undo.
+   *
+   * Idempotent and single-flight: an already-compensated step is never
+   * compensated again (its journal record is final), and a concurrent
+   * recovery of the same instance is refused rather than raced. Tenant-scoped
+   * like every read.
+   */
+  async recover(input: {
+    workflowId: string;
+    tenantId: TenantId;
+  }): Promise<Result<WorkflowExecutionRecord, WorkflowError>> {
+    let claimed = false;
+    try {
+      const instance = await this.#requireInstance(input.workflowId);
+      if (instance.tenantId !== input.tenantId) {
+        return err(new WorkflowInstanceNotFoundError({ workflowId: input.workflowId }));
+      }
+      if (instance.status !== 'failed' || instance.compensation?.status !== 'failed') {
+        return err(
+          new WorkflowRecoveryNotApplicableError({
+            workflowId: instance.id,
+            reason:
+              instance.compensation === undefined
+                ? 'no rollback was recorded'
+                : `rollback status is ${instance.compensation.status} (${instance.status})`,
+          }),
+        );
+      }
+      if (this.#recovering.has(instance.id)) {
+        return err(new WorkflowApprovalError('Recovery of this workflow is already in progress'));
+      }
+      this.#recovering.add(instance.id);
+      claimed = true;
+
+      const context = this.#eventContext(this.#contextOf(instance));
+      const definition = this.#definitions.getById(instance.definitionId);
+      if (definition === undefined) {
+        return err(new WorkflowDefinitionNotFoundError({ key: instance.definitionKey }));
+      }
+      const record = await this.#compensate(instance, definition, context);
+      instance.recordCompensation(record, this.#now());
+      if (record.status === 'compensated') {
+        instance.compensate(instance.error ?? 'Workflow failed', context, this.#now());
+      }
+      await this.#instances.save(instance);
+      await this.#publish(instance.pullDomainEvents());
+      return ok(await this.#record(instance.id));
+    } catch (error) {
+      return err(toWorkflowError(error));
+    } finally {
+      if (claimed) {
+        this.#recovering.delete(input.workflowId);
+      }
+    }
+  }
+
+  /**
+   * Ends a failing workflow: undoes the completed state-changing steps, then
+   * records the honest terminal state — `compensated` when everything was
+   * undone, otherwise `failed` with the rollback ledger saying exactly what
+   * remains (never an implied rollback). Persists and publishes.
+   */
+  async #failWorkflow(
+    instance: WorkflowInstance,
+    message: string,
+    context: WorkflowEventContext,
+  ): Promise<void> {
+    const definition = this.#definitions.getById(instance.definitionId);
+    const record =
+      definition === undefined ? undefined : await this.#compensate(instance, definition, context);
+    if (record !== undefined && record.status !== 'not_required') {
+      instance.recordCompensation(record, this.#now());
+    }
+    if (record?.status === 'compensated') {
+      instance.compensate(message, context, this.#now());
+    } else {
+      instance.fail(message, context, this.#now());
+    }
+    await this.#instances.save(instance);
+    await this.#publish(instance.pullDomainEvents());
+  }
+
+  /**
+   * Compensates the completed state-changing steps, newest first. Steps are
+   * only ever undone through their DECLARED compensation — a step with none,
+   * or whose compensation needs its own approval, is reported outstanding.
+   * Read-only steps (`mutatesState: false`) leave nothing to undo.
+   *
+   * Idempotent: a compensation whose journal record already succeeded is
+   * counted, never re-run; a failed one is re-attempted with the next attempt
+   * number (each attempt has its own idempotency key). The compensating tool
+   * is itself idempotent, so even a lost write cannot double-apply.
+   */
+  async #compensate(
+    instance: WorkflowInstance,
+    definition: WorkflowDefinition,
+    context: WorkflowEventContext,
+  ): Promise<WorkflowCompensationRecord> {
+    const journal = await this.#executions.listByWorkflow(instance.id);
+    const stepIndex = new Map(definition.steps.map((step, index) => [step.id, index] as const));
+    const completed = journal
+      .filter(
+        (execution) =>
+          execution.status === 'succeeded' &&
+          !execution.stepId.startsWith(COMPENSATION_STEP_PREFIX) &&
+          definition.steps.some(
+            (step) => step.id === execution.stepId && step.mutatesState !== false,
+          ),
+      )
+      .sort(
+        (a, b) =>
+          (b.finishedAt ?? '').localeCompare(a.finishedAt ?? '') ||
+          (stepIndex.get(b.stepId) ?? 0) - (stepIndex.get(a.stepId) ?? 0),
+      );
+
+    const compensatedSteps: string[] = [];
+    const outstanding: WorkflowOutstandingStep[] = [];
+    let attemptedAndFailed = false;
+
+    for (const execution of completed) {
+      const step = definition.steps.find((candidate) => candidate.id === execution.stepId);
+      const name = step?.name ?? execution.stepId;
+      const spec = definition.compensation?.find(
+        (candidate) => candidate.forStepId === execution.stepId,
+      );
+      if (spec === undefined) {
+        outstanding.push({
+          stepId: execution.stepId,
+          name,
+          reason: 'no compensating action is defined for this step',
+        });
+        continue;
+      }
+      if (spec.requiresApproval) {
+        outstanding.push({
+          stepId: execution.stepId,
+          name,
+          reason: 'its compensation requires a separate human approval',
+        });
+        continue;
+      }
+
+      const journalStepId = `${COMPENSATION_STEP_PREFIX}${execution.stepId}`;
+      const toolId = spec.toolId ?? spec.capabilityId;
+      const input = resolveStepInput(spec.input, instance.input, {
+        ...instance.state,
+        [execution.stepId]: execution.output,
+      });
+      let record = await this.#executions.findByWorkflowAndStep(instance.id, journalStepId);
+      if (record?.status === 'succeeded') {
+        compensatedSteps.push(execution.stepId);
+        continue;
+      }
+      if (record === undefined) {
+        record = WorkflowStepExecution.create(
+          {
+            workflowId: instance.id,
+            tenantId: instance.tenantId,
+            stepId: journalStepId,
+            name: `Compensate: ${name}`,
+            capabilityId: spec.capabilityId,
+            toolId,
+            input,
+          },
+          this.#now(),
+        );
+      } else if (record.status === 'failed') {
+        record.reopenForRetry(this.#now());
+      }
+
+      const attempt = record.attempt + 1;
+      let failure: string | undefined;
+      try {
+        record.markRunning(attempt, this.#now());
+        await this.#executions.save(record);
+        const result = await this.#executor.execute({
+          stepId: journalStepId,
+          capabilityId: spec.capabilityId,
+          toolId,
+          input,
+          purpose: 'compensation',
+          // The compensation is bounded by the SAME initiating ceiling: it may
+          // run only when the forward capability it undoes was itself
+          // permitted (the compensating tool is workflow-internal and holds no
+          // capability of its own).
+          compensatesCapabilityId: execution.capabilityId,
+          context: this.#invocationContext(instance),
+          // The rollback undoes only what THIS approved workflow created, so
+          // the workflow-level approval covers it (a compensation that needs
+          // its own approval is skipped above and reported outstanding).
+          approvalGranted: true,
+          approvalBasis: instance.approvalId !== undefined ? 'approval_engine' : 'direct_human',
+        });
+        if (result.ok && !result.blocked) {
+          record.succeed(result.output, this.#now());
+        } else {
+          failure = result.blocked
+            ? 'compensation is waiting for approval'
+            : (result.error?.message ?? 'compensation failed');
+        }
+      } catch (caught) {
+        failure = toWorkflowError(caught).message;
+      }
+
+      if (failure === undefined) {
+        await this.#executions.save(record);
+        await this.#publish([
+          workflowStepCompletedEvent(context, {
+            workflowId: instance.id,
+            tenantId: instance.tenantId,
+            stepId: journalStepId,
+            stepName: record.name,
+            capabilityId: spec.capabilityId,
+            toolId,
+            attempt,
+            output: record.output,
+          }),
+        ]);
+        compensatedSteps.push(execution.stepId);
+      } else {
+        record.fail(failure, this.#now());
+        await this.#executions.save(record);
+        await this.#publish([
+          workflowStepFailedEvent(context, {
+            workflowId: instance.id,
+            tenantId: instance.tenantId,
+            stepId: journalStepId,
+            stepName: record.name,
+            capabilityId: spec.capabilityId,
+            toolId,
+            attempt,
+            error: failure,
+          }),
+        ]);
+        attemptedAndFailed = true;
+        outstanding.push({
+          stepId: execution.stepId,
+          name,
+          reason: `compensation failed: ${failure}`,
+        });
+      }
+    }
+
+    const status = attemptedAndFailed
+      ? 'failed'
+      : outstanding.length > 0
+        ? 'partial'
+        : compensatedSteps.length > 0
+          ? 'compensated'
+          : 'not_required';
+    return { status, compensatedSteps, outstanding };
   }
 
   /** Loads an instance or throws {@link WorkflowInstanceNotFoundError}. */
@@ -584,7 +929,9 @@ export class WorkflowRuntime {
       (definition?.steps ?? []).map((step, index) => [step.id, index] as const),
     );
     const steps = [...executions].sort(
-      (a, b) => (order.get(a.stepId) ?? 0) - (order.get(b.stepId) ?? 0),
+      (a, b) =>
+        (order.get(a.stepId) ?? Number.MAX_SAFE_INTEGER) -
+        (order.get(b.stepId) ?? Number.MAX_SAFE_INTEGER),
     );
     return {
       instance: instance.toContract(),
@@ -602,6 +949,30 @@ export class WorkflowRuntime {
     };
   }
 
+  /**
+   * The trusted context of an inner step/compensation invocation: scope from
+   * the INSTANCE (never step input), the initiating actor, the initiating
+   * run's ceiling, and lineage attribution (agent principal, delegation,
+   * approval). Attribution is descriptive: per-step delegation checks are NOT
+   * re-run (workflow-level authorization + approval covers the unit; the
+   * ceiling bounds it).
+   */
+  #invocationContext(instance: WorkflowInstance): WorkflowStepInvocation['context'] {
+    return {
+      userId: instance.userId,
+      tenantId: instance.tenantId,
+      ...(instance.workspaceId === undefined ? {} : { workspaceId: instance.workspaceId }),
+      runId: instance.correlationId,
+      autonomyTier: 'supervised',
+      ...(instance.allowedCapabilityIds === undefined
+        ? {}
+        : { allowedCapabilityIds: [...instance.allowedCapabilityIds] }),
+      ...(instance.agentId === undefined ? {} : { agentId: instance.agentId }),
+      ...(instance.delegationId === undefined ? {} : { delegationId: instance.delegationId }),
+      ...(instance.approvalId === undefined ? {} : { approvalId: instance.approvalId }),
+    };
+  }
+
   /** The run context of an instance (from its trusted immutable fields). */
   #contextOf(instance: WorkflowInstance): WorkflowRunContext {
     return {
@@ -609,6 +980,9 @@ export class WorkflowRuntime {
       tenantId: instance.tenantId,
       workspaceId: instance.workspaceId,
       correlationId: instance.correlationId,
+      ...(instance.allowedCapabilityIds === undefined
+        ? {}
+        : { allowedCapabilityIds: instance.allowedCapabilityIds }),
     };
   }
 
@@ -619,6 +993,24 @@ export class WorkflowRuntime {
     }
     await this.#publisher.publish(events);
   }
+}
+
+/** The plain `{{key}}` placeholders a definition's steps declare (its input contract). */
+function declaredInputKeys(definition: {
+  steps: readonly { input?: Record<string, unknown> }[];
+}): Set<string> {
+  const keys = new Set<string>();
+  for (const step of definition.steps) {
+    for (const value of Object.values(step.input ?? {})) {
+      if (typeof value === 'string') {
+        const match = value.match(/^\{\{([A-Za-z0-9_]+)\}\}$/);
+        if (match !== null) {
+          keys.add(match[1] as string);
+        }
+      }
+    }
+  }
+  return keys;
 }
 
 /** Collects the `{{key}}` placeholders a definition's steps require. */

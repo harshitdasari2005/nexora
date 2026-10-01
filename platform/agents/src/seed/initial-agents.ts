@@ -22,6 +22,11 @@
  * S35 added a fourth definition: Finance (finance.cfo) — same engine, same
  * rules, registered the identical way.
  *
+ * A fifth definition, HR (people.hr), is the ONLY definition whose ceiling
+ * contains `hr.create_employee` (plus the hire-and-assign composite and its
+ * inner capabilities). Hiring by an agent is therefore possible, but only via
+ * an explicit human delegation, policy, and a human approval.
+ *
  * These are INITIAL REGISTRATIONS ONLY — other roles have no agent yet and
  * fail safely. A future domain (e.g. Legal) registers its own agent without
  * touching this engine.
@@ -226,6 +231,69 @@ export const INITIAL_AGENTS: readonly BusinessAgentDefinition[] = [
         id: 'money.consequential',
         statement:
           'Money-movement and budget-review actions are Consequential (BR-13/BR-19) and always require human approval — the agent never decides a threshold or grants itself an approval.',
+      },
+    ],
+  },
+  {
+    id: 'hr',
+    name: 'HR Agent',
+    domainId: 'people',
+    roleId: 'people.hr',
+    description:
+      'People operations: hires employees and assigns them to projects on behalf of a human who explicitly delegated that authority. Every hire is Consequential and stays behind a human approval.',
+    autonomyLevel: 'governed_execution',
+    // The capability CEILING for hiring. Until this definition existed no
+    // definition contained `hr.create_employee` (or the composite's inner
+    // capabilities), so an agent could never hire — a delegation could not
+    // exceed the (empty) ceiling. The ceiling grants NOTHING by itself: an
+    // agent still needs (a) an active, unexpired delegation per capability,
+    // granted by a human who currently holds it (`agents.manage`, humans
+    // only), (b) an initiator who holds the capability, (c) policy ALLOW, and
+    // (d) a human approval decided by someone other than the agent — the
+    // agent can never decide (approvals.decide is non-delegable).
+    capabilityIds: [
+      'hr.find_employee',
+      'hr.create_employee',
+      'projects.find_project',
+      'projects.assign_employee',
+      'workflow.hire_and_assign_employee',
+    ],
+    goals: [
+      {
+        id: 'hr.hire',
+        name: 'Hire an employee',
+        description:
+          'Creates an employee record on a human requester\u2019s behalf — always gated by a human approval; the agent never approves its own action.',
+        capabilityIds: ['hr.create_employee', 'hr.find_employee'],
+      },
+      {
+        id: 'hr.onboard',
+        name: 'Hire and assign to a project',
+        description:
+          'Runs the governed hire-and-assign workflow: one human approval for the unit, inner steps bounded by the agent\u2019s own effective (delegated) capabilities.',
+        capabilityIds: [
+          'workflow.hire_and_assign_employee',
+          'hr.create_employee',
+          'projects.find_project',
+          'projects.assign_employee',
+        ],
+      },
+    ],
+    policies: [
+      {
+        id: 'writes.require_approval',
+        statement:
+          'Every write action (hire, assignment) executes only through the existing approval engine — never autonomously.',
+      },
+      {
+        id: 'delegation.required',
+        statement:
+          'The HR agent holds no authority of its own: each capability must be explicitly delegated by a human who holds it, and revoking, expiring or suspending it stops the run even after an approval was granted.',
+      },
+      {
+        id: 'no.self_approval',
+        statement:
+          'The HR agent can never decide or approve an approval, manage agents or grant delegations (non-delegable capabilities).',
       },
     ],
   },

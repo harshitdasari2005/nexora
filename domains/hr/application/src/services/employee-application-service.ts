@@ -15,12 +15,18 @@ import type { TenantId } from '@nexora/contracts/common';
 import type { EventPublisher } from '@nexora/shared/events';
 import { toNexoraError, type NexoraError } from '@nexora/shared/errors';
 import { err, ok, type Result } from '@nexora/shared/result';
-import type { EmployeeDomainService, EmployeeEventContext } from '@nexora/domain-hr';
+import {
+  EmployeeId,
+  EmployeeNotFoundError,
+  type EmployeeDomainService,
+  type EmployeeEventContext,
+} from '@nexora/domain-hr';
 
 import type {
   CreateEmployeeCommand,
   CreateEmployeeResult,
 } from '../commands/create-employee.command.js';
+import type { RevokeHireCommand, RevokeHireResult } from '../commands/revoke-hire.command.js';
 import { toEmployeeDto, type EmployeeDto } from '../dto/employee.dto.js';
 import { validateCreateEmployee } from '../validators/create-employee.validator.js';
 
@@ -98,6 +104,47 @@ export class EmployeeApplicationService {
       return ok({
         employee: activated.value.employee,
         events,
+      });
+    } catch (error) {
+      return err(toNexoraError(error, 'Unexpected employee application error'));
+    }
+  }
+
+  /**
+   * Reverts a hire (the compensation of the hire step): offboards the
+   * employee through the domain lifecycle, retaining the record.
+   *
+   * Tenant-scoped: an employee of another organization resolves to NOT FOUND
+   * — a rollback can never touch a foreign record. Idempotent: an employee
+   * that is already offboarded returns `changed: false` (a retried rollback
+   * neither fails nor re-emits events). An employee that cannot legally reach
+   * `offboarded` from its status is refused with the domain's transition
+   * error — the caller models that as "not safely reversible".
+   */
+  async revokeHire(command: RevokeHireCommand): Promise<Result<RevokeHireResult, NexoraError>> {
+    try {
+      const employeeId = EmployeeId.from(command.employeeId);
+      const found = await this.#employeesService.findById(employeeId);
+      if (!found.ok) {
+        return err(found.error);
+      }
+      if (found.value.organizationId !== command.organizationId) {
+        return err(new EmployeeNotFoundError({ employeeId }));
+      }
+      const context = employeeContext(
+        command.actorId,
+        command.correlationId,
+        command.organizationId,
+      );
+      const offboarded = await this.#employeesService.offboard(employeeId, command.reason, context);
+      if (!offboarded.ok) {
+        return err(offboarded.error);
+      }
+      await this.#publisher.publish(offboarded.value.events);
+      return ok({
+        employee: offboarded.value.employee,
+        events: offboarded.value.events,
+        changed: offboarded.value.changed,
       });
     } catch (error) {
       return err(toNexoraError(error, 'Unexpected employee application error'));

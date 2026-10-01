@@ -36,6 +36,7 @@ import { prefixedId } from '@nexora/shared/ids';
 import { nowIso } from '@nexora/shared/time';
 import type {
   ActionProposal,
+  AgentPrincipal,
   AgentAutonomyLevel,
   AgentExecutionIntent,
   AgentExecutionOutcome,
@@ -160,6 +161,8 @@ export interface BusinessAgentApplicationServiceDependencies {
    * intersection). Absent falls back to the agent's own set unintersected.
    */
   permissionResolver?: AgentPermissionResolver;
+  /** Resolves persisted agent principals (Prompt 4). Execution fails closed without it. */
+  principals?: AgentPrincipalResolver;
 }
 
 /** The outcome of resolving a business agent. */
@@ -195,14 +198,41 @@ export type ResolveBusinessAgentDefinitionResult =
 
 /** The outcome of executing a governed agent intent. */
 export type ExecuteBusinessAgentResult =
-  | { ok: true; agent: BusinessAgentDto; outcome: AgentExecutionOutcome }
+  | { ok: true; agent: BusinessAgentDto; outcome: AgentExecutionOutcome; principal: AgentPrincipal }
   | {
       ok: false;
-      reason: 'no-role' | 'no-agent' | 'no-proposal' | 'capability-escalation' | 'not-configured';
+      reason:
+        | 'no-role'
+        | 'no-agent'
+        | 'no-proposal'
+        | 'capability-escalation'
+        | 'not-configured'
+        | 'agent-required'
+        | 'agent-not-found'
+        | 'agent-out-of-scope'
+        | 'agent-suspended'
+        | 'agent-revoked';
+      /** The persisted agent, when it was resolved (for audit attribution). */
+      principal?: AgentPrincipal;
     };
+
+/**
+ * Resolves the persisted AGENT PRINCIPAL a run executes as (Prompt 4) — by
+ * id, inside the caller's trusted organization only (a foreign or fabricated
+ * id resolves to `undefined`).
+ */
+export interface AgentPrincipalResolver {
+  findById(organizationId: string, agentId: string): Promise<AgentPrincipal | undefined>;
+}
 
 /** An execution request: by proposal id, or as a free-form intent. */
 export interface ExecuteBusinessAgentRequest {
+  /**
+   * The persisted agent identity to run as (Prompt 4) — REQUIRED for
+   * execution: an agent never acts as "the caller's role". Resolved and
+   * validated server-side (tenant, workspace, status).
+   */
+  agentId?: string;
   /** Execute a governed proposal (re-derived and validated server-side). */
   proposalId?: string;
   /** Execute a free-form intent bound to the agent's capability set. */
@@ -222,6 +252,7 @@ export class BusinessAgentApplicationService {
   readonly #recorder?: AgentExecutionRecorder;
   readonly #problems?: AgentProblemProvider;
   readonly #permissionResolver?: AgentPermissionResolver;
+  readonly #principals?: AgentPrincipalResolver;
 
   constructor(dependencies: BusinessAgentApplicationServiceDependencies) {
     this.#registry = dependencies.registry;
@@ -232,6 +263,7 @@ export class BusinessAgentApplicationService {
     this.#recorder = dependencies.recorder;
     this.#problems = dependencies.problems;
     this.#permissionResolver = dependencies.permissionResolver;
+    this.#principals = dependencies.principals;
   }
 
   /**
@@ -247,13 +279,18 @@ export class BusinessAgentApplicationService {
   async #bindToEffectivePermissions(
     context: BusinessAgentContext,
     definition: BusinessAgentDefinition,
+    options: { failClosed?: boolean } = {},
   ): Promise<BusinessAgentDefinition> {
     if (this.#permissionResolver === undefined) {
+      // Composition choice (tests/older sites): no resolver is wired at all.
       return definition;
     }
     const rbacCapabilityIds = await this.#permissionResolver.resolve(context);
     if (rbacCapabilityIds === undefined) {
-      return definition;
+      // Read-only display surfaces keep the pre-S34 fallback; an EXECUTION
+      // must never run on a definition whose caller authority is unknown
+      // (an empty ceiling is "no authority", never "unrestricted").
+      return options.failClosed === true ? { ...definition, capabilityIds: [] } : definition;
     }
     const allowed = new Set(rbacCapabilityIds);
     return {
@@ -366,25 +403,62 @@ export class BusinessAgentApplicationService {
     context: BusinessAgentContext,
     request: ExecuteBusinessAgentRequest,
   ): Promise<ExecuteBusinessAgentResult> {
-    const roleId = await this.#roleResolver.resolve(context);
-    if (roleId === undefined) {
-      return { ok: false, reason: 'no-role' };
+    // Prompt 4: execution runs AS a persisted agent principal — never as
+    // "whatever agent the caller's role maps to". Fail closed without one.
+    if (request.agentId === undefined || request.agentId.trim().length === 0) {
+      return { ok: false, reason: 'agent-required' };
     }
-    const registered = this.#registry.resolveByRole(roleId);
-    if (registered === undefined) {
-      return { ok: false, reason: 'no-agent' };
-    }
-    if (this.#execution === undefined) {
+    if (this.#principals === undefined || this.#execution === undefined) {
       return { ok: false, reason: 'not-configured' };
     }
-    const definition = await this.#bindToEffectivePermissions(context, registered);
+    const principal = await this.#principals.findById(context.tenantId, request.agentId);
+    if (principal === undefined) {
+      return { ok: false, reason: 'agent-not-found' };
+    }
+    if (principal.workspaceId !== context.workspaceId) {
+      // An agent acts only inside its own workspace — a run requested from
+      // any other scope (or with no workspace) is refused.
+      return { ok: false, reason: 'agent-out-of-scope', principal };
+    }
+    if (principal.status === 'suspended') {
+      return { ok: false, reason: 'agent-suspended', principal };
+    }
+    if (principal.status === 'revoked') {
+      return { ok: false, reason: 'agent-revoked', principal };
+    }
+    const roleId = await this.#roleResolver.resolve(context);
+    if (roleId === undefined) {
+      return { ok: false, reason: 'no-role', principal };
+    }
+    // The definition comes from the AGENT, not from the caller's role.
+    const registered = this.#registry.get(principal.definitionId);
+    if (registered === undefined) {
+      return { ok: false, reason: 'no-agent', principal };
+    }
+    // Discovery bound: the definition ceiling ∩ the caller's CURRENT role.
+    // Delegations are enforced per step — before any approval opens and
+    // again at execution time — so a missing/revoked/expired delegation is
+    // an explicit, audited denial rather than a silent narrowing.
+    const definition = await this.#bindToEffectivePermissions(context, registered, {
+      failClosed: true,
+    });
 
     const intent = await this.#resolveIntent(context, definition, request);
     if (intent.kind === 'rejected') {
-      return { ok: false, reason: intent.reason };
+      return { ok: false, reason: intent.reason, principal };
     }
 
-    const outcome = await this.#execution.execute(context, intent.intent);
+    const outcome = await this.#execution.execute(context, {
+      ...intent.intent,
+      agent: { agentId: principal.id, definitionId: principal.definitionId, name: principal.name },
+    });
+    const delegationIds = [
+      ...new Set(
+        outcome.steps
+          .map((step) => step.delegationId)
+          .filter((id): id is string => id !== undefined),
+      ),
+    ].sort();
 
     // Journal the run (measurements) when a recorder is configured. The
     // record is a fact of what happened — never fabricated.
@@ -399,6 +473,8 @@ export class BusinessAgentApplicationService {
         userId: context.userId,
         proposalId: intent.intent.proposal?.id,
         proposalAction: intent.intent.proposal?.action,
+        agentIdentityId: principal.id,
+        ...(delegationIds.length === 0 ? {} : { delegationIds }),
         status: outcome.status,
         runId: outcome.runId,
         reason: outcome.status === 'completed' ? undefined : outcome.response.slice(0, 500),
@@ -424,6 +500,7 @@ export class BusinessAgentApplicationService {
         this.#catalog,
       ),
       outcome,
+      principal,
     };
   }
 

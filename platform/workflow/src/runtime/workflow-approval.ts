@@ -14,7 +14,14 @@ import type { SideEffectClass } from '@nexora/contracts/ai';
 
 /** The lifecycle of an approval request (mirrors the platform engine). */
 export type WorkflowApprovalStatus =
-  'proposed' | 'awaiting_approval' | 'approved' | 'rejected' | 'executing' | 'completed' | 'failed';
+  | 'proposed'
+  | 'awaiting_approval'
+  | 'approved'
+  | 'rejected'
+  | 'executing'
+  | 'completed'
+  | 'failed'
+  | 'expired';
 
 /** A recorded approval request (trusted server-side state). */
 export interface WorkflowApprovalRecord {
@@ -86,8 +93,9 @@ export interface WorkflowApprovalPort {
     | 'pending'
     | 'granted'
     | 'rejected'
+    | 'expired'
     | undefined
-    | Promise<'pending' | 'granted' | 'rejected' | undefined>;
+    | Promise<'pending' | 'granted' | 'rejected' | 'expired' | undefined>;
   /** The request by id, or `undefined`. */
   byId(
     id: string,
