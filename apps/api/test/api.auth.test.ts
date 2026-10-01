@@ -117,13 +117,14 @@ async function login(app: FastifyInstance): Promise<string> {
   const loginResponse = await app.inject({ method: 'GET', url: '/api/auth/login' });
   const state = cookieValue(loginResponse, 'oidc_state')?.split('=')[1];
   const verifier = cookieValue(loginResponse, 'oidc_verifier')?.split('=')[1];
+  const nonce = cookieValue(loginResponse, 'oidc_nonce')?.split('=')[1];
   if (state === undefined || verifier === undefined) {
     throw new Error('login did not set the oidc_state/oidc_verifier cookies');
   }
   const callback = await app.inject({
     method: 'GET',
     url: `/api/auth/callback?code=test-code&state=${state}`,
-    headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}` },
+    headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}; oidc_nonce=${nonce}` },
   });
   const session = cookieValue(callback, 'nexora_session');
   if (session === undefined) {
@@ -247,10 +248,11 @@ describe('OIDC login flow', () => {
     const loginResponse = await app.inject({ method: 'GET', url: '/api/auth/login' });
     const state = cookieValue(loginResponse, 'oidc_state')?.split('=')[1] ?? '';
     const verifier = cookieValue(loginResponse, 'oidc_verifier')?.split('=')[1] ?? '';
+    const nonce = cookieValue(loginResponse, 'oidc_nonce')?.split('=')[1] ?? '';
     const response = await app.inject({
       method: 'GET',
       url: `/api/auth/callback?code=test-code&state=${state}`,
-      headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}` },
+      headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}; oidc_nonce=${nonce}` },
     });
     expect(response.statusCode).toBe(302);
     expect(response.headers.location).toBe('http://localhost:5173/app');

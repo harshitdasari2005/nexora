@@ -116,6 +116,30 @@ export class UserLifecyclePolicy {
   }
 }
 
+/** The instants that bound a live session (see {@link SessionPolicy.livenessWindow}). */
+export interface SessionLivenessWindow {
+  /** The evaluation instant: a live session expires strictly after it. */
+  now: string;
+  /** The oldest `lastUsedAt` that is not idle-expired at `now`. */
+  idleSince: string;
+}
+
+/**
+ * Whether a session with these timestamps is live in the window. The single
+ * in-process definition (the SQL repository expresses the same two
+ * comparisons); it agrees with `Session.isExpired` and
+ * `SessionPolicy.isIdleExpired`, which session validation applies.
+ */
+export function isSessionLive(
+  session: { expiresAt: string; lastUsedAt: string },
+  window: SessionLivenessWindow,
+): boolean {
+  return (
+    Date.parse(session.expiresAt) > Date.parse(window.now) &&
+    Date.parse(session.lastUsedAt) >= Date.parse(window.idleSince)
+  );
+}
+
 /** Configuration for the {@link SessionPolicy}. */
 export interface SessionPolicyConfig {
   /** Session time-to-live in milliseconds. */
@@ -149,6 +173,18 @@ export class SessionPolicy {
   /** Whether a session is idle past the idle timeout. */
   isIdleExpired(lastUsedAt: string, now: string): boolean {
     return Date.parse(now) - Date.parse(lastUsedAt) > this.idleTimeoutMs;
+  }
+
+  /**
+   * The window a session must fall in at `now` to still be LIVE — the exact
+   * complement of what session validation rejects: not past its absolute
+   * expiry (`expiresAt > now`) and not idle-expired (`lastUsedAt >= idleSince`,
+   * i.e. `now - lastUsedAt <= idleTimeoutMs`). Repositories count live sessions
+   * with this window so a session nobody presents again stops consuming a
+   * concurrency slot the moment validation would have rejected it.
+   */
+  livenessWindow(now: string): SessionLivenessWindow {
+    return { now, idleSince: new Date(Date.parse(now) - this.idleTimeoutMs).toISOString() };
   }
 
   /**

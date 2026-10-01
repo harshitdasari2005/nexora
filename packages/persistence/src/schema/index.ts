@@ -40,12 +40,20 @@ export const users = pgTable(
     status: varchar('status', { length: 32 }).notNull(),
     profile: jsonb('profile').notNull(),
     roles: jsonb('roles').notNull().default([]),
+    // External OIDC identity binding (AUTH-009). Nullable: existing users stay
+    // unbound until their next successful OIDC login. Authentication-internal.
+    oidcIssuer: varchar('oidc_issuer', { length: 512 }),
+    oidcSubject: varchar('oidc_subject', { length: 255 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
     version: integer('version').notNull().default(1),
   },
   (table) => [
     uniqueIndex('users_email_unique').on(table.email),
+    // One account per external identity; multiple unbound (NULL) users coexist.
+    uniqueIndex('users_oidc_identity_unique')
+      .on(table.oidcIssuer, table.oidcSubject)
+      .where(sql`${table.oidcIssuer} IS NOT NULL AND ${table.oidcSubject} IS NOT NULL`),
     uniqueIndex('users_username_unique').on(table.username),
     uniqueIndex('users_tenant_email_unique').on(table.tenantId, table.email),
     uniqueIndex('users_tenant_username_unique').on(table.tenantId, table.username),
@@ -61,7 +69,8 @@ export const sessions = pgTable(
     id: varchar('id', { length: 64 }).primaryKey(),
     userId: varchar('user_id', { length: 64 }).notNull(),
     tenantId: varchar('tenant_id', { length: 64 }).notNull(),
-    token: varchar('token', { length: 128 }).notNull(),
+    // SHA-256 hex digest of the bearer token (AUTH-004). The raw token is never stored.
+    tokenHash: varchar('token_hash', { length: 64 }).notNull(),
     status: varchar('status', { length: 32 }).notNull(),
     issuedAt: timestamp('issued_at', { withTimezone: true }).notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -69,7 +78,7 @@ export const sessions = pgTable(
     endedAt: timestamp('ended_at', { withTimezone: true }),
     version: integer('version').notNull().default(1),
   },
-  (table) => [uniqueIndex('sessions_token_unique').on(table.token)],
+  (table) => [uniqueIndex('sessions_token_hash_unique').on(table.tokenHash)],
 );
 
 /**

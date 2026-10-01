@@ -255,10 +255,11 @@ export async function login(app: FastifyInstance): Promise<string> {
   const loginResponse = await app.inject({ method: 'GET', url: '/api/auth/login' });
   const state = cookieValue(loginResponse, 'oidc_state')?.split('=')[1] ?? '';
   const verifier = cookieValue(loginResponse, 'oidc_verifier')?.split('=')[1] ?? '';
+  const nonce = cookieValue(loginResponse, 'oidc_nonce')?.split('=')[1] ?? '';
   const callback = await app.inject({
     method: 'GET',
     url: `/api/auth/callback?code=test-code&state=${state}`,
-    headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}` },
+    headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}; oidc_nonce=${nonce}` },
   });
   const session = cookieValue(callback, 'nexora_session');
   if (session === undefined) {

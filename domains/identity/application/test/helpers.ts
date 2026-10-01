@@ -10,15 +10,17 @@ import type { TenantId, UserId } from '@nexora/contracts/common';
 import type {
   PasswordHasher,
   RoleRepository,
+  SessionLivenessWindow,
   SessionRepository,
   UserRepository,
 } from '@nexora/domain-identity';
 import {
+  isSessionLive,
   PasswordHash,
   type Email,
   type Role,
   type Session,
-  type User,
+  User,
   type Username,
 } from '@nexora/domain-identity';
 
@@ -37,6 +39,36 @@ export class InMemoryUserRepository implements UserRepository {
       }
     }
     return undefined;
+  }
+
+  async findByOidcIdentity(issuer: string, subject: string): Promise<User | undefined> {
+    for (const user of this.users.values()) {
+      if (user.oidcIssuer === issuer && user.oidcSubject === subject) {
+        return user;
+      }
+    }
+    return undefined;
+  }
+
+  async bindOidcIdentity(userId: UserId, issuer: string, subject: string): Promise<boolean> {
+    const user = this.users.get(userId);
+    if (user === undefined || user.oidcIssuer !== undefined) {
+      return false; // missing, or already bound: first-wins, never overwritten
+    }
+    // Check-and-set with NO await in between: atomic, like the single conditional UPDATE in Postgres.
+    for (const other of this.users.values()) {
+      if (other.oidcIssuer === issuer && other.oidcSubject === subject) {
+        return false; // that identity belongs to someone else (the unique index in Postgres)
+      }
+    }
+    // The in-memory aggregate is immutable here: replace it with a bound copy.
+    const bound = User.hydrate({
+      ...User.snapshot(user),
+      oidcIssuer: issuer,
+      oidcSubject: subject,
+    });
+    this.users.set(userId, bound);
+    return true;
   }
 
   async findByUsername(username: Username): Promise<User | undefined> {
@@ -70,8 +102,8 @@ export class InMemorySessionRepository implements SessionRepository {
     return this.sessions.get(id);
   }
 
-  async findByToken(token: string): Promise<Session | undefined> {
-    return this.byToken.get(token);
+  async findByTokenHash(tokenHash: string): Promise<Session | undefined> {
+    return this.byToken.get(tokenHash);
   }
 
   async findActiveByUser(userId: UserId): Promise<readonly Session[]> {
@@ -80,13 +112,14 @@ export class InMemorySessionRepository implements SessionRepository {
     );
   }
 
-  async countActiveByUser(userId: UserId): Promise<number> {
-    return (await this.findActiveByUser(userId)).length;
+  async countActiveByUser(userId: UserId, window: SessionLivenessWindow): Promise<number> {
+    return (await this.findActiveByUser(userId)).filter((session) => isSessionLive(session, window))
+      .length;
   }
 
   async save(session: Session): Promise<void> {
     this.sessions.set(session.id, session);
-    this.byToken.set(session.token, session);
+    this.byToken.set(session.tokenHash, session);
   }
 }
 

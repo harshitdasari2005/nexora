@@ -35,6 +35,7 @@ describe('findSecrets', () => {
     ['api_key assignment', 'api_key = abc'],
     ['password assignment', 'password: hunter2'],
     ['session cookie', 'nexora_session=abc'],
+    ['__Host- session cookie', '__Host-nexora_session=abc'],
   ])('detects %s', (_name, text) => {
     expect(findSecrets(text).length).toBeGreaterThan(0);
   });

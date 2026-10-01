@@ -54,6 +54,9 @@ export interface RegisterUserInput {
   bio?: string;
   /** Optional initial status (defaults to `pending`). */
   status?: string;
+  /** The OIDC identity bound at creation (AUTH-009): issuer and subject together. */
+  oidcIssuer?: string;
+  oidcSubject?: string;
 }
 
 /** The outcome of a user command: the aggregate plus emitted events. */
@@ -133,6 +136,8 @@ export class UserDomainService {
           title: input.title,
           bio: input.bio,
           status: input.status === undefined ? undefined : UserStatus.from(input.status),
+          oidcIssuer: input.oidcIssuer,
+          oidcSubject: input.oidcSubject,
         },
         context,
       );

@@ -12,10 +12,16 @@ import type {
   RoleRepository,
   Session,
   SessionRepository,
-  User,
   UserRepository,
 } from '@nexora/domain-identity';
-import { PasswordHash, type Email, type Username } from '@nexora/domain-identity';
+import {
+  isSessionLive,
+  User,
+  PasswordHash,
+  type Email,
+  type SessionLivenessWindow,
+  type Username,
+} from '@nexora/domain-identity';
 import type {
   MembershipRepository,
   Organization,
@@ -89,11 +95,12 @@ import type { EmailRecord, WebhookDelivery, WebhookEndpoint } from '@nexora/modu
 import type { MeasurementRepository } from '@nexora/module-measurements';
 import type { TenantMeasurementsSnapshot } from '@nexora/module-measurements';
 
-import type {
-  OidcCallbackParams,
-  OidcGateway,
-  OidcIdentity,
-  PkceParameters,
+import {
+  OidcValidationError,
+  type OidcCallbackParams,
+  type OidcGateway,
+  type OidcIdentity,
+  type PkceParameters,
 } from '../src/oidc/gateway.js';
 
 /** An in-memory {@link UserRepository}. */
@@ -111,6 +118,36 @@ export class FakeUserRepository implements UserRepository {
       }
     }
     return undefined;
+  }
+
+  async findByOidcIdentity(issuer: string, subject: string): Promise<User | undefined> {
+    for (const user of this.users.values()) {
+      if (user.oidcIssuer === issuer && user.oidcSubject === subject) {
+        return user;
+      }
+    }
+    return undefined;
+  }
+
+  async bindOidcIdentity(userId: UserId, issuer: string, subject: string): Promise<boolean> {
+    const user = this.users.get(userId);
+    if (user === undefined || user.oidcIssuer !== undefined) {
+      return false; // missing, or already bound: first-wins, never overwritten
+    }
+    // Check-and-set with NO await in between: atomic, like the single conditional UPDATE in Postgres.
+    for (const other of this.users.values()) {
+      if (other.oidcIssuer === issuer && other.oidcSubject === subject) {
+        return false; // that identity belongs to someone else (the unique index in Postgres)
+      }
+    }
+    // The in-memory aggregate is immutable here: replace it with a bound copy.
+    const bound = User.hydrate({
+      ...User.snapshot(user),
+      oidcIssuer: issuer,
+      oidcSubject: subject,
+    });
+    this.users.set(userId, bound);
+    return true;
   }
 
   async findByUsername(username: Username): Promise<User | undefined> {
@@ -144,8 +181,8 @@ export class FakeSessionRepository implements SessionRepository {
     return this.sessions.get(id);
   }
 
-  async findByToken(token: string): Promise<Session | undefined> {
-    return this.byToken.get(token);
+  async findByTokenHash(tokenHash: string): Promise<Session | undefined> {
+    return this.byToken.get(tokenHash);
   }
 
   async findActiveByUser(userId: UserId): Promise<readonly Session[]> {
@@ -154,13 +191,14 @@ export class FakeSessionRepository implements SessionRepository {
     );
   }
 
-  async countActiveByUser(userId: UserId): Promise<number> {
-    return (await this.findActiveByUser(userId)).length;
+  async countActiveByUser(userId: UserId, window: SessionLivenessWindow): Promise<number> {
+    return (await this.findActiveByUser(userId)).filter((session) => isSessionLive(session, window))
+      .length;
   }
 
   async save(session: Session): Promise<void> {
     this.sessions.set(session.id, session);
-    this.byToken.set(session.token, session);
+    this.byToken.set(session.tokenHash, session);
   }
 }
 
@@ -1146,17 +1184,31 @@ export class FakeOidcGateway implements OidcGateway {
     this.identity = identity;
   }
 
-  async buildAuthorizationUrl(state: string, pkce: PkceParameters): Promise<string> {
-    return `http://keycloak.test/realms/nexora/protocol/openid-connect/auth?state=${state}&code_challenge=${pkce.codeChallenge}&code_challenge_method=S256`;
+  /** The nonce each authorization request carried, by state (what the IdP will echo in the ID token). */
+  readonly issuedNonces = new Map<string, string>();
+  readonly exchangedNonces: string[] = [];
+
+  async buildAuthorizationUrl(state: string, pkce: PkceParameters, nonce: string): Promise<string> {
+    this.issuedNonces.set(state, nonce);
+    return `http://keycloak.test/realms/nexora/protocol/openid-connect/auth?state=${state}&nonce=${nonce}&code_challenge=${pkce.codeChallenge}&code_challenge_method=S256`;
   }
 
   async exchangeCode(
-    _params: OidcCallbackParams,
+    params: OidcCallbackParams,
     expectedState: string,
     codeVerifier: string,
+    expectedNonce: string,
   ): Promise<OidcIdentity> {
     this.exchangedStates.push(expectedState);
     this.exchangedVerifiers.push(codeVerifier);
+    this.exchangedNonces.push(expectedNonce);
+    // Model the real IdP: the ID token carries the nonce of the authorization
+    // request that produced this code, and the client must see exactly its own.
+    const issued = this.issuedNonces.get(params.state ?? expectedState);
+    if (issued === undefined || issued !== expectedNonce) {
+      throw new OidcValidationError('nonce mismatch');
+    }
+    this.issuedNonces.delete(params.state ?? expectedState); // single use
     return this.identity;
   }
 

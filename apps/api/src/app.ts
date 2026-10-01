@@ -112,6 +112,7 @@ import { approvalRefusalReasonCode, createApprovalLifecycle } from './ai/approva
 import { registerAiRoutes } from './routes/ai.js';
 import { DemoService } from './demo/demo-service.js';
 import { registerDemoDisabledRoutes, registerDemoRoutes } from './demo/routes.js';
+import { registerOriginGuard } from './plugins/origin-guard.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerHealth } from './routes/health.js';
@@ -266,6 +267,8 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   // dispatcher + email projection are registered onto the same chain.
   const integrationsPolicy = new NotificationPolicy();
 
+  // Browser-origin guard (AUTH-008): registered before every route it protects.
+  registerOriginGuard(app, { config: dependencies.config });
   registerAuth(app, { config: dependencies.config, sessions: container.sessionsService });
   registerHealth(app);
   // Demo World (explicit opt-in). When disabled these routes do not exist (404).
@@ -418,6 +421,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listMyWorkspaces: container.listMyWorkspaces,
     stream: notificationStream,
     permissions: rbac,
+    isSessionLive: (sessionId) => container.sessionsService.isLive(sessionId),
   });
 
   // Enterprise AI Runtime: register the workspaces capability surface and

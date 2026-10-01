@@ -52,7 +52,7 @@ import type {
 } from '@nexora/module-notifications';
 
 import { MembershipDomainService, OrganizationDomainService } from '@nexora/domain-organizations';
-import { SessionDomainService, UserDomainService } from '@nexora/domain-identity';
+import { SessionDomainService, SessionPolicy, UserDomainService } from '@nexora/domain-identity';
 import { ProjectDomainService, ResourceAssignmentDomainService } from '@nexora/domain-projects';
 import { EmployeeDomainService } from '@nexora/domain-hr';
 import { DocumentDomainService } from '@nexora/domain-documents';
@@ -411,6 +411,13 @@ export function buildContainer(options: BuildContainerOptions): Container {
     sessions: repositories.sessions,
     users: repositories.users,
     hasher,
+    // ONE absolute session lifetime: the configured `SESSION_MAX_AGE_SECONDS`
+    // that also sets the cookie's max-age. Without this the server kept
+    // accepting a session for the policy default (8 h) regardless of the
+    // configured value (AUTH-005). Idle timeout and the concurrency limit keep
+    // their policy defaults; the same policy instance backs session start,
+    // validation, the live-session count (AUTH-001) and `isLive` (AUTH-002).
+    policy: new SessionPolicy({ ttlMs: options.config.cookie.maxAgeSeconds * 1_000 }),
   });
 
   // Organizations domain services.

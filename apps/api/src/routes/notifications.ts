@@ -64,8 +64,20 @@ const updatePreferencesSchema: FastifySchema = {
   },
 };
 
+/**
+ * How often an open notification stream re-checks its session when no event
+ * arrives (bounded: one primary-key lookup per open stream per interval).
+ */
+export const SSE_SESSION_RECHECK_MS = 30_000;
+
 /** Dependencies of the notification routes. */
 export interface NotificationRoutesDependencies {
+  /**
+   * Whether a session is still live (read-only; the session domain service's
+   * `isLive`). The live SSE stream re-checks it so a stream cannot outlive its
+   * session.
+   */
+  isSessionLive: (sessionId: string) => Promise<boolean>;
   /** The recipient-scoped inbox listing handler. */
   listNotifications: ListNotificationsHandler;
   /** The unread-count handler. */
@@ -559,7 +571,59 @@ export function registerNotificationRoutes(
       }
     };
 
-    const unsubscribe = dependencies.stream.subscribe((event) => {
+    // The stream must not outlive the session that authorized it (AUTH-002).
+    // The session was validated once, above (`requireAuth`); from here the
+    // session id is re-checked, read-only (no touch — see `isSessionLive`):
+    //   1. BEFORE every frame that would be delivered, so nothing is written
+    //      after logout / revocation / expiry; the check is one primary-key
+    //      lookup per DELIVERABLE event (filtered-out events cost nothing);
+    //   2. on a bounded timer, so a stream with no traffic is still closed
+    //      (and its socket, timer and subscription released) shortly after the
+    //      session ends instead of lingering until the client disconnects.
+    // A failed check (invalid session OR a lookup error) fails closed.
+    const sessionId = auth.sessionId;
+    let terminated = false;
+    let timer: NodeJS.Timeout | undefined;
+    let unsubscribe: () => void = () => undefined;
+    const cleanup = (): void => {
+      terminated = true;
+      if (timer !== undefined) {
+        clearInterval(timer);
+        timer = undefined;
+      }
+      unsubscribe();
+    };
+    const terminate = (): void => {
+      cleanup();
+      if (!raw.writableEnded && !raw.destroyed) {
+        raw.end();
+      }
+    };
+    const stillAuthorized = async (): Promise<boolean> => {
+      try {
+        return await dependencies.isSessionLive(sessionId);
+      } catch {
+        return false;
+      }
+    };
+    // Deliverable frames are checked and written strictly in arrival order.
+    let delivery: Promise<void> = Promise.resolve();
+    const deliver = (name: string, payload: unknown): void => {
+      delivery = delivery.then(async () => {
+        if (terminated) {
+          return;
+        }
+        if (!(await stillAuthorized())) {
+          terminate();
+          return;
+        }
+        if (!terminated) {
+          safeWrite(formatSse(name, payload));
+        }
+      });
+    };
+
+    unsubscribe = dependencies.stream.subscribe((event) => {
       // Server-side filtering: only the authenticated recipient's own
       // notifications, and activity scoped to the caller's RESOLVED tenant
       // (never the identity bootstrap tenant — see `isActivityInScope`).
@@ -567,15 +631,25 @@ export function registerNotificationRoutes(
         event.kind === 'notification' &&
         isNotificationForRecipient(event.notification.recipientId, auth.userId)
       ) {
-        safeWrite(formatSse('notification', Notification.snapshot(event.notification)));
+        deliver('notification', Notification.snapshot(event.notification));
       }
       if (event.kind === 'activity' && isActivityVisibleToStream(event.item, activityScope)) {
-        safeWrite(formatSse('activity', ActivityItem.snapshot(event.item)));
+        deliver('activity', ActivityItem.snapshot(event.item));
       }
     });
 
+    timer = setInterval(() => {
+      void stillAuthorized().then((live) => {
+        if (!live && !terminated) {
+          terminate();
+        }
+      });
+    }, SSE_SESSION_RECHECK_MS);
+    // Never keep the process alive for a stream timer.
+    timer.unref();
+
     request.raw.on('close', () => {
-      unsubscribe();
+      cleanup();
       if (!raw.writableEnded) {
         raw.end();
       }

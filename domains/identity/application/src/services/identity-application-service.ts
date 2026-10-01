@@ -19,7 +19,7 @@ import type {
   SessionDomainService,
   UserDomainService,
 } from '@nexora/domain-identity';
-import { Email, UserAlreadyExistsError } from '@nexora/domain-identity';
+import { Email, InvalidCredentialsError, UserAlreadyExistsError } from '@nexora/domain-identity';
 import type { User, UserNotFoundError, UserRepository } from '@nexora/domain-identity';
 
 import type {
@@ -70,9 +70,24 @@ export class IdentityApplicationService {
   }
 
   /**
-   * Authenticates a principal verified by an OIDC IdP: provisions the local
-   * user on first login (idempotent by email), then issues a session for the
-   * verified principal. Emitted events are published.
+   * Authenticates a principal verified by an OIDC IdP and issues a session.
+   *
+   * The account is identified by the stable external identity — the pair
+   * (issuer, subject) — NOT by email (AUTH-009). Order:
+   *
+   * 1. validate (issuer, subject, email, `email_verified === true`) BEFORE any lookup;
+   * 2. an account already bound to (issuer, subject) is the account — even if
+   *    its email differs from the IdP's current claim;
+   * 3. otherwise the normalized email is consulted ONLY to:
+   *    - provision a new account, bound to (issuer, subject) in the same insert;
+   *    - bind (issuer, subject) to an existing UNBOUND account (a legacy account
+   *      from before binding existed) — atomically, first identity wins;
+   *    and an account already bound to a DIFFERENT identity is never reused: the
+   *    login fails with the generic invalid-credentials error, which reveals
+   *    neither that the account exists nor what it is bound to.
+   *
+   * Emitted events are published. (Scope: OIDC login only; the signed inbound
+   * email approval path keeps its own sender-email mapping.)
    */
   async authenticateWithOidc(
     command: AuthenticateWithOidcCommand,
@@ -80,18 +95,33 @@ export class IdentityApplicationService {
     try {
       validateAuthenticateWithOidc(command);
       const email = Email.create(command.email);
+      const issuer = command.issuer.trim();
+      const subject = command.oidcSubject.trim();
 
-      let user = await this.#users.findByEmail(email);
+      let user = await this.#users.findByOidcIdentity(issuer, subject);
       let isNewUser = false;
 
       if (user === undefined) {
-        const provisioned = await this.#provisionExternalUser(command, email);
-        if (!provisioned.ok) {
-          return err(provisioned.error);
+        const byEmail = await this.#users.findByEmail(email);
+        if (byEmail === undefined) {
+          const provisioned = await this.#provisionExternalUser(command, email, issuer, subject);
+          if (provisioned.ok) {
+            user = provisioned.value.user;
+            isNewUser = provisioned.value.created;
+            await this.#publisher.publish(provisioned.value.events);
+          } else if (provisioned.error instanceof UserAlreadyExistsError) {
+            // Lost a concurrent first-login race: resolve against what now exists.
+            user = await this.#resolveExisting(email, issuer, subject);
+          } else {
+            return err(provisioned.error);
+          }
+        } else {
+          user = await this.#resolveExisting(email, issuer, subject, byEmail);
         }
-        user = provisioned.value.user;
-        isNewUser = true;
-        await this.#publisher.publish(provisioned.value.events);
+      }
+      if (user === undefined) {
+        // Bound to another identity (or lost the binding race to one): generic failure.
+        return err(new InvalidCredentialsError());
       }
 
       const context = this.#context(user.id, command.correlationId, user.tenantId);
@@ -112,6 +142,81 @@ export class IdentityApplicationService {
     } catch (error) {
       return err(toNexoraError(error));
     }
+  }
+
+  /**
+   * Resolves the account for an identity that has no bound account yet, when an
+   * account with the same normalized email exists. Binds an unbound account;
+   * refuses a bound one. `undefined` = refuse.
+   */
+  async #resolveExisting(
+    email: Email,
+    issuer: string,
+    subject: string,
+    known?: User,
+  ): Promise<User | undefined> {
+    // The identity may have been bound by a concurrent login since the first lookup.
+    const owner = await this.#users.findByOidcIdentity(issuer, subject);
+    if (owner !== undefined) {
+      return owner;
+    }
+    const existing = known ?? (await this.#users.findByEmail(email));
+    if (existing === undefined) {
+      return undefined;
+    }
+    if (existing.oidcIssuer !== undefined) {
+      // Bound to a DIFFERENT identity (an equal one would have been found above).
+      return undefined;
+    }
+    if (await this.#users.bindOidcIdentity(existing.id, issuer, subject)) {
+      return (await this.#users.findById(existing.id)) ?? undefined;
+    }
+    // Lost the binding race. If the winner was this very identity (two
+    // concurrent logins of the same person), that account is ours; otherwise refuse.
+    return this.#users.findByOidcIdentity(issuer, subject);
+  }
+
+  /**
+   * Provisions a user from OIDC claims on first login. The account is created
+   * active (the IdP verified the identity) under the platform bootstrap tenant
+   * with a generated, unusable password — and BOUND to (issuer, subject) in the
+   * same insert (never created unbound and bound later). The IdP owns
+   * authentication for external identities.
+   */
+  async #provisionExternalUser(
+    command: AuthenticateWithOidcCommand,
+    email: Email,
+    issuer: string,
+    subject: string,
+  ): Promise<
+    Result<{ user: User; events: readonly EventEnvelope[]; created: boolean }, NexoraError>
+  > {
+    const username = deriveUsername(command.email);
+    // Guaranteed to satisfy the password policy (hex: letters + digits).
+    const generatedPassword = `${OIDC_PASSWORD_PREFIX}${randomBytes(16).toString('hex')}`;
+    const displayName = command.displayName?.trim() || (command.email.split('@')[0] ?? 'User');
+
+    const registered = await this.#usersService.register(
+      {
+        tenantId: PLATFORM_TENANT_ID,
+        email: command.email,
+        username,
+        password: generatedPassword,
+        displayName,
+        status: 'active',
+        oidcIssuer: issuer,
+        oidcSubject: subject,
+      },
+      this.#context(command.oidcSubject, command.correlationId, PLATFORM_TENANT_ID),
+    );
+    if (registered.ok) {
+      return ok({
+        user: registered.value.user,
+        events: registered.value.events,
+        created: true,
+      });
+    }
+    return err(registered.error);
   }
 
   /**
@@ -140,45 +245,6 @@ export class IdentityApplicationService {
       return err(found.error);
     }
     return ok(toUserDto(found.value));
-  }
-
-  /**
-   * Provisions a user from OIDC claims on first login. The account is
-   * created active (the IdP verified the identity) under the platform
-   * bootstrap tenant with a generated, unusable password — the IdP owns
-   * authentication for external identities.
-   */
-  async #provisionExternalUser(
-    command: AuthenticateWithOidcCommand,
-    email: Email,
-  ): Promise<Result<{ user: User; events: readonly EventEnvelope[] }, NexoraError>> {
-    const username = deriveUsername(command.email);
-    // Guaranteed to satisfy the password policy (hex: letters + digits).
-    const generatedPassword = `${OIDC_PASSWORD_PREFIX}${randomBytes(16).toString('hex')}`;
-    const displayName = command.displayName?.trim() || (command.email.split('@')[0] ?? 'User');
-
-    const registered = await this.#usersService.register(
-      {
-        tenantId: PLATFORM_TENANT_ID,
-        email: command.email,
-        username,
-        password: generatedPassword,
-        displayName,
-        status: 'active',
-      },
-      this.#context(command.oidcSubject, command.correlationId, PLATFORM_TENANT_ID),
-    );
-    if (registered.ok) {
-      return ok({ user: registered.value.user, events: registered.value.events });
-    }
-    if (registered.error instanceof UserAlreadyExistsError) {
-      // Lost a concurrent provisioning race — fall through to the lookup.
-      const existing = await this.#users.findByEmail(email);
-      if (existing !== undefined) {
-        return ok({ user: existing, events: [] });
-      }
-    }
-    return err(registered.error);
   }
 
   /** Builds an identity event context for the given actor. */

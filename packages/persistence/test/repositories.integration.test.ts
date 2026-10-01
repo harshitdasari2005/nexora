@@ -13,8 +13,11 @@ import type { TenantId, UserId } from '@nexora/contracts/common';
 import {
   DisplayName,
   Email,
+  hashSessionToken,
+  isSessionLive,
   PasswordHash,
   Session,
+  SessionPolicy,
   User,
   UserStatus,
   Username,
@@ -222,7 +225,7 @@ describeDb('repository integration (Postgres)', () => {
     expect(loaded?.version).toBe(user.version);
   });
 
-  it('round-trips a Session through save/findByToken', async () => {
+  it('round-trips a Session through save/findByTokenHash', async () => {
     const sessionsRepo = new PgSessionRepository(db);
     const session = Session.start(
       {
@@ -236,9 +239,71 @@ describeDb('repository integration (Postgres)', () => {
     session.pullDomainEvents();
     await sessionsRepo.save(session);
 
-    const loaded = await sessionsRepo.findByToken('tok-integ');
+    const loaded = await sessionsRepo.findByTokenHash(hashSessionToken('tok-integ'));
     expect(loaded?.id).toBe(session.id);
     expect(loaded?.status.value).toBe('active');
+  });
+
+  it('AUTH-001: countActiveByUser counts only LIVE sessions (status active, not past expiry, not idle-expired) — the same rule as isSessionLive', async () => {
+    const sessionsRepo = new PgSessionRepository(db);
+    const policy = new SessionPolicy({ ttlMs: 8 * 3_600_000, idleTimeoutMs: 30 * 60_000 });
+    const now = '2026-09-01T12:00:00.000Z';
+    const window = policy.livenessWindow(now);
+    const ctx = {
+      actor: { kind: 'user' as const, id: 'usr_system' },
+      correlationId: 'corr_test',
+      tenantId: TENANT,
+    };
+    const userId = 'usr_auth001' as UserId;
+    const make = (
+      token: string,
+      issuedAt: string,
+      expiresAt: string,
+      owner: UserId = userId,
+    ): Session => {
+      const session = Session.start(
+        { userId: owner, tenantId: TENANT, token, issuedAt, expiresAt },
+        ctx,
+      );
+      session.pullDomainEvents();
+      return session;
+    };
+    const rows = {
+      live: make('a1-live', '2026-09-01T11:50:00.000Z', '2026-09-01T19:50:00.000Z'),
+      // Absolute expiry passed, but status is still `active` (never presented again).
+      absExpired: make('a1-abs', '2026-09-01T03:00:00.000Z', '2026-09-01T11:00:00.000Z'),
+      // Inside the TTL but idle (last used 31 min ago).
+      idle: make('a1-idle', '2026-09-01T11:29:00.000Z', '2026-09-01T19:29:00.000Z'),
+      // Boundaries: expiresAt == now is NOT live; lastUsed == now - idle IS live.
+      expiresNow: make('a1-exp-now', '2026-09-01T11:59:00.000Z', now),
+      idleEdge: make('a1-idle-edge', '2026-09-01T11:30:00.000Z', '2026-09-01T19:30:00.000Z'),
+      other: make(
+        'a1-other',
+        '2026-09-01T11:50:00.000Z',
+        '2026-09-01T19:50:00.000Z',
+        'usr_other' as UserId,
+      ),
+    };
+    const ended = make('a1-ended', '2026-09-01T11:50:00.000Z', '2026-09-01T19:50:00.000Z');
+    ended.end(ctx);
+    ended.pullDomainEvents();
+    for (const session of [...Object.values(rows), ended]) await sessionsRepo.save(session);
+
+    expect(await sessionsRepo.countActiveByUser(userId, window)).toBe(2); // live + idleEdge
+
+    // The SQL count agrees with the in-process definition on every row.
+    const active = await sessionsRepo.findActiveByUser(userId);
+    expect(
+      active
+        .filter((session) => isSessionLive(session, window))
+        .map((s) => s.tokenHash)
+        .sort(),
+    ).toEqual([hashSessionToken('a1-idle-edge'), hashSessionToken('a1-live')].sort());
+    // Rows are untouched (the count never rewrites or deletes anything).
+    expect((await sessionsRepo.findByTokenHash(hashSessionToken('a1-abs')))?.status.value).toBe(
+      'active',
+    );
+    expect(await sessionsRepo.countActiveByUser('usr_other' as UserId, window)).toBe(1);
   });
 
   it('round-trips an Organization with settings changes', async () => {

@@ -16,6 +16,7 @@ import type { IdentityEventContext } from '../events/index.js';
 import { sessionEndedEvent, sessionStartedEvent } from '../events/index.js';
 import { SessionExpiredError, SessionRevokedError } from '../errors/index.js';
 import { SessionStatus } from '../value-objects/session-status.js';
+import { hashSessionToken } from '../value-objects/session-token.js';
 
 /** Input for starting a new {@link Session}. */
 export interface StartSessionInput {
@@ -43,8 +44,11 @@ export interface SessionSnapshot {
   userId: UserId;
   /** The tenant the session belongs to. */
   tenantId: TenantId;
-  /** The opaque bearer token value. */
-  token: string;
+  /**
+   * The SHA-256 digest of the bearer token (AUTH-004). The raw token is never
+   * part of a snapshot: it exists only in memory at {@link Session.start}.
+   */
+  tokenHash: string;
   /** The lifecycle status value. */
   status: string;
   /** ISO-8601 UTC issue time. */
@@ -68,7 +72,9 @@ export class Session {
   #id: string;
   readonly #userId: UserId;
   readonly #tenantId: TenantId;
-  readonly #token: string;
+  /** The raw bearer token — present only on a freshly STARTED session, never persisted. */
+  readonly #token: string | undefined;
+  readonly #tokenHash: string;
   #status: SessionStatus;
   readonly #issuedAt: string;
   #expiresAt: string;
@@ -77,11 +83,15 @@ export class Session {
   #version: number;
   readonly #events: EventEnvelope[] = [];
 
-  private constructor(input: StartSessionInput, issuedAt: string) {
+  private constructor(
+    input: Omit<StartSessionInput, 'token'> & { token?: string; tokenHash: string },
+    issuedAt: string,
+  ) {
     this.#id = prefixedId('ses') as string;
     this.#userId = input.userId;
     this.#tenantId = input.tenantId;
     this.#token = input.token;
+    this.#tokenHash = input.tokenHash;
     this.#status = SessionStatus.active();
     this.#issuedAt = issuedAt;
     this.#expiresAt = input.expiresAt;
@@ -98,7 +108,7 @@ export class Session {
    */
   static start(input: StartSessionInput, context: IdentityEventContext): Session {
     const issuedAt = input.issuedAt ?? nowIso();
-    const session = new Session(input, issuedAt);
+    const session = new Session({ ...input, tokenHash: hashSessionToken(input.token) }, issuedAt);
     session.#events.push(
       sessionStartedEvent(context, {
         sessionId: session.#id,
@@ -125,9 +135,23 @@ export class Session {
     return this.#tenantId;
   }
 
-  /** The opaque bearer token value. */
+  /**
+   * The raw bearer token — available ONLY on a session created by
+   * {@link Session.start}, so the caller can hand it to the client. A session
+   * loaded from storage never has it (only its digest is persisted).
+   *
+   * @throws {Error} on a rehydrated session.
+   */
   get token(): string {
+    if (this.#token === undefined) {
+      throw new Error('The raw session token is only available on a newly started session');
+    }
     return this.#token;
+  }
+
+  /** The SHA-256 digest of the bearer token (the persisted, indexed form). */
+  get tokenHash(): string {
+    return this.#tokenHash;
   }
 
   /** The lifecycle status. */
@@ -254,7 +278,7 @@ export class Session {
       id: session.id,
       userId: session.userId,
       tenantId: session.tenantId,
-      token: session.token,
+      tokenHash: session.tokenHash,
       status: session.status.value,
       issuedAt: session.issuedAt,
       expiresAt: session.expiresAt,
@@ -273,7 +297,7 @@ export class Session {
       {
         userId: snapshot.userId,
         tenantId: snapshot.tenantId,
-        token: snapshot.token,
+        tokenHash: snapshot.tokenHash,
         issuedAt: snapshot.issuedAt,
         expiresAt: snapshot.expiresAt,
       },

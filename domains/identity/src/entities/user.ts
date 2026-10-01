@@ -22,6 +22,7 @@ import {
   userSuspendedEvent,
 } from '../events/index.js';
 import {
+  InvalidIdentityValueError,
   RoleAlreadyAssignedError,
   RoleNotAssignedError,
   UserStateTransitionError,
@@ -52,6 +53,13 @@ export interface CreateUserInput {
   bio?: string;
   /** Optional initial status (defaults to `pending`). */
   status?: UserStatus;
+  /**
+   * The external OIDC identity this account is bound to at creation (AUTH-009):
+   * issuer AND subject, both or neither. Authentication-internal; never exposed
+   * through user DTOs.
+   */
+  oidcIssuer?: string;
+  oidcSubject?: string;
 }
 
 /**
@@ -83,6 +91,10 @@ export interface UserSnapshot {
     /** ISO-8601 UTC profile update time. */
     updatedAt: string;
   };
+  /** The bound OIDC issuer, when the account is bound (AUTH-009). Internal. */
+  oidcIssuer?: string | undefined;
+  /** The bound OIDC subject (`sub`), when the account is bound (AUTH-009). Internal. */
+  oidcSubject?: string | undefined;
   /** Role names currently assigned. */
   roles: readonly string[];
   /** ISO-8601 UTC creation time. */
@@ -106,6 +118,9 @@ export class User {
   #passwordHash: PasswordHash;
   #profile: UserProfile;
   #status: UserStatus;
+  /** The external OIDC identity (issuer + subject), or both undefined for an unbound account. */
+  readonly #oidcIssuer: string | undefined;
+  readonly #oidcSubject: string | undefined;
   // Not `readonly`: reassigned only by `hydrate` (reconstitution).
   #roles: Set<string>;
   #createdAt: string;
@@ -120,6 +135,16 @@ export class User {
     this.#username = input.username;
     this.#passwordHash = input.passwordHash;
     this.#status = input.status ?? UserStatus.pending();
+    // A binding is the PAIR (issuer, subject): half of one is never stored.
+    const issuer = input.oidcIssuer?.trim();
+    const subject = input.oidcSubject?.trim();
+    if ((issuer === undefined || issuer === '') !== (subject === undefined || subject === '')) {
+      throw new InvalidIdentityValueError('Invalid OIDC identity binding', [
+        { path: 'oidcIdentity', message: 'Issuer and subject must be provided together' },
+      ]);
+    }
+    this.#oidcIssuer = issuer === '' ? undefined : issuer;
+    this.#oidcSubject = subject === '' ? undefined : subject;
     this.#profile = UserProfile.create(this.#id, {
       displayName: input.displayName.value,
       title: input.title,
@@ -164,6 +189,16 @@ export class User {
   /** The email address. */
   get email(): Email {
     return this.#email;
+  }
+
+  /** The bound OIDC issuer, or `undefined` for an unbound account (AUTH-009; internal). */
+  get oidcIssuer(): string | undefined {
+    return this.#oidcIssuer;
+  }
+
+  /** The bound OIDC subject, or `undefined` for an unbound account (AUTH-009; internal). */
+  get oidcSubject(): string | undefined {
+    return this.#oidcSubject;
   }
 
   /** The username. */
@@ -333,6 +368,8 @@ export class User {
         bio: user.profile.bio,
         updatedAt: user.profile.updatedAt,
       },
+      oidcIssuer: user.oidcIssuer,
+      oidcSubject: user.oidcSubject,
       roles: user.roles,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
@@ -357,6 +394,8 @@ export class User {
         title: snapshot.profile.title,
         bio: snapshot.profile.bio,
         status: UserStatus.from(snapshot.status),
+        oidcIssuer: snapshot.oidcIssuer,
+        oidcSubject: snapshot.oidcSubject,
       },
       snapshot.createdAt,
     );

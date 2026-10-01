@@ -30,6 +30,9 @@ import {
 /** The OIDC-style issuer recorded for a demo sign-in (never a real IdP). */
 const DEMO_ISSUER = 'nexora-demo';
 
+/** The deterministic external identity of a demo persona (AUTH-009): issuer + subject. */
+const demoOidcSubject = (personaKey: string): string => `demo:${personaKey}`;
+
 /** Thrown for a failure the route maps to a specific HTTP status. */
 export class DemoError extends Error {
   constructor(
@@ -161,7 +164,7 @@ export class DemoService {
       throw new DemoError('DEMO_NOT_SEEDED', 'The demo world is not seeded');
     }
     const result = await this.#authenticate.handle({
-      oidcSubject: `demo:${persona.key}`,
+      oidcSubject: demoOidcSubject(persona.key),
       email: persona.email,
       emailVerified: true,
       displayName: persona.displayName,
@@ -256,7 +259,11 @@ export class DemoService {
         );
       }
     }
-    return seedWorld(this.#repos, buildDemoWorld());
+    // Demo accounts are bound to their deterministic identity at seed time, so a
+    // demo login resolves them by (issuer, subject) exactly like any OIDC user.
+    return seedWorld(this.#repos, buildDemoWorld(), {
+      oidcIdentity: (userKey) => ({ issuer: DEMO_ISSUER, subject: demoOidcSubject(userKey) }),
+    });
   }
 
   async #awaitDrain(): Promise<boolean> {
