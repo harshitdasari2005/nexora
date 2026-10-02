@@ -24,6 +24,11 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
+/* The desk is lit, not flat. The landing page keeps its own background. */
+body:not(:has(.nexora-landing)) {
+  background: var(--nexora-deskBg, var(--nexora-bg));
+  background-attachment: fixed;
+}
 h1, h2, h3, h4, p { margin: 0; }
 h1, h2, h3, h4 {
   font-family: ${typography.fontDisplay};
@@ -62,10 +67,11 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 .nexora-story {
   width: 100%;
   max-width: 1040px;
-  margin: 0 auto 24px;
+  margin: 0 auto 28px;
   border: 1px solid var(--nexora-border);
   border-radius: var(--nexora-radius-lg, 16px);
-  background: var(--nexora-surface);
+  background: var(--nexora-cardBg, var(--nexora-surface));
+  box-shadow: var(--nexora-cardShadow, none);
   overflow: hidden;
 }
 .nexora-story[data-tone='turn'] { border-color: var(--nexora-marker); background: var(--nexora-markerSoft); }
@@ -127,7 +133,7 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
   background: var(--nexora-marker);
   border-color: var(--nexora-marker);
   color: var(--nexora-markerInk);
-  box-shadow: 0 0 0 5px var(--nexora-markerSoft);
+  box-shadow: 0 0 0 5px var(--nexora-markerSoft), 0 10px 20px -10px rgba(190, 132, 6, 0.9);
 }
 .nexora-step[data-state='skipped'] .nexora-step-mark { border-style: dashed; }
 .nexora-step-title { font-size: 1.125rem; font-weight: 620; letter-spacing: -0.015em; line-height: 1.3; padding-top: 6px; }
@@ -157,7 +163,16 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
   color: var(--nexora-text);
   cursor: pointer;
 }
-.nexora-choice-option:hover { border-color: var(--nexora-primary); }
+.nexora-choice-option {
+  box-shadow: var(--nexora-btnSecondaryShadow, none);
+  transition: border-color 140ms ease, box-shadow 160ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.nexora-choice-option:not(:disabled):hover {
+  border-color: var(--nexora-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px -16px color-mix(in srgb, var(--nexora-primary) 80%, transparent), var(--nexora-btnSecondaryShadow, none);
+}
+.nexora-choice-option:not(:disabled):active { transform: translateY(0); }
 .nexora-choice-option[aria-checked='true'] {
   border-color: var(--nexora-primary);
   background: var(--nexora-primarySoft);
@@ -225,7 +240,14 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 }
 /* A thin progress meter. */
 .nexora-meter { height: 6px; border-radius: 999px; background: var(--nexora-surfaceMuted); margin: 10px 0 6px; overflow: hidden; }
-.nexora-meter > span { display: block; height: 100%; border-radius: 999px; background: var(--nexora-primary); }
+.nexora-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--nexora-primary) 70%, var(--nexora-surface)), var(--nexora-primary));
+  transform-origin: left center;
+  animation: nexora-route-draw 700ms cubic-bezier(0.2, 0, 0, 1) both;
+}
 
 /* A row on the desk: what it is, and the page it is done on. */
 .nexora-desk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 16px 20px; }
@@ -240,7 +262,16 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
   background: var(--nexora-surfaceMuted);
   color: var(--nexora-textSecondary);
 }
-.nexora-desk-icon[data-mine='true'] { background: var(--nexora-marker); color: var(--nexora-markerInk); }
+.nexora-desk-icon[data-mine='true'] {
+  background: var(--nexora-marker);
+  color: var(--nexora-markerInk);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 4px 10px -6px rgba(190, 132, 6, 0.9);
+}
+.nexora-desk-row { transition: background-color 140ms ease; }
+.nexora-desk-row:hover { background: color-mix(in srgb, var(--nexora-surfaceMuted) 45%, transparent); }
+.nexora-rows > :first-child { border-top-left-radius: inherit; border-top-right-radius: inherit; }
+.nexora-rows > :last-child { border-bottom-left-radius: inherit; border-bottom-right-radius: inherit; }
+.nexora-rows { border-radius: inherit; }
 
 /* The demo's front door: the big stories side by side, each with its outline. */
 .nexora-story-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; align-items: stretch; }
@@ -262,6 +293,7 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 .nexora-people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 16px; align-items: start; }
 .nexora-people-list { list-style: none; margin: 0; padding: 0; }
 .nexora-people-list > li { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-top: 1px solid var(--nexora-border); }
+.nexora-section-title + span, .nexora-section-title ~ span { font-variant-numeric: tabular-nums; }
 .nexora-people-initial {
   flex: 0 0 auto;
   width: 32px;
@@ -302,13 +334,13 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
   .nexora-actions > .nexora-btn { flex: 1 1 auto; }
 }
 .nexora-page-title {
-  font-size: clamp(1.6rem, 1.1rem + 1.9vw, 2.25rem);
-  line-height: 1.08;
-  font-weight: 650;
-  letter-spacing: -0.03em;
+  font-size: clamp(1.75rem, 1.1rem + 2.4vw, 2.75rem);
+  line-height: 1.04;
+  font-weight: 680;
+  letter-spacing: -0.036em;
   text-wrap: balance;
 }
-.nexora-page-lede { color: var(--nexora-textSecondary); max-width: 64ch; }
+.nexora-page-lede { color: var(--nexora-textSecondary); max-width: 62ch; font-size: 0.9375rem; line-height: 1.55; text-wrap: pretty; }
 .nexora-section-title {
   font-family: ${typography.fontDisplay};
   font-size: 1.05rem;
@@ -319,8 +351,19 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 /* "It is your turn" — the one loud thing in the interface. */
 .nexora-turn {
   position: relative;
-  border-color: var(--nexora-marker) !important;
-  box-shadow: inset 4px 0 0 var(--nexora-marker);
+  border-color: color-mix(in srgb, var(--nexora-marker) 78%, var(--nexora-border)) !important;
+  box-shadow: var(--nexora-cardShadow, none), var(--nexora-turnShadow, none) !important;
+}
+/* The sheet that is yours carries an index tab, the way a file on a desk does. */
+.nexora-turn::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 22px;
+  width: 46px;
+  height: 7px;
+  border-radius: 7px 7px 0 0;
+  background: var(--nexora-marker);
 }
 .nexora-turn-tag {
   display: inline-flex;
@@ -333,6 +376,7 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
   color: var(--nexora-markerInk);
   font-size: 0.75rem;
   font-weight: 650;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 /* A row of items separated by hairlines instead of boxed one by one. */
 .nexora-rows > * + * { border-top: 1px solid var(--nexora-border); }
@@ -351,7 +395,15 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 }
 .nexora-route-stop:first-child::before { left: 7px; }
 .nexora-route-stop:last-child::before { right: calc(100% - 7px); }
-.nexora-route-stop[data-reached='true']::before { background: var(--nexora-primary); }
+.nexora-route-stop[data-reached='true']::before {
+  background: var(--nexora-primary);
+  transform-origin: left center;
+  animation: nexora-route-draw 520ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+.nexora-route-stop[data-reached='true']:nth-child(2)::before { animation-delay: 120ms; }
+.nexora-route-stop[data-reached='true']:nth-child(3)::before { animation-delay: 240ms; }
+.nexora-route-stop[data-reached='true']:nth-child(4)::before { animation-delay: 360ms; }
+.nexora-route-stop[data-reached='true']:nth-child(n + 5)::before { animation-delay: 480ms; }
 .nexora-route-dot {
   position: absolute;
   top: 0;
@@ -367,6 +419,14 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
   background: var(--nexora-marker);
   border-color: var(--nexora-marker);
   box-shadow: 0 0 0 4px var(--nexora-markerSoft);
+}
+.nexora-route-stop[data-state='current'] .nexora-route-dot::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px solid var(--nexora-marker);
+  animation: nexora-route-ping 1600ms cubic-bezier(0.2, 0, 0, 1) 700ms 2 both;
 }
 .nexora-route-stop[data-state='returned'] .nexora-route-dot { background: var(--nexora-danger); border-color: var(--nexora-danger); }
 .nexora-route-stop[data-state='skipped'] .nexora-route-dot { border-style: dashed; }
@@ -402,6 +462,14 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 *::-webkit-scrollbar-thumb:hover { background: var(--nexora-borderStrong); background-clip: content-box; }
 *::-webkit-scrollbar-corner { background: transparent; }
 
+@keyframes nexora-route-draw { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes nexora-route-ping {
+  from { transform: scale(1); opacity: 0.9; }
+  to { transform: scale(2.6); opacity: 0; }
+}
+@media (max-width: 560px) {
+  .nexora-route-stop[data-reached='true']::before { animation: none; }
+}
 @keyframes nexora-spin { to { transform: rotate(360deg); } }
 @keyframes nexora-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 @keyframes nexora-blink { 0%, 45% { opacity: 1; } 55%, 100% { opacity: 0; } }
@@ -434,24 +502,56 @@ export function GlobalStyles(): JSX.Element {
   --nexora-control-md: 38px;
   --nexora-control-lg: 44px;
   /* App shell: a dark ink rail beside the light desk. */
-  --nexora-shellSidebar: #14201c;
-  --nexora-shellTopbar: color-mix(in srgb, var(--nexora-bg) 86%, transparent);
+  --nexora-shellSidebar: linear-gradient(180deg, #17261f 0%, #101b17 55%, #0d1613 100%);
+  --nexora-shellTopbar: color-mix(in srgb, var(--nexora-bg) 78%, transparent);
   --nexora-shellCardElevated: #ffffff;
   --nexora-cardBg: var(--nexora-surface);
   --nexora-cardBackdropFilter: none;
   --nexora-cardInsetHighlight: none;
+  /* Depth. The desk is lit from the top left; sheets lie on it and cast a
+     soft, ink-tinted shadow; controls are slightly raised and press down. */
+  --nexora-deskBg:
+    radial-gradient(1100px 520px at 16% -10%, rgba(255, 255, 255, 0.95), transparent 62%),
+    radial-gradient(900px 520px at 104% 4%, rgba(14, 107, 88, 0.07), transparent 60%),
+    var(--nexora-bg);
+  --nexora-cardShadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(20, 32, 28, 0.05),
+    0 16px 34px -24px rgba(20, 32, 28, 0.30);
+  --nexora-btnPrimaryShadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    0 1px 2px rgba(8, 52, 42, 0.40),
+    0 8px 16px -9px rgba(14, 107, 88, 0.50);
+  --nexora-btnSecondaryShadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 2px rgba(20, 32, 28, 0.07);
+  --nexora-turnShadow: 0 18px 36px -26px rgba(190, 132, 6, 0.75);
 }
 [data-theme="dark"] {
   ${darkThemeCss}
   --nexora-marker: #f5b82e;
   --nexora-markerSoft: rgba(245, 184, 46, 0.18);
   --nexora-markerInk: #2b1f00;
-  --nexora-shellSidebar: #080d0b;
-  --nexora-shellTopbar: color-mix(in srgb, var(--nexora-bg) 86%, transparent);
+  --nexora-shellSidebar: linear-gradient(180deg, #111b17 0%, #0b1210 60%, #080d0b 100%);
+  --nexora-shellTopbar: color-mix(in srgb, var(--nexora-bg) 72%, transparent);
   --nexora-shellCardElevated: #18231f;
-  --nexora-cardBg: var(--nexora-surface);
+  /* A sheet at night: lit along its top edge, darker towards the bottom. */
+  --nexora-cardBg: linear-gradient(180deg, #18241f 0%, #131c19 46%, #111916 100%);
   --nexora-cardBackdropFilter: none;
   --nexora-cardInsetHighlight: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  --nexora-deskBg:
+    radial-gradient(1100px 600px at 10% -12%, rgba(79, 209, 174, 0.13), transparent 62%),
+    radial-gradient(900px 560px at 106% 6%, rgba(79, 209, 174, 0.06), transparent 60%),
+    var(--nexora-bg);
+  --nexora-cardShadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 0 rgba(0, 0, 0, 0.5),
+    0 24px 48px -30px rgba(0, 0, 0, 0.95);
+  --nexora-btnPrimaryShadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2),
+    0 8px 20px -12px rgba(79, 209, 174, 0.55);
+  --nexora-btnSecondaryShadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.45);
+  --nexora-turnShadow: 0 20px 44px -28px rgba(245, 184, 46, 0.55);
 }
 /* The ink rail: everything inside the sidebar reads light-on-dark in BOTH
    themes, by re-pointing the same variables the components already use. */
@@ -469,7 +569,12 @@ export function GlobalStyles(): JSX.Element {
   --nexora-link: #7fe0c6;
   --nexora-cardBg: rgba(255, 255, 255, 0.05);
   --nexora-popoverBg: #1d2b26;
+  --nexora-cardShadow: none;
+  --nexora-btnPrimaryShadow: none;
+  --nexora-btnSecondaryShadow: none;
   color: var(--nexora-text);
+  /* A hairline of light where the rail meets the desk. */
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.07), 1px 0 0 rgba(8, 14, 12, 0.35);
 }
 /* The landing page keeps its own cinematic look: its previous palette,
    typeface and shape, untouched by the app's visual language. */
@@ -486,6 +591,9 @@ export function GlobalStyles(): JSX.Element {
   --nexora-cardBg: var(--nexora-surfaceGlass);
   --nexora-cardBackdropFilter: blur(20px) saturate(150%);
   --nexora-cardInsetHighlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --nexora-cardShadow: var(--nexora-cardInsetHighlight);
+  --nexora-btnPrimaryShadow: none;
+  --nexora-btnSecondaryShadow: none;
   font-family: ${typography.fontLanding};
   letter-spacing: -0.011em;
   font-feature-settings: 'cv02' 1, 'cv03' 1, 'cv04' 1, 'cv11' 1;
@@ -500,13 +608,18 @@ export function GlobalStyles(): JSX.Element {
   border-color: var(--nexora-borderStrong);
   box-shadow: ${elevation.md};
 }
-.nexora-btn:not(:disabled):active { transform: translateY(0.5px); }
+.nexora-btn-primary { box-shadow: var(--nexora-btnPrimaryShadow, none); }
+.nexora-btn-secondary { box-shadow: var(--nexora-btnSecondaryShadow, none); }
+.nexora-btn:disabled { box-shadow: none; }
+/* A control answers the hand: it goes down when pressed. */
+.nexora-btn:not(:disabled):active { transform: translateY(1px) scale(0.985); box-shadow: none; }
 .nexora-btn-primary:not(:disabled):hover { background: var(--nexora-primaryHover); }
 .nexora-btn-primary:not(:disabled):active { filter: brightness(0.92); }
 .nexora-btn-secondary:not(:disabled):hover { background: var(--nexora-surfaceMuted); border-color: var(--nexora-borderStrong); }
 .nexora-btn-ghost:not(:disabled):hover { background: var(--nexora-surfaceMuted); color: var(--nexora-text); }
 .nexora-btn-danger:not(:disabled):hover { filter: brightness(0.93); }
 .nexora-btn-danger:not(:disabled):active { filter: brightness(0.86); }
+.nexora-input { box-shadow: inset 0 1px 2px color-mix(in srgb, var(--nexora-text) 6%, transparent); }
 .nexora-input::placeholder { color: var(--nexora-textMuted); }
 .nexora-input:hover:not(:focus):not(:disabled) { border-color: var(--nexora-borderStrong); }
 .nexora-input:focus {

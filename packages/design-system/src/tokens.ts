@@ -110,11 +110,11 @@ export const lightColors: ThemeColors = {
 
 /** The dark theme — the same desk at night: deep green-black, mint for action. */
 export const darkColors: ThemeColors = {
-  bg: '#0c1311',
+  bg: '#090f0d',
   surface: '#131c19',
-  surfaceMuted: '#1a2622',
-  border: '#24332e',
-  borderStrong: '#35483f',
+  surfaceMuted: '#1b2823',
+  border: '#26362f',
+  borderStrong: '#3a4f45',
   text: '#e6eeea',
   textSecondary: '#a4b5ad',
   textMuted: '#74867e',

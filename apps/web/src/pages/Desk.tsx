@@ -107,7 +107,11 @@ export function DeskView({
     <Page>
       <PageHeader
         title={`${firstName}'s desk`}
-        lede="What is waiting for you, and what is moving without you."
+        lede={
+          desk === null
+            ? 'What is waiting for you, and what is moving without you.'
+            : deskSummary(desk)
+        }
       />
 
       {error !== null ? (
@@ -139,7 +143,7 @@ export function DeskView({
                 />
               </Card>
             ) : (
-              <Card padding={0} className="nexora-turn" style={{ overflow: 'hidden' }}>
+              <Card padding={0} className="nexora-turn">
                 <div className="nexora-rows">
                   {desk.mine.map((item) => (
                     <DeskRow key={item.id} item={item} href={href(item.screen)} mine />
@@ -151,7 +155,7 @@ export function DeskView({
 
           {desk.starts.length > 0 ? (
             <Section title="Start something">
-              <Card padding={0} style={{ overflow: 'hidden' }}>
+              <Card padding={0}>
                 <div className="nexora-rows">
                   {desk.starts.map((item) => (
                     <DeskRow key={item.id} item={item} href={href(item.screen)} />
@@ -163,7 +167,7 @@ export function DeskView({
 
           {desk.watching.length > 0 ? (
             <Section title="In motion" count={desk.watching.length} hint="with other people">
-              <Card padding={0} style={{ overflow: 'hidden' }}>
+              <Card padding={0}>
                 <div className="nexora-rows">
                   {desk.watching.map((item) => (
                     <DeskRow key={item.id} item={item} href={href(item.screen)} />
@@ -176,6 +180,24 @@ export function DeskView({
       )}
     </Page>
   );
+}
+
+const COUNT_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+const countWord = (count: number): string => COUNT_WORDS[count] ?? String(count);
+
+/** The desk in one sentence: how much is yours, how much is with other people. */
+export function deskSummary(desk: Pick<Desk, 'mine' | 'watching'>): string {
+  const mine = desk.mine.length;
+  const moving = desk.watching.length;
+  const first =
+    mine === 0
+      ? 'Nothing is waiting for you.'
+      : `${countWord(mine)} ${mine === 1 ? 'thing is' : 'things are'} waiting for you.`;
+  const second =
+    moving === 0
+      ? ''
+      : ` ${countWord(moving)} ${moving === 1 ? 'is' : 'are'} moving with other people.`;
+  return first + second;
 }
 
 function DeskRow({

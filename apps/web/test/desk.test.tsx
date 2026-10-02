@@ -11,7 +11,7 @@ import { buildDesk, type DeskSources } from '../src/lib/desk.js';
 import type { Requisition } from '../src/lib/hiring.js';
 import type { OnboardingRecord } from '../src/lib/onboarding.js';
 import type { Candidate, Opening } from '../src/lib/recruiting.js';
-import { DeskView } from '../src/pages/Desk.js';
+import { deskSummary, DeskView } from '../src/pages/Desk.js';
 
 const NO_ACTIONS = { canDecide: false, canRevise: false, canWithdraw: false };
 
@@ -320,6 +320,11 @@ describe('DeskView', () => {
   it('says so while the desk is being read', () => {
     const html = render(<DeskView scope={scope} firstName="Rohan" desk={null} />);
     expect(html).toContain('Rohan&#x27;s desk');
+    // The desk says in one sentence what is on it.
+    expect(deskSummary({ mine: [], watching: [] })).toBe('Nothing is waiting for you.');
+    expect(deskSummary({ mine: [{}], watching: [{}, {}] } as never)).toBe(
+      'One thing is waiting for you. Two are moving with other people.',
+    );
     expect(html).toContain('Reading your desk');
     expect(html).not.toContain('Nothing is waiting for you');
   });

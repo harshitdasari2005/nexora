@@ -287,12 +287,14 @@ function renderNavItem(
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    minHeight: 34,
+    minHeight: 36,
     padding: '0 10px',
-    borderRadius: 9,
+    borderRadius: 10,
     fontSize: typography.sizes.base,
     color: active ? 'var(--nexora-text)' : 'var(--nexora-textSecondary)',
-    background: active ? 'var(--nexora-surfaceMuted)' : 'transparent',
+    background: active
+      ? 'linear-gradient(90deg, var(--nexora-primarySoft), var(--nexora-surface))'
+      : 'transparent',
     fontWeight: active ? typography.weights.semibold : typography.weights.regular,
     cursor: item.soon ? 'default' : 'pointer',
     opacity: item.soon ? 0.55 : 1,
@@ -302,7 +304,9 @@ function renderNavItem(
     textAlign: 'left',
     fontFamily: 'inherit',
     letterSpacing: 'inherit',
-    boxShadow: active ? 'inset 3px 0 0 var(--nexora-primary)' : 'none',
+    boxShadow: active
+      ? 'inset 3px 0 0 var(--nexora-primary), inset 0 1px 0 rgba(255, 255, 255, 0.06)'
+      : 'none',
     transition: 'background 130ms ease, color 130ms ease',
   } as const;
   const className = `nexora-navlink${active ? ' nexora-navlink-active' : ''}`;
@@ -491,7 +495,7 @@ function AppShellChrome({
         display: 'flex',
         overflow: 'hidden',
         position: 'relative',
-        background: 'var(--nexora-bg)',
+        background: 'var(--nexora-deskBg, var(--nexora-bg))',
         color: 'var(--nexora-text)',
       }}
     >

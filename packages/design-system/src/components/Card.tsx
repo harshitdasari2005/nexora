@@ -54,7 +54,7 @@ export function Card({
     borderRadius: radius.lg,
     boxShadow:
       shadow === 'none'
-        ? 'var(--nexora-cardInsetHighlight, none)'
+        ? 'var(--nexora-cardShadow, var(--nexora-cardInsetHighlight, none))'
         : `${shadow}, var(--nexora-cardInsetHighlight, none)`,
     padding: spacing[padding],
     transition: `box-shadow ${motion.duration.base} ${motion.easing.standard}, border-color ${motion.duration.base} ${motion.easing.standard}, transform ${motion.duration.base} ${motion.easing.emphasis}`,
