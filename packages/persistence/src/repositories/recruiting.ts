@@ -13,6 +13,10 @@ import {
   CandidateId,
   JobOpening,
   JobOpeningId,
+  Onboarding,
+  OnboardingId,
+  type OnboardingRepository,
+  type OnboardingSnapshot,
   type CandidateRepository,
   type CandidateSnapshot,
   type JobOpeningRepository,
@@ -20,7 +24,7 @@ import {
 } from '@nexora/domain-hr';
 
 import type { NexoraDatabase } from '../db.js';
-import { candidates, jobOpenings } from '../schema/index.js';
+import { candidates, jobOpenings, onboardings } from '../schema/index.js';
 
 type OpeningRow = typeof jobOpenings.$inferSelect;
 type CandidateRow = typeof candidates.$inferSelect;
@@ -265,6 +269,117 @@ export class PgCandidateRepository implements CandidateRepository {
         ),
       )
       .returning({ id: candidates.id });
+    return updated.length === 1;
+  }
+}
+
+type OnboardingRow = typeof onboardings.$inferSelect;
+
+function onboardingFromRow(row: OnboardingRow): Onboarding {
+  const snapshot: OnboardingSnapshot = {
+    id: OnboardingId.from(row.id),
+    organizationId: row.organizationId as TenantId,
+    employeeId: row.employeeId,
+    employeeName: row.employeeName,
+    workspaceId: row.workspaceId as WorkspaceId,
+    hiringManagerId: row.hiringManagerId,
+    ...(row.projectId === null ? {} : { projectId: row.projectId }),
+    startedBy: row.startedBy,
+    status: row.status as OnboardingSnapshot['status'],
+    items: row.items as OnboardingSnapshot['items'],
+    ...(row.completedAt === null ? {} : { completedAt: toIso(row.completedAt) }),
+    createdAt: toIso(row.createdAt),
+    updatedAt: toIso(row.updatedAt),
+    version: row.version,
+  };
+  return Onboarding.hydrate(snapshot);
+}
+
+function onboardingToRow(onboarding: Onboarding): OnboardingRow {
+  const snapshot = Onboarding.snapshot(onboarding);
+  return {
+    id: snapshot.id,
+    organizationId: snapshot.organizationId,
+    employeeId: snapshot.employeeId,
+    employeeName: snapshot.employeeName,
+    workspaceId: snapshot.workspaceId,
+    hiringManagerId: snapshot.hiringManagerId,
+    projectId: snapshot.projectId ?? null,
+    startedBy: snapshot.startedBy,
+    status: snapshot.status,
+    items: [...snapshot.items],
+    completedAt: snapshot.completedAt === undefined ? null : new Date(snapshot.completedAt),
+    createdAt: new Date(snapshot.createdAt),
+    updatedAt: new Date(snapshot.updatedAt),
+    version: snapshot.version,
+  };
+}
+
+/** Drizzle {@link OnboardingRepository} implementation. */
+export class PgOnboardingRepository implements OnboardingRepository {
+  readonly #db: NexoraDatabase;
+
+  constructor(db: NexoraDatabase) {
+    this.#db = db;
+  }
+
+  async findById(id: OnboardingId): Promise<Onboarding | undefined> {
+    const rows = await this.#db.select().from(onboardings).where(eq(onboardings.id, id)).limit(1);
+    return rows[0] === undefined ? undefined : onboardingFromRow(rows[0]);
+  }
+
+  async findByEmployee(
+    organizationId: TenantId,
+    employeeId: string,
+  ): Promise<Onboarding | undefined> {
+    const rows = await this.#db
+      .select()
+      .from(onboardings)
+      .where(
+        and(eq(onboardings.organizationId, organizationId), eq(onboardings.employeeId, employeeId)),
+      )
+      .limit(1);
+    return rows[0] === undefined ? undefined : onboardingFromRow(rows[0]);
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly Onboarding[]> {
+    const rows = await this.#db
+      .select()
+      .from(onboardings)
+      .where(eq(onboardings.organizationId, organizationId))
+      .orderBy(desc(onboardings.createdAt), desc(onboardings.id));
+    return rows.map(onboardingFromRow);
+  }
+
+  async insert(onboarding: Onboarding): Promise<boolean> {
+    try {
+      await this.#db.insert(onboardings).values(onboardingToRow(onboarding));
+      return true;
+    } catch (error) {
+      if (isUniqueViolation(error)) return false;
+      throw error;
+    }
+  }
+
+  async update(onboarding: Onboarding, expectedVersion: number): Promise<boolean> {
+    const row = onboardingToRow(onboarding);
+    const updated = await this.#db
+      .update(onboardings)
+      .set({
+        status: row.status,
+        items: row.items,
+        completedAt: row.completedAt,
+        updatedAt: row.updatedAt,
+        version: row.version,
+      })
+      .where(
+        and(
+          eq(onboardings.id, onboarding.id),
+          eq(onboardings.organizationId, onboarding.organizationId),
+          eq(onboardings.version, expectedVersion),
+        ),
+      )
+      .returning({ id: onboardings.id });
     return updated.length === 1;
   }
 }

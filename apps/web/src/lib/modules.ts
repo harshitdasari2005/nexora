@@ -37,6 +37,10 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   { navLabel: 'Hiring', anyOfPermissions: ['requisitions.create', 'requisitions.read'] },
   // HR runs it; the executive watches; hiring managers see their own openings.
   {
+    navLabel: 'Onboarding',
+    anyOfPermissions: ['onboarding.hr', 'onboarding.it', 'onboarding.manager', 'onboarding.read'],
+  },
+  {
     navLabel: 'Recruiting',
     anyOfPermissions: ['recruiting.manage', 'recruiting.read', 'recruiting.interview'],
   },

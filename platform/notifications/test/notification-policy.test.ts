@@ -103,6 +103,23 @@ describe('NotificationPolicy — recipient determination', () => {
     }
   });
 
+  it('records onboarding steps as activity', () => {
+    for (const [type, title] of [
+      ['onboarding.started', 'Onboarding started'],
+      ['onboarding.item_completed', 'Onboarding step done'],
+      ['onboarding.completed', 'Onboarding completed'],
+    ] as const) {
+      const outcome = new NotificationPolicy().evaluate(
+        envelope(type, {
+          payload: { employeeName: 'Sarah Thomas', item: 'Laptop and equipment ready' },
+        }),
+      );
+      expect(outcome.notifications, type).toEqual([]);
+      expect(outcome.activity[0], type).toMatchObject({ type, title, actorId: ACTOR });
+      expect(outcome.activity[0]?.body).toContain('Sarah Thomas');
+    }
+  });
+
   it('maps employee.created to an employee notification', () => {
     const outcome = new NotificationPolicy().evaluate(
       envelope('employee.created', { payload: { name: 'Sarah Chen' } }),

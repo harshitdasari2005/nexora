@@ -186,6 +186,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'requisitions.approve_executive',
       'recruiting.read',
       'recruiting.interview',
+      'onboarding.read',
+      'onboarding.manager',
     ],
   },
   {
@@ -251,6 +253,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'recruiting.manage',
       'recruiting.read',
       'recruiting.interview',
+      'onboarding.hr',
+      'onboarding.read',
     ],
   },
   {
@@ -281,6 +285,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'marketplace.manage',
       'requisitions.create',
       'recruiting.interview',
+      'onboarding.manager',
+      'onboarding.it',
     ],
   },
   {
@@ -308,6 +314,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'marketplace.manage',
       'requisitions.create',
       'recruiting.interview',
+      'onboarding.manager',
+      'onboarding.it',
     ],
   },
   {
@@ -339,6 +347,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'github.repositories.read',
       'github.issues.read',
       'github.issues.create',
+      'onboarding.it',
     ],
   },
   {
@@ -458,6 +467,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'slack.messages.send',
       'requisitions.create',
       'recruiting.interview',
+      'onboarding.manager',
     ],
   },
   {
@@ -668,6 +678,29 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     name: 'Interview Candidates',
     description:
       'See the candidates of the openings one is the hiring manager of, and record interview feedback — never offer amounts',
+  },
+  {
+    id: 'onboarding.hr',
+    name: 'Run Onboarding (HR)',
+    description:
+      'Start a new hire’s onboarding and complete HR’s checklist items (paperwork, orientation)',
+  },
+  {
+    id: 'onboarding.it',
+    name: 'Onboarding (IT)',
+    description:
+      'See new hires being onboarded and complete IT’s checklist items (accounts, equipment)',
+  },
+  {
+    id: 'onboarding.manager',
+    name: 'Onboarding (Hiring Manager)',
+    description:
+      'See the onboarding of one’s own hires and complete the manager’s checklist items (buddy)',
+  },
+  {
+    id: 'onboarding.read',
+    name: 'Read Onboarding',
+    description: 'See every onboarding of the organization',
   },
   {
     id: 'workflows.read',

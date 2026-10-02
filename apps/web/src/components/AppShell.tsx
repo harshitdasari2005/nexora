@@ -89,6 +89,7 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'Employees', icon: 'employees', to: '/app/employees' },
   { label: 'Hiring', icon: 'employees', to: '/app/hiring' },
   { label: 'Recruiting', icon: 'employees', to: '/app/recruiting' },
+  { label: 'Onboarding', icon: 'employees', to: '/app/onboarding' },
   { label: 'Documents', icon: 'documents', to: '/app/documents' },
   { label: 'Knowledge', icon: 'knowledge', to: '/app/knowledge' },
   { label: 'Workflows', icon: 'workflows', to: '/app/workflows' },

@@ -20,6 +20,9 @@ export const RECRUITING_EVENT_TYPES = {
   offerExtended: 'recruiting.offer.extended',
   offerAccepted: 'recruiting.offer.accepted',
   offerDeclined: 'recruiting.offer.declined',
+  onboardingStarted: 'onboarding.started',
+  onboardingItemCompleted: 'onboarding.item_completed',
+  onboardingCompleted: 'onboarding.completed',
 } as const;
 
 /** Context required to emit a recruiting event. */

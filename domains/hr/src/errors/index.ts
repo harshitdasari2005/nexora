@@ -136,3 +136,17 @@ export class RecruitingConflictError extends HrDomainError {
     super(message, 'CONFLICT');
   }
 }
+
+/** The onboarding record does not exist (or is not visible to the caller). */
+export class OnboardingNotFoundError extends HrDomainError {
+  constructor(details?: unknown) {
+    super('Onboarding not found', 'NOT_FOUND', details);
+  }
+}
+
+/** An onboarding step was attempted that the current state forbids. */
+export class OnboardingStateError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'BUSINESS_RULE_VIOLATION', details);
+  }
+}

@@ -359,6 +359,36 @@ export const candidates = pgTable(
 );
 
 /**
+ * onboardings — the {@link @nexora/domain-hr!Onboarding} aggregate: a new
+ * hire's checklist (exactly one per employee). `items` is owned by the
+ * aggregate; `version` guards every update.
+ */
+export const onboardings = pgTable(
+  'onboardings',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    employeeId: varchar('employee_id', { length: 64 }).notNull(),
+    employeeName: varchar('employee_name', { length: 160 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    hiringManagerId: varchar('hiring_manager_id', { length: 64 }).notNull(),
+    projectId: varchar('project_id', { length: 64 }),
+    startedBy: varchar('started_by', { length: 64 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    items: jsonb('items').notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('onboardings_org_idx').on(table.organizationId, table.createdAt),
+    // One onboarding per employee.
+    uniqueIndex('onboardings_employee_unique').on(table.organizationId, table.employeeId),
+  ],
+);
+
+/**
  * resource_assignments — the
  * {@link @nexora/domain-projects!ResourceAssignment} aggregate.
  * Links a project (Projects BC) to an employee id (HR BC reference, AP-13:

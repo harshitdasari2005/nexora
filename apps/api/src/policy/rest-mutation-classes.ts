@@ -424,6 +424,42 @@ export const REST_MUTATION_CLASSES: Readonly<Record<string, RestMutationEntry>> 
       'recruiting.manage; reject / withdraw with a reason; a pending offer is rescinded and its seat released.',
     proof: [cap('recruiting.manage')],
   },
+  // --- Onboarding and assignment ------------------------------------------------------------------------
+  'POST /api/onboarding': {
+    class: 'rbac',
+    justification:
+      'onboarding.hr; starts the checklist for an employee in `hired` (once per employee) and moves them to `onboarding`.',
+    proof: [cap('onboarding.hr')],
+  },
+  'POST /api/onboarding/:onboardingId/items/:item/complete': {
+    class: 'domain_governed',
+    justification:
+      'The item’s owner is server data: the caller must hold THAT owner’s capability (HR / IT / manager), and a manager item belongs to the hiring manager of that hire. An item is completed once; the last one activates the employee.',
+    proof: [
+      cap('onboarding.hr'),
+      cap('onboarding.it'),
+      cap('onboarding.manager'),
+      {
+        in: 'apps/api/src/routes/onboarding.ts',
+        contains: "owner !== 'manager' || onboarding.hiringManagerId === userId",
+      },
+      {
+        in: 'domains/hr/src/entities/onboarding.ts',
+        contains: 'This onboarding item is already done',
+      },
+    ],
+  },
+  'POST /api/projects/:projectId/assignments': {
+    class: 'rbac',
+    justification:
+      'projects.assign, OR onboarding.manager for the hiring manager of THAT employee (their own onboarded hire — the managers’ general AI assignment authority is unchanged). The route additionally requires an ACTIVE employee and a project of the same organization; duplicates are rejected by the domain.',
+    proof: [
+      cap('projects.assign'),
+      cap('onboarding.manager'),
+      { in: 'route', contains: 'onboarding.hiringManagerId !== auth.userId' },
+      { in: 'route', contains: 'Only an active employee can be assigned' },
+    ],
+  },
   'POST /api/workspaces': {
     class: 'rbac',
     justification: 'workspaces.create; no policy DENY rule governs the capability.',

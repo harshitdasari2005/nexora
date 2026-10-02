@@ -5,6 +5,8 @@
 import {
   Candidate,
   JobOpening,
+  Onboarding,
+  type OnboardingItem,
   type CandidateHistoryEntry,
   type CandidateOffer,
   type InterviewFeedback,
@@ -97,4 +99,28 @@ export function toCandidateDto(
         ? { offer, offerStatus: offer.status }
         : { offerStatus: offer.status }),
   };
+}
+
+/** An onboarding as exposed outside the domain. */
+export interface OnboardingDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  employeeName: string;
+  workspaceId: string;
+  hiringManagerId: string;
+  projectId?: string;
+  startedBy: string;
+  status: string;
+  items: readonly OnboardingItem[];
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Maps the aggregate to its DTO. */
+export function toOnboardingDto(onboarding: Onboarding): OnboardingDto {
+  const { version: _version, ...snapshot } = Onboarding.snapshot(onboarding);
+  void _version;
+  return { ...snapshot, items: snapshot.items.map((item) => ({ ...item })) };
 }

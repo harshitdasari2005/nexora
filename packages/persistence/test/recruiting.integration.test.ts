@@ -10,7 +10,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 import type { TenantId, WorkspaceId } from '@nexora/contracts/common';
-import { Candidate, Employee, JobOpening, type RecruitingEventContext } from '@nexora/domain-hr';
+import {
+  Candidate,
+  Employee,
+  JobOpening,
+  type RecruitingEventContext,
+  Onboarding,
+} from '@nexora/domain-hr';
 
 import { createDatabaseFromPool } from '../src/db.js';
 import { runMigrations } from '../src/migrate.js';
@@ -18,6 +24,7 @@ import {
   PgCandidateRepository,
   PgEmployeeRepository,
   PgJobOpeningRepository,
+  PgOnboardingRepository,
 } from '../src/repositories/index.js';
 import { maintenanceUrlOf, resolveTestDatabaseUrl } from './db-isolation.js';
 
@@ -204,5 +211,74 @@ describeDb('recruiting repositories (real PostgreSQL)', () => {
       Employee.snapshot(hired),
     );
     expect((await employees.findById(legacy.id))!.profile).toBeUndefined();
+  });
+});
+
+describeDb('onboarding repository (real PostgreSQL)', () => {
+  let pool: Pool;
+  let repository: PgOnboardingRepository;
+  const DB = 'nexora_onboarding_pg_test';
+  const url = ((): string => {
+    const u = new URL(BASE_URL);
+    u.pathname = `/${DB}`;
+    return u.toString();
+  })();
+  const start = (employeeId: string, organizationId = ORG) =>
+    Onboarding.start(
+      {
+        organizationId,
+        employeeId,
+        employeeName: 'Sarah Thomas',
+        workspaceId: WORKSPACE,
+        hiringManagerId: 'usr_manager',
+        projectId: 'prj_1',
+        startedBy: 'usr_hr',
+      },
+      ctx(organizationId),
+    );
+
+  beforeAll(async () => {
+    await admin(async (p) => {
+      await p.query(`DROP DATABASE IF EXISTS "${DB}" WITH (FORCE)`);
+      await p.query(`CREATE DATABASE "${DB}"`);
+    });
+    await runMigrations(url);
+    pool = new Pool({ connectionString: url });
+    repository = new PgOnboardingRepository(createDatabaseFromPool(pool));
+  });
+  afterAll(async () => {
+    await pool?.end();
+    await admin((p) => p.query(`DROP DATABASE IF EXISTS "${DB}" WITH (FORCE)`));
+  });
+
+  it('round-trips, is found by employee (tenant-scoped), and an employee gets only one', async () => {
+    const onboarding = start('emp_1');
+    expect(await repository.insert(onboarding)).toBe(true);
+    expect(Onboarding.snapshot((await repository.findById(onboarding.id))!)).toEqual(
+      Onboarding.snapshot(onboarding),
+    );
+    expect((await repository.findByEmployee(ORG, 'emp_1'))?.id).toBe(onboarding.id);
+    expect(await repository.findByEmployee('org_b' as TenantId, 'emp_1')).toBeUndefined();
+    expect(await repository.insert(start('emp_1'))).toBe(false);
+    expect(await repository.insert(start('emp_1', 'org_b' as TenantId))).toBe(true);
+  });
+
+  it('two people ticking different items at once: one write wins, nothing is lost silently', async () => {
+    const onboarding = start('emp_race');
+    await repository.insert(onboarding);
+    const [first, second] = await Promise.all([
+      repository.findById(onboarding.id),
+      repository.findById(onboarding.id),
+    ]);
+    first!.completeItem({ key: 'accounts', actorId: 'usr_it' }, ctx());
+    second!.completeItem({ key: 'paperwork', actorId: 'usr_hr' }, ctx());
+    const results = await Promise.all([
+      repository.update(first!, 1),
+      repository.update(second!, 1),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    const stored = Onboarding.snapshot((await repository.findById(onboarding.id))!);
+    expect(stored.version).toBe(2);
+    expect(stored.items.filter((item) => item.done)).toHaveLength(1);
   });
 });

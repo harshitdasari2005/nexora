@@ -17,6 +17,7 @@ import type {
   EmployeeRepository,
   HiringRequisitionRepository,
   JobOpeningRepository,
+  OnboardingRepository,
 } from '@nexora/domain-hr';
 import type {
   DocumentRepository,
@@ -104,6 +105,7 @@ import {
   RevokeHireHandler,
   EmployeeApplicationService,
   HiringRequisitionApplicationService,
+  OnboardingApplicationService,
   RecruitingApplicationService,
   FindEmployeeByNameHandler,
   ListEmployeesByIdsHandler,
@@ -204,6 +206,7 @@ export interface RepositorySet {
   hiringRequisitions: HiringRequisitionRepository;
   jobOpenings: JobOpeningRepository;
   candidates: CandidateRepository;
+  onboardings: OnboardingRepository;
   documents: DocumentRepository;
   documentVersions: DocumentVersionRepository;
   documentTemplates: DocumentTemplateRepository;
@@ -287,6 +290,8 @@ export interface Container {
   hiringRequisitions: HiringRequisitionApplicationService;
   /** HR's side of hiring: openings, candidates, offers, the hire. */
   recruiting: RecruitingApplicationService;
+  /** Onboarding a hired person until they are active. */
+  onboarding: OnboardingApplicationService;
   /** Hire compensation (the workflow rollback of the hire step). */
   revokeHire: RevokeHireHandler;
   /** Employee listing handler. */
@@ -522,6 +527,12 @@ export function buildContainer(options: BuildContainerOptions): Container {
     requisitions: repositories.hiringRequisitions,
     publisher,
   });
+  const onboardingService = new OnboardingApplicationService({
+    onboardings: repositories.onboardings,
+    employeesService,
+    requisitions: repositories.hiringRequisitions,
+    publisher,
+  });
   const recruitingService = new RecruitingApplicationService({
     openings: repositories.jobOpenings,
     candidates: repositories.candidates,
@@ -591,6 +602,7 @@ export function buildContainer(options: BuildContainerOptions): Container {
     createEmployee: new CreateEmployeeHandler(employeeService),
     hiringRequisitions: hiringRequisitionService,
     recruiting: recruitingService,
+    onboarding: onboardingService,
     revokeHire: new RevokeHireHandler(employeeService),
     listEmployees: new ListEmployeesHandler(employeeService),
     findEmployeeByName: new FindEmployeeByNameHandler(employeeService),

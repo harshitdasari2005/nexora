@@ -354,6 +354,35 @@ export class NotificationPolicy {
               : [{ workspaceId, type: event.type, title: text.title, body: text.body, actorId }],
         };
       }
+      // Onboarding steps complete the hiring trail (activity only).
+      case 'onboarding.started':
+      case 'onboarding.item_completed':
+      case 'onboarding.completed': {
+        const person = readString(event.payload, 'employeeName') ?? 'A new hire';
+        const item = readString(event.payload, 'item') ?? 'An onboarding step';
+        const wording: Record<string, { title: string; body: string }> = {
+          'onboarding.started': {
+            title: 'Onboarding started',
+            body: `Onboarding started for ${person}.`,
+          },
+          'onboarding.item_completed': {
+            title: 'Onboarding step done',
+            body: `${item} — done for ${person}.`,
+          },
+          'onboarding.completed': {
+            title: 'Onboarding completed',
+            body: `${person} finished onboarding and is now active.`,
+          },
+        };
+        const text = wording[event.type];
+        return {
+          notifications: [],
+          activity:
+            text === undefined
+              ? []
+              : [{ workspaceId, type: event.type, title: text.title, body: text.body, actorId }],
+        };
+      }
       case 'workflow.completed':
         return {
           notifications: actorId

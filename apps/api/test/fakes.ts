@@ -42,6 +42,9 @@ import {
   Candidate,
   HiringRequisition,
   JobOpening,
+  Onboarding,
+  type OnboardingRepository,
+  type OnboardingSnapshot,
   type CandidateRepository,
   type CandidateSnapshot,
   type HiringRequisitionRepository,
@@ -623,6 +626,51 @@ export class FakeJobOpeningRepository implements JobOpeningRepository {
     const stored = this.rows.get(opening.id);
     if (stored === undefined || stored.version !== expectedVersion) return false;
     this.rows.set(opening.id, structuredClone(JobOpening.snapshot(opening)));
+    return true;
+  }
+}
+
+/** An in-memory {@link OnboardingRepository} (one per employee; optimistic updates). */
+export class FakeOnboardingRepository implements OnboardingRepository {
+  readonly rows = new Map<string, OnboardingSnapshot>();
+
+  async findById(id: Onboarding['id']): Promise<Onboarding | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : Onboarding.hydrate(structuredClone(row));
+  }
+
+  async findByEmployee(
+    organizationId: TenantId,
+    employeeId: string,
+  ): Promise<Onboarding | undefined> {
+    const row = [...this.rows.values()].find(
+      (entry) => entry.organizationId === organizationId && entry.employeeId === employeeId,
+    );
+    return row === undefined ? undefined : Onboarding.hydrate(structuredClone(row));
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly Onboarding[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => Onboarding.hydrate(structuredClone(row)));
+  }
+
+  async insert(onboarding: Onboarding): Promise<boolean> {
+    const snapshot = Onboarding.snapshot(onboarding);
+    const taken = [...this.rows.values()].some(
+      (row) =>
+        row.organizationId === snapshot.organizationId && row.employeeId === snapshot.employeeId,
+    );
+    if (taken) return false;
+    this.rows.set(snapshot.id, structuredClone(snapshot));
+    return true;
+  }
+
+  async update(onboarding: Onboarding, expectedVersion: number): Promise<boolean> {
+    const stored = this.rows.get(onboarding.id);
+    if (stored === undefined || stored.version !== expectedVersion) return false;
+    this.rows.set(onboarding.id, structuredClone(Onboarding.snapshot(onboarding)));
     return true;
   }
 }

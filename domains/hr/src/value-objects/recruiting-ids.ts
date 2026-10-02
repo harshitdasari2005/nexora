@@ -35,3 +35,7 @@ export const JobOpeningId = idFactory<'job_opening'>('job', 'opening');
 /** A branded candidate id (`cand_…`). */
 export type CandidateId = EntityId<'candidate'>;
 export const CandidateId = idFactory<'candidate'>('cand', 'candidate');
+
+/** A branded onboarding id (`onb_…`). */
+export type OnboardingId = EntityId<'onboarding'>;
+export const OnboardingId = idFactory<'onboarding'>('onb', 'onboarding');

@@ -29,6 +29,7 @@ import {
   PgCandidateRepository,
   PgHiringRequisitionRepository,
   PgJobOpeningRepository,
+  PgOnboardingRepository,
   PgKnowledgeArticleRepository,
   PgKnowledgeCategoryRepository,
   PgKnowledgeIndexStore,
@@ -131,6 +132,7 @@ import { registerFinanceRoutes } from './routes/finance.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerHiringRoutes } from './routes/hiring.js';
+import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { registerRecruitingRoutes } from './routes/recruiting.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
@@ -337,6 +339,17 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     requisitions: container.hiringRequisitions,
     recruiting: container.recruiting,
     projects: repositories.projects,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
+  });
+  registerOnboardingRoutes(app, {
+    onboarding: container.onboarding,
+    employees: repositories.employees,
+    projects: repositories.projects,
+    resourceAssignments: repositories.resourceAssignments,
+    assignEmployeeToProject: container.assignEmployeeToProject,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
@@ -1100,6 +1113,7 @@ export function buildPgRepositories(
     hiringRequisitions: new PgHiringRequisitionRepository(database),
     jobOpenings: new PgJobOpeningRepository(database),
     candidates: new PgCandidateRepository(database),
+    onboardings: new PgOnboardingRepository(database),
     documents: new PgDocumentRepository(database),
     documentVersions: new PgDocumentVersionRepository(database),
     documentTemplates: new PgDocumentTemplateRepository(database),

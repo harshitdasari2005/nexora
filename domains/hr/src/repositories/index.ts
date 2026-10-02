@@ -13,8 +13,9 @@ import type { Employee } from '../entities/employee.js';
 import type { Candidate } from '../entities/candidate.js';
 import type { HiringRequisition } from '../entities/hiring-requisition.js';
 import type { JobOpening } from '../entities/job-opening.js';
+import type { Onboarding } from '../entities/onboarding.js';
 import type { EmployeeId } from '../value-objects/employee-id.js';
-import type { CandidateId, JobOpeningId } from '../value-objects/recruiting-ids.js';
+import type { CandidateId, JobOpeningId, OnboardingId } from '../value-objects/recruiting-ids.js';
 import type { RequisitionId } from '../value-objects/requisition-id.js';
 
 /**
@@ -89,4 +90,21 @@ export interface CandidateRepository {
   insert(candidate: Candidate): Promise<void>;
   /** Persists a change only while the row is still at `expectedVersion`. */
   update(candidate: Candidate, expectedVersion: number): Promise<boolean>;
+}
+
+/** The persistence port of the {@link Onboarding} aggregate. */
+export interface OnboardingRepository {
+  findById(id: OnboardingId): Promise<Onboarding | undefined>;
+  /** The onboarding of an employee (at most one), tenant-scoped. */
+  findByEmployee(organizationId: TenantId, employeeId: string): Promise<Onboarding | undefined>;
+  /** Lists the organization's onboardings, newest first. */
+  listByOrganization(organizationId: TenantId): Promise<readonly Onboarding[]>;
+  /**
+   * Inserts a new onboarding.
+   *
+   * @returns `false` when the employee already has one (one per employee).
+   */
+  insert(onboarding: Onboarding): Promise<boolean>;
+  /** Persists a change only while the row is still at `expectedVersion`. */
+  update(onboarding: Onboarding, expectedVersion: number): Promise<boolean>;
 }
