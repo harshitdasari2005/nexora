@@ -42,6 +42,7 @@ import { RequestsPage } from './pages/Requests.js';
 import { TasksPage } from './pages/Tasks.js';
 import { PeoplePage } from './pages/People.js';
 import { ReviewPage } from './pages/Review.js';
+import { ProofPage } from './pages/Proof.js';
 import { JoinPage } from './pages/Join.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { DemoProvider } from './demo/DemoProvider.js';
@@ -82,6 +83,14 @@ export function App(): JSX.Element {
                 }
               />
               <Route path="/join" element={<JoinPage />} />
+              <Route
+                path="/app/proof"
+                element={
+                  <RequireAuth>
+                    <ProofPage />
+                  </RequireAuth>
+                }
+              />
               <Route
                 path="/app/review"
                 element={

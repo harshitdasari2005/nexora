@@ -147,6 +147,7 @@ import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { registerTaskRoutes } from './routes/tasks.js';
 import { registerPeopleRoutes } from './routes/people.js';
 import { registerReviewRoutes } from './routes/review.js';
+import { registerProofRoutes } from './routes/proof.js';
 import { createStaffing } from './office/staffing.js';
 import { MembershipDomainService } from '@nexora/domain-organizations';
 import { WorkspaceMembershipService } from '@nexora/domain-workspaces';
@@ -470,6 +471,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       });
     },
   });
+  registerProofRoutes(app);
   registerReviewRoutes(app, {
     requests: repositories.officeRequests,
     tasks: repositories.projectTasks,

@@ -318,6 +318,17 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
+.nexora-proof-figure {
+  font-family: 'Bricolage Grotesque', 'Instrument Sans', sans-serif;
+  font-size: clamp(2.5rem, 1.6rem + 4vw, 4.25rem);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  color: var(--nexora-primary);
+  font-variant-numeric: tabular-nums;
+}
+.nexora-proof-examples { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.nexora-proof-examples > li { font-size: 0.8125rem; color: var(--nexora-textSecondary); padding-left: 12px; border-left: 2px solid var(--nexora-border); }
 /* Weekly review: where work is waiting, as rows with a bar, and a small table. */
 .nexora-review-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(60px, 1fr) auto; gap: 12px 20px; align-items: center; padding: 14px 20px; }
 .nexora-review-bar { height: 8px; border-radius: 999px; background: var(--nexora-surfaceMuted); overflow: hidden; }

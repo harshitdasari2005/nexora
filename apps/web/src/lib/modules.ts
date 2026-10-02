@@ -46,6 +46,8 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   { navLabel: 'People & teams' },
   // How the office ran this week: for the roles that read the organization's insights.
   { navLabel: 'Weekly review', requiredPermission: 'insights.read' },
+  // What the assistant was tested against, for anyone to read.
+  { navLabel: 'Safety checks' },
   { navLabel: 'Command Center' },
   { navLabel: 'Agent', requiredPermission: 'agent.use' },
   { navLabel: 'Agents', requiredPermission: 'agent.use' },

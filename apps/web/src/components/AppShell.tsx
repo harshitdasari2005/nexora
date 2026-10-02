@@ -85,6 +85,7 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'Office workflows', icon: 'requests', to: '/app/requests' },
   { label: 'Tasks', icon: 'tasks', to: '/app/tasks' },
   { label: 'Weekly review', icon: 'insights', to: '/app/review' },
+  { label: 'Safety checks', icon: 'policy', to: '/app/proof' },
   { label: 'Command Center', icon: 'command-center', to: '/app/command-center' },
   { label: 'Agent', icon: 'agent', to: '/app/agent' },
   { label: 'Agents', icon: 'team', to: '/app/agents' },
@@ -119,6 +120,7 @@ const EVERYDAY_MODULES: readonly string[] = [
   'Tasks',
   'People & teams',
   'Weekly review',
+  'Safety checks',
 ];
 
 /**
@@ -141,7 +143,16 @@ const NAV_SECTIONS: readonly { title: string | null; labels: readonly string[] }
   { title: 'Assistants', labels: ['AI Assistant', 'Agent', 'Agents'] },
   {
     title: 'Company',
-    labels: ['Insights', 'Audit', 'Runtime', 'Policy', 'Apps', 'Integrations', 'Settings'],
+    labels: [
+      'Safety checks',
+      'Insights',
+      'Audit',
+      'Runtime',
+      'Policy',
+      'Apps',
+      'Integrations',
+      'Settings',
+    ],
   },
 ];
 
