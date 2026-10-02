@@ -17,6 +17,14 @@ import type { WorkflowStateKey } from '../lib/types.js';
 
 export type PersonaKey = 'ceo' | 'manager' | 'controller' | 'cfo';
 
+/** The people who act in the guided story (the rest of the office only explores the product). */
+export const STORY_PERSONAS: readonly PersonaKey[] = ['ceo', 'manager', 'controller', 'cfo'];
+
+/** Whether a demo person takes part in the guided story. */
+export function isStoryPersona(key: string): key is PersonaKey {
+  return (STORY_PERSONAS as readonly string[]).includes(key);
+}
+
 export type StageStatus = 'pending' | 'active' | 'done' | 'failed';
 
 /** A fact together with the persona whose (real) session read it. */

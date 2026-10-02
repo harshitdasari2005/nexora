@@ -12,13 +12,17 @@ import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Spinner, Stack, typography } from '@nexora/design-system';
 
 import { useDemo } from '../demo/demo-state.js';
-import type { DemoPersona } from '../lib/demo.js';
+import { demoHomePath, type DemoPersona } from '../lib/demo.js';
 
 const SHORT: Record<DemoPersona['key'], string> = {
   ceo: 'CEO',
+  cto: 'CTO',
   manager: 'Team Manager',
-  controller: 'Controller',
+  dev_aarav: 'Developer · Aarav',
+  dev_meghna: 'Developer · Meghna',
+  hr: 'HR',
   cfo: 'CFO',
+  controller: 'Controller',
 };
 
 /** The sidebar demo panel (null outside demo mode). */
@@ -32,9 +36,7 @@ export function DemoPanel(): JSX.Element | null {
     await demo.switchPersona(key);
     const target = config.personas.find((p) => p.key === key);
     if (target !== undefined) {
-      navigate(
-        `/app/demo?organizationId=${encodeURIComponent(config.organizationId)}&workspaceId=${encodeURIComponent(target.workspaceId)}`,
-      );
+      navigate(demoHomePath(config.organizationId, target));
     }
   };
 

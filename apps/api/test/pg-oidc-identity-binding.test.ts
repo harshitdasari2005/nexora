@@ -27,6 +27,7 @@ import {
 import type { TenantId } from '@nexora/contracts/common';
 
 import { buildApp } from '../src/app.js';
+import { DEMO_PERSONA_KEYS } from '../src/demo/world.js';
 import { loadConfig } from '../src/config.js';
 import type { OidcCallbackParams, OidcIdentity, PkceParameters } from '../src/oidc/gateway.js';
 import { FakeOidcGateway } from './fakes.js';
@@ -297,7 +298,7 @@ describeDb('AUTH-009 — OIDC identity binding (HTTP + PostgreSQL)', () => {
       `SELECT oidc_issuer, oidc_subject FROM users WHERE email LIKE '%@lumen-capital.example' ORDER BY oidc_subject`,
     );
     expect(rows.rows).toEqual(
-      ['cfo', 'ceo', 'controller', 'manager']
+      [...DEMO_PERSONA_KEYS]
         .sort()
         .map((k) => ({ oidc_issuer: 'nexora-demo', oidc_subject: `demo:${k}` })),
     );

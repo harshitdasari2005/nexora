@@ -242,7 +242,9 @@ describe('REST expense — central policy (origin rest)', () => {
 
   it('RBAC still runs first: a role without expenses.create is 403 AUTHORIZATION_ERROR (policy never grants)', async () => {
     const client = await chatClient();
-    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);
+    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client, {
+      workspaceType: 'hr',
+    });
     const response = await client.post('/api/finance/expenses', {
       organizationId,
       workspaceId,
@@ -251,7 +253,7 @@ describe('REST expense — central policy (origin rest)', () => {
       amountMinorUnits: 1_000,
       currency: 'INR',
     });
-    // Engineering workspace -> CEO persona has no expenses.create.
+    // HR workspace -> the HR Manager role has no expenses.create.
     expect(response.statusCode).toBe(403);
     expect(response.json()).toMatchObject({ error: { code: 'AUTHORIZATION_ERROR' } });
     await client.app.close();

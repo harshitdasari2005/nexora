@@ -61,6 +61,12 @@ export type ScenarioCategory = (typeof SCENARIO_CATEGORIES)[number];
 /** Organization/workspace membership tier (the ONLY authorization level stored). */
 export type MembershipTier = 'owner' | 'admin' | 'member';
 
+/**
+ * A workspace membership tier: the three ordinary tiers plus `executive`, an
+ * organization executive's oversight seat in a department workspace.
+ */
+export type WorkspaceMembershipTier = MembershipTier | 'executive';
+
 // ---------------------------------------------------------------------------
 // World (deterministic initial state)
 // ---------------------------------------------------------------------------
@@ -114,7 +120,7 @@ export interface OrganizationMembershipFixture {
 export interface WorkspaceMembershipFixture {
   user: string;
   workspace: string;
-  tier: MembershipTier;
+  tier: WorkspaceMembershipTier;
   /**
    * The business role id the platform must resolve for this membership
    * (membership tier × workspace type). Verified by the runner through

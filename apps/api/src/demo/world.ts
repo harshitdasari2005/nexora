@@ -12,9 +12,15 @@
  * never assigns a role directly:
  *
  *   CEO                owner of the organization + Engineering  → executive.ceo
+ *                      (plus an `executive` seat in every other workspace:
+ *                      sees everything and can raise any request there as the
+ *                      CEO, never decides as CFO/HR)
+ *   CTO                owner of Technology Office               → technology.cto
  *   Team Manager       admin of the organization + Engineering  → delivery.manager
- *   Finance Controller member of Finance                        → finance.cfo capability set
+ *   Developers (IT)    members of Engineering                   → technology.developer
+ *   HR Manager         owner of People & Culture                → people.hr
  *   CFO                admin of Finance                         → finance.cfo
+ *   Finance Controller member of Finance                        → finance.cfo capability set
  *
  * Approval authority is ordinary organization configuration
  * (POLICY_APPROVAL_AUTHORITY), enforced by the central policy engine and the
@@ -37,8 +43,21 @@ export const DEMO_WORLD_ID = 'nexora-demo-v1';
 export const DEMO_REFERENCE_TIME = '2026-09-01T09:00:00.000Z';
 
 /** The demo personas, in presentation order. */
-export const DEMO_PERSONA_KEYS = ['ceo', 'manager', 'controller', 'cfo'] as const;
+export const DEMO_PERSONA_KEYS = [
+  'ceo',
+  'cto',
+  'manager',
+  'dev_aarav',
+  'dev_meghna',
+  'hr',
+  'cfo',
+  'controller',
+] as const;
 export type DemoPersonaKey = (typeof DEMO_PERSONA_KEYS)[number];
+
+/** The demo workspaces (one per department a persona can sit in). */
+export const DEMO_WORKSPACE_KEYS = ['eng', 'tech', 'hr', 'fin'] as const;
+export type DemoWorkspaceKey = (typeof DEMO_WORKSPACE_KEYS)[number];
 
 /** The business role each persona is EXPECTED to resolve to (asserted by tests, never assigned). */
 export interface DemoPersonaDefinition {
@@ -49,7 +68,7 @@ export interface DemoPersonaDefinition {
   /** What the persona does in the story. */
   responsibility: string;
   /** The workspace key the persona starts in. */
-  workspace: 'eng' | 'fin';
+  workspace: DemoWorkspaceKey;
   /** The business role the platform resolves for them in that workspace. */
   expectedRoleId: string;
 }
@@ -60,27 +79,55 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     email: 'anika.rao@lumen-capital.example',
     displayName: 'Anika Rao',
     title: 'Chief Executive Officer',
-    responsibility: 'Requests the hire. Cannot approve their own request.',
+    responsibility:
+      'Sees every department and can raise any request. Cannot approve their own request.',
     workspace: 'eng',
     expectedRoleId: 'executive.ceo',
+  },
+  {
+    key: 'cto',
+    email: 'vikram.shah@lumen-capital.example',
+    displayName: 'Vikram Shah',
+    title: 'Chief Technology Officer',
+    responsibility: 'Leads technology: projects, engineering problems and integrations.',
+    workspace: 'tech',
+    expectedRoleId: 'technology.cto',
   },
   {
     key: 'manager',
     email: 'rohan.mehta@lumen-capital.example',
     displayName: 'Rohan Mehta',
     title: 'Team Manager',
-    responsibility: 'Approves the hire and sees the new team member on the project.',
+    responsibility: 'Runs the delivery team: approves the hire and sees the team on the project.',
     workspace: 'eng',
     expectedRoleId: 'delivery.manager',
   },
   {
-    key: 'controller',
-    email: 'divya.nair@lumen-capital.example',
-    displayName: 'Divya Nair',
-    title: 'Finance Controller',
-    responsibility: 'Submits an expense against the demo budget.',
-    workspace: 'fin',
-    expectedRoleId: 'finance.cfo',
+    key: 'dev_aarav',
+    email: 'aarav.kulkarni@lumen-capital.example',
+    displayName: 'Aarav Kulkarni',
+    title: 'Software Developer',
+    responsibility: 'IT team member: works on the projects they are assigned to.',
+    workspace: 'eng',
+    expectedRoleId: 'technology.developer',
+  },
+  {
+    key: 'dev_meghna',
+    email: 'meghna.iyer@lumen-capital.example',
+    displayName: 'Meghna Iyer',
+    title: 'Software Developer',
+    responsibility: 'IT team member: works on the projects they are assigned to.',
+    workspace: 'eng',
+    expectedRoleId: 'technology.developer',
+  },
+  {
+    key: 'hr',
+    email: 'priya.menon@lumen-capital.example',
+    displayName: 'Priya Menon',
+    title: 'HR Manager',
+    responsibility: 'Owns people operations: employee records and hiring.',
+    workspace: 'hr',
+    expectedRoleId: 'people.hr',
   },
   {
     key: 'cfo',
@@ -88,6 +135,15 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     displayName: 'Karan Malhotra',
     title: 'Chief Financial Officer',
     responsibility: 'Approves the expense as the required approver.',
+    workspace: 'fin',
+    expectedRoleId: 'finance.cfo',
+  },
+  {
+    key: 'controller',
+    email: 'divya.nair@lumen-capital.example',
+    displayName: 'Divya Nair',
+    title: 'Finance Controller',
+    responsibility: 'Submits an expense against the demo budget.',
     workspace: 'fin',
     expectedRoleId: 'finance.cfo',
   },
@@ -135,6 +191,18 @@ export function buildDemoWorld(): ScenarioWorld {
       name: 'Engineering Delivery',
       type: 'engineering',
     })
+    .workspace('tech', {
+      organization: 'lumen',
+      slug: 'technology-office',
+      name: 'Technology Office',
+      type: 'general',
+    })
+    .workspace('hr', {
+      organization: 'lumen',
+      slug: 'people-and-culture',
+      name: 'People & Culture',
+      type: 'hr',
+    })
     .workspace('fin', {
       organization: 'lumen',
       slug: 'finance',
@@ -158,8 +226,22 @@ export function buildDemoWorld(): ScenarioWorld {
       .organizationMember('manager', 'lumen', 'admin')
       .organizationMember('controller', 'lumen', 'member')
       .organizationMember('cfo', 'lumen', 'member')
+      .organizationMember('cto', 'lumen', 'member')
+      .organizationMember('hr', 'lumen', 'member')
+      .organizationMember('dev_aarav', 'lumen', 'member')
+      .organizationMember('dev_meghna', 'lumen', 'member')
       .workspaceMember('ceo', 'eng', 'owner', 'executive.ceo')
+      // The CEO holds an EXECUTIVE seat in every other department: full
+      // visibility and the ability to raise requests there, as `executive.ceo`
+      // — never that department's own role.
+      .workspaceMember('ceo', 'tech', 'executive', 'executive.ceo')
+      .workspaceMember('ceo', 'hr', 'executive', 'executive.ceo')
+      .workspaceMember('ceo', 'fin', 'executive', 'executive.ceo')
+      .workspaceMember('cto', 'tech', 'owner', 'technology.cto')
       .workspaceMember('manager', 'eng', 'admin', 'delivery.manager')
+      .workspaceMember('dev_aarav', 'eng', 'member', 'technology.developer')
+      .workspaceMember('dev_meghna', 'eng', 'member', 'technology.developer')
+      .workspaceMember('hr', 'hr', 'owner', 'people.hr')
       .workspaceMember('controller', 'fin', 'member', 'finance.cfo')
       .workspaceMember('cfo', 'fin', 'admin', 'finance.cfo')
       .project('mobile-banking', {
@@ -222,7 +304,7 @@ export function buildDemoWorld(): ScenarioWorld {
 /** The ids the demo owns, derived from the world (never from the client). */
 export interface DemoIds {
   organizationId: string;
-  workspaceIds: { eng: string; fin: string };
+  workspaceIds: Record<DemoWorkspaceKey, string>;
   userIds: Record<DemoPersonaKey, string>;
   budgetId: string;
   projectId: string;
@@ -249,13 +331,13 @@ export function demoIds(world: ScenarioWorld = buildDemoWorld()): DemoIds {
   };
   return {
     organizationId: organization.id,
-    workspaceIds: { eng: workspace('eng'), fin: workspace('fin') },
-    userIds: {
-      ceo: user('ceo'),
-      manager: user('manager'),
-      controller: user('controller'),
-      cfo: user('cfo'),
-    },
+    workspaceIds: Object.fromEntries(
+      DEMO_WORKSPACE_KEYS.map((key) => [key, workspace(key)]),
+    ) as Record<DemoWorkspaceKey, string>,
+    userIds: Object.fromEntries(DEMO_PERSONA_KEYS.map((key) => [key, user(key)])) as Record<
+      DemoPersonaKey,
+      string
+    >,
     budgetId: entity('mobile-delivery'),
     projectId: entity('mobile-banking'),
   };

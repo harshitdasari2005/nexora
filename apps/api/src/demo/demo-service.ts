@@ -242,7 +242,7 @@ export class DemoService {
   #scope(): ResetScope {
     return {
       organizationIds: [this.#ids.organizationId],
-      workspaceIds: [this.#ids.workspaceIds.eng, this.#ids.workspaceIds.fin],
+      workspaceIds: Object.values(this.#ids.workspaceIds),
       userIds: DEMO_PERSONA_KEYS.map((key) => this.#ids.userIds[key]),
     };
   }

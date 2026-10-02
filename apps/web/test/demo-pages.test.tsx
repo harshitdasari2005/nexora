@@ -14,7 +14,8 @@ import { DemoContext, type DemoState } from '../src/demo/demo-state.js';
 import { DemoStart } from '../src/pages/DemoStart.js';
 import { ProjectRow, ProjectTeam } from '../src/pages/Projects.js';
 import { StatusBadge } from '../src/pages/GuidedDemo.js';
-import type { DemoConfig } from '../src/lib/demo.js';
+import { demoHomePath, type DemoConfig } from '../src/lib/demo.js';
+import { isStoryPersona } from '../src/demo/journey.js';
 
 const CONFIG: DemoConfig = {
   enabled: true,
@@ -157,5 +158,83 @@ describe('Projects team panel', () => {
     const html = renderToString(<ProjectTeam projectId="prj_1" organizationId="org_1" />);
     expect(html).not.toContain('assigned to this project');
     expect(html).not.toContain('Sarah Thomas');
+  });
+});
+
+describe('the whole office can sign in', () => {
+  const OFFICE: DemoConfig = {
+    ...CONFIG,
+    personas: [
+      ...CONFIG.personas,
+      {
+        key: 'cto',
+        displayName: 'Vikram Shah',
+        title: 'Chief Technology Officer',
+        responsibility: 'Leads technology.',
+        workspaceId: 'wsp_tech',
+      },
+      {
+        key: 'hr',
+        displayName: 'Priya Menon',
+        title: 'HR Manager',
+        responsibility: 'Owns people operations.',
+        workspaceId: 'wsp_hr',
+      },
+      {
+        key: 'dev_aarav',
+        displayName: 'Aarav Kulkarni',
+        title: 'Software Developer',
+        responsibility: 'IT team member.',
+        workspaceId: 'wsp_eng',
+      },
+      {
+        key: 'dev_meghna',
+        displayName: 'Meghna Iyer',
+        title: 'Software Developer',
+        responsibility: 'IT team member.',
+        workspaceId: 'wsp_eng',
+      },
+    ],
+  };
+
+  it('the Start page offers every person, in office order', () => {
+    const html = render(<DemoStart />, state({ config: OFFICE }));
+    const names = [
+      'Anika Rao',
+      'Vikram Shah',
+      'Rohan Mehta',
+      'Aarav Kulkarni',
+      'Meghna Iyer',
+      'Priya Menon',
+      'Karan Malhotra',
+      'Divya Nair',
+    ];
+    const positions = names.map((name) => html.indexOf(name));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    expect(html).toContain('Enter as Chief Technology Officer');
+    expect(html).toContain('Enter as HR Manager');
+  });
+
+  it('the sidebar switcher lists every person', () => {
+    const html = render(<DemoPanel />, state({ config: OFFICE }));
+    for (const label of ['CEO', 'CTO', 'Team Manager', 'Developer · Aarav', 'HR', 'CFO']) {
+      expect(html).toContain(label);
+    }
+  });
+
+  it('story people land in the guided story; everyone else lands in their own workspace', () => {
+    const find = (key: string) => OFFICE.personas.find((persona) => persona.key === key)!;
+    expect(demoHomePath('org_demo', find('ceo'))).toBe(
+      '/app/demo?organizationId=org_demo&workspaceId=wsp_eng',
+    );
+    expect(demoHomePath('org_demo', find('hr'))).toBe(
+      '/app?organizationId=org_demo&workspaceId=wsp_hr',
+    );
+    expect(demoHomePath('org_demo', find('cto'))).toBe(
+      '/app?organizationId=org_demo&workspaceId=wsp_tech',
+    );
+    expect(isStoryPersona('dev_aarav')).toBe(false);
+    expect(isStoryPersona('manager')).toBe(true);
   });
 });

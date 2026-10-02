@@ -134,8 +134,10 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     // enterprise integration oversight — all external connector surfaces
     // (GitHub + Slack) are within executive focus. S34: broad organizational
     // RBAC permissions — the CEO is the one role that reads AND decides
-    // across every surface (never write access it has no executable tool
-    // for, e.g. projects.update has no executable surface anywhere yet).
+    // across every surface. The CEO can SEE every department and RAISE any
+    // request in it (budgets, expenses, documents, project updates) — but holds
+    // no `expenses.decide`: money is decided by Finance, so approvals still
+    // follow the chain even for the chief executive.
     capabilityIds: [
       'organization.read',
       'workspaces.list',
@@ -172,6 +174,13 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'slack.messages.send',
       'integrations.manage',
       'marketplace.manage',
+      'projects.update',
+      'documents.upload',
+      'approvals.create',
+      'budgets.read',
+      'budgets.manage',
+      'expenses.read',
+      'expenses.create',
     ],
   },
   {

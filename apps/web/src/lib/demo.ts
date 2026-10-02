@@ -10,14 +10,30 @@
 
 import { api, ApiError } from './api.js';
 
+/** Every person in the demo office (the server's fixed list). */
+export type DemoPersonaKey =
+  'ceo' | 'cto' | 'manager' | 'dev_aarav' | 'dev_meghna' | 'hr' | 'cfo' | 'controller';
+
 /** A demo persona as published by the server (no email, no user id). */
 export interface DemoPersona {
-  key: 'ceo' | 'manager' | 'controller' | 'cfo';
+  key: DemoPersonaKey;
   displayName: string;
   title: string;
   responsibility: string;
   /** The workspace the persona starts in (a server-published scope id). */
   workspaceId: string;
+}
+
+/** The people who act in the guided story; everyone else lands in their own workspace. */
+const GUIDED_STORY_KEYS: readonly DemoPersonaKey[] = ['ceo', 'manager', 'controller', 'cfo'];
+
+/**
+ * Where a person lands after signing in: the guided story for the people who
+ * act in it, their own workspace's Command Center for the rest of the office.
+ */
+export function demoHomePath(organizationId: string, persona: DemoPersona): string {
+  const scope = `organizationId=${encodeURIComponent(organizationId)}&workspaceId=${encodeURIComponent(persona.workspaceId)}`;
+  return GUIDED_STORY_KEYS.includes(persona.key) ? `/app/demo?${scope}` : `/app?${scope}`;
 }
 
 /** `GET /api/demo/config` when demo mode is enabled. */

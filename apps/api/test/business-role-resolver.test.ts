@@ -164,3 +164,43 @@ describe('MembershipBusinessRoleResolver — workspace-type override (S27 Phase 
     expect(role).toBeUndefined();
   });
 });
+
+describe('MembershipBusinessRoleResolver — the executive seat', () => {
+  /** A resolver for one workspace membership tier in one workspace type. */
+  function resolverFor(orgRole: string, workspaceRole: string | undefined, workspaceType: string) {
+    return new MembershipBusinessRoleResolver({
+      memberships: { findByOrganizationAndUser: async () => ({ role: orgRole }) as never } as never,
+      workspaceMemberships: {
+        findByWorkspaceAndUser: async () =>
+          workspaceRole === undefined ? undefined : ({ role: workspaceRole } as never),
+      } as never,
+      workspaces: { findById: async () => fakeWorkspace(workspaceType) } as never,
+    });
+  }
+  const scope = { userId: 'usr_1', tenantId: 'org_1', workspaceId: 'ws_1' };
+
+  it('an `executive` seat resolves executive.ceo in EVERY workspace type (never the department head)', async () => {
+    for (const type of ['finance', 'hr', 'general', 'legal', 'engineering', 'sales']) {
+      expect(await resolverFor('owner', 'executive', type).resolve(scope), type).toBe(
+        'executive.ceo',
+      );
+    }
+  });
+
+  it('the ordinary tiers are untouched — an organization owner seated as admin/member resolves by tier and type', async () => {
+    expect(await resolverFor('owner', 'member', 'finance').resolve(scope)).toBe('finance.cfo');
+    expect(await resolverFor('owner', 'admin', 'engineering').resolve(scope)).toBe(
+      'delivery.manager',
+    );
+    expect(await resolverFor('owner', 'member', 'engineering').resolve(scope)).toBe(
+      'technology.developer',
+    );
+    expect(await resolverFor('owner', 'admin', 'legal').resolve(scope)).toBe(
+      'legal.compliance_manager',
+    );
+  });
+
+  it('organization ownership alone grants nothing in a workspace the user has no seat in', async () => {
+    expect(await resolverFor('owner', undefined, 'finance').resolve(scope)).toBeUndefined();
+  });
+});

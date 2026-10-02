@@ -23,6 +23,7 @@ import {
   currentStageIndex,
   deriveStages,
   EMPTY_FACTS,
+  isStoryPersona,
   mergeFacts,
   type JourneyFacts,
   type PersonaKey,
@@ -67,7 +68,69 @@ export function GuidedDemo(): JSX.Element {
       />
     );
   }
-  return <GuidedDemoLoaded config={demo.config} scopes={scopes} persona={demo.persona} />;
+  if (!isStoryPersona(demo.persona.key)) {
+    return (
+      <NotInStory
+        config={demo.config}
+        persona={demo.persona}
+        busy={demo.busy}
+        onSwitch={(key) => void demo.switchPersona(key)}
+      />
+    );
+  }
+  return (
+    <GuidedDemoLoaded
+      config={demo.config}
+      scopes={scopes}
+      persona={demo.persona}
+      personaKey={demo.persona.key}
+    />
+  );
+}
+
+/** Shown to an office member who does not act in the guided story (CTO, HR, developers). */
+function NotInStory({
+  config,
+  persona,
+  busy,
+  onSwitch,
+}: {
+  config: DemoConfig;
+  persona: DemoPersona;
+  busy: boolean;
+  onSwitch: (key: DemoPersona['key']) => void;
+}): JSX.Element {
+  return (
+    <div style={{ display: 'grid', placeItems: 'center', padding: 24 }} data-testid="not-in-story">
+      <Card padding={8} elevationLevel="md" style={{ maxWidth: 600 }}>
+        <Stack gap={4}>
+          <h1 style={{ fontSize: typography.sizes['2xl'], fontWeight: typography.weights.bold }}>
+            {persona.displayName} is not part of this guided story
+          </h1>
+          <p style={{ color: 'var(--nexora-textSecondary)' }}>
+            You are signed in as the {persona.title}. The guided story is played by the CEO, the
+            Team Manager, the Finance Controller and the CFO. Use the menu to explore what the{' '}
+            {persona.title} can see and do, or switch to one of the story&rsquo;s people.
+          </p>
+          <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
+            {config.personas
+              .filter((candidate) => isStoryPersona(candidate.key))
+              .map((candidate) => (
+                <Button
+                  key={candidate.key}
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => onSwitch(candidate.key)}
+                >
+                  {candidate.displayName} · {candidate.title}
+                </Button>
+              ))}
+          </Stack>
+        </Stack>
+      </Card>
+    </div>
+  );
 }
 
 function NotAPersona({
@@ -113,6 +176,8 @@ interface LoadedProps {
   config: DemoConfig;
   scopes: DemoScopes;
   persona: DemoPersona;
+  /** The persona's key, narrowed to the people who act in the story. */
+  personaKey: PersonaKey;
 }
 
 /** A live transcript of the run currently streaming from the backend. */
@@ -123,9 +188,8 @@ interface Transcript {
   error?: string;
 }
 
-function GuidedDemoLoaded({ config, scopes, persona }: LoadedProps): JSX.Element {
+function GuidedDemoLoaded({ config, scopes, persona, personaKey }: LoadedProps): JSX.Element {
   const demo = useDemo();
-  const personaKey = persona.key;
   // The persona's own (server-published) workspace is the shell's scope; the
   // URL's workspaceId is not consulted (the backend validates scope anyway).
   const workspaceId = persona.workspaceId;

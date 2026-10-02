@@ -13,9 +13,18 @@ import { Badge, Button, Card, Stack, typography } from '@nexora/design-system';
 
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { useDemo } from '../demo/demo-state.js';
-import type { DemoPersona } from '../lib/demo.js';
+import { demoHomePath, type DemoPersona } from '../lib/demo.js';
 
-const ORDER: DemoPersona['key'][] = ['ceo', 'manager', 'controller', 'cfo'];
+const ORDER: DemoPersona['key'][] = [
+  'ceo',
+  'cto',
+  'manager',
+  'dev_aarav',
+  'dev_meghna',
+  'hr',
+  'cfo',
+  'controller',
+];
 
 /** The Start Demo page. */
 export function DemoStart(): JSX.Element {
@@ -71,9 +80,7 @@ export function DemoStart(): JSX.Element {
     setStarting(null);
     const persona = config.personas.find((p) => p.key === key);
     if (persona !== undefined) {
-      navigate(
-        `/app/demo?organizationId=${encodeURIComponent(config.organizationId)}&workspaceId=${encodeURIComponent(persona.workspaceId)}`,
-      );
+      navigate(demoHomePath(config.organizationId, persona));
     }
   };
 
@@ -94,9 +101,9 @@ export function DemoStart(): JSX.Element {
           Governed AI, end to end.
         </h1>
         <p style={{ color: 'var(--nexora-textSecondary)', maxWidth: 640 }}>
-          One request from the CEO becomes a governed plan, a human approval by a different person,
-          a real hire, a verified assignment, a governed expense — and every step is traceable.
-          Choose who you want to be first; the story usually begins with the CEO.
+          Sign in as anyone in the office — the CEO, the CTO, the Team Manager, the IT team, HR or
+          Finance. Each person sees and can do only what their role allows. The guided story (a
+          governed hire and a governed expense) begins with the CEO.
         </p>
         {!config.seeded ? (
           <Badge tone="warning">The demo organization is not seeded yet — restart the API.</Badge>
