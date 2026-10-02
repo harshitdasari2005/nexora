@@ -25,6 +25,10 @@ const ORDER: DemoPersona['key'][] = [
   'hr',
   'cfo',
   'controller',
+  'marketing',
+  'sales',
+  'support',
+  'legal',
 ];
 
 /** The stations of the story, shown before anyone has started it. */

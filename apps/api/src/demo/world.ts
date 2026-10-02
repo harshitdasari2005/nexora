@@ -52,11 +52,24 @@ export const DEMO_PERSONA_KEYS = [
   'hr',
   'cfo',
   'controller',
+  'marketing',
+  'sales',
+  'support',
+  'legal',
 ] as const;
 export type DemoPersonaKey = (typeof DEMO_PERSONA_KEYS)[number];
 
 /** The demo workspaces (one per department a persona can sit in). */
-export const DEMO_WORKSPACE_KEYS = ['eng', 'tech', 'hr', 'fin'] as const;
+export const DEMO_WORKSPACE_KEYS = [
+  'eng',
+  'tech',
+  'hr',
+  'fin',
+  'mkt',
+  'sales',
+  'support',
+  'legal',
+] as const;
 export type DemoWorkspaceKey = (typeof DEMO_WORKSPACE_KEYS)[number];
 
 /** The business role each persona is EXPECTED to resolve to (asserted by tests, never assigned). */
@@ -152,6 +165,43 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     workspace: 'fin',
     expectedRoleId: 'finance.cfo',
   },
+  {
+    key: 'marketing',
+    email: 'neha.kapoor@lumen-capital.example',
+    displayName: 'Neha Kapoor',
+    title: 'Marketing Manager',
+    responsibility: 'Plans campaigns and content, launches them and reports the results.',
+    workspace: 'mkt',
+    expectedRoleId: 'growth.marketing_manager',
+  },
+  {
+    key: 'sales',
+    email: 'arjun.desai@lumen-capital.example',
+    displayName: 'Arjun Desai',
+    title: 'Sales Manager',
+    responsibility: 'Wins customers: approves discounts and takes contracts to Legal and the CEO.',
+    workspace: 'sales',
+    expectedRoleId: 'growth.sales_manager',
+  },
+  {
+    key: 'support',
+    email: 'fatima.sheikh@lumen-capital.example',
+    displayName: 'Fatima Sheikh',
+    title: 'Support Lead',
+    responsibility:
+      'Looks after customers: resolves their problems, escalates to engineering, approves refunds.',
+    workspace: 'support',
+    expectedRoleId: 'customersuccess.manager',
+  },
+  {
+    key: 'legal',
+    email: 'sanjay.pillai@lumen-capital.example',
+    displayName: 'Sanjay Pillai',
+    title: 'General Counsel',
+    responsibility: 'Reviews contracts, campaign claims and company policies before they go out.',
+    workspace: 'legal',
+    expectedRoleId: 'legal.general_counsel',
+  },
 ];
 
 /** The capability-prefix rules seeded as POLICY_APPROVAL_AUTHORITY. */
@@ -234,6 +284,30 @@ export function buildDemoWorld(): ScenarioWorld {
       slug: 'finance',
       name: 'Finance',
       type: 'finance',
+    })
+    .workspace('mkt', {
+      organization: 'lumen',
+      slug: 'marketing',
+      name: 'Marketing',
+      type: 'marketing',
+    })
+    .workspace('sales', {
+      organization: 'lumen',
+      slug: 'sales',
+      name: 'Sales',
+      type: 'sales',
+    })
+    .workspace('support', {
+      organization: 'lumen',
+      slug: 'customer-support',
+      name: 'Customer Support',
+      type: 'customer_success',
+    })
+    .workspace('legal', {
+      organization: 'lumen',
+      slug: 'legal',
+      name: 'Legal',
+      type: 'legal',
     });
 
   for (const persona of DEMO_PERSONAS) {
@@ -256,6 +330,10 @@ export function buildDemoWorld(): ScenarioWorld {
       .organizationMember('hr', 'lumen', 'member')
       .organizationMember('dev_aarav', 'lumen', 'member')
       .organizationMember('dev_meghna', 'lumen', 'member')
+      .organizationMember('marketing', 'lumen', 'member')
+      .organizationMember('sales', 'lumen', 'member')
+      .organizationMember('support', 'lumen', 'member')
+      .organizationMember('legal', 'lumen', 'member')
       .workspaceMember('ceo', 'eng', 'owner', 'executive.ceo')
       // The CEO holds an EXECUTIVE seat in every other department: full
       // visibility and the ability to raise requests there, as `executive.ceo`
@@ -263,6 +341,14 @@ export function buildDemoWorld(): ScenarioWorld {
       .workspaceMember('ceo', 'tech', 'executive', 'executive.ceo')
       .workspaceMember('ceo', 'hr', 'executive', 'executive.ceo')
       .workspaceMember('ceo', 'fin', 'executive', 'executive.ceo')
+      .workspaceMember('ceo', 'mkt', 'executive', 'executive.ceo')
+      .workspaceMember('ceo', 'sales', 'executive', 'executive.ceo')
+      .workspaceMember('ceo', 'support', 'executive', 'executive.ceo')
+      .workspaceMember('ceo', 'legal', 'executive', 'executive.ceo')
+      .workspaceMember('marketing', 'mkt', 'owner', 'growth.marketing_manager')
+      .workspaceMember('sales', 'sales', 'owner', 'growth.sales_manager')
+      .workspaceMember('support', 'support', 'owner', 'customersuccess.manager')
+      .workspaceMember('legal', 'legal', 'owner', 'legal.general_counsel')
       .workspaceMember('cto', 'tech', 'owner', 'technology.cto')
       .workspaceMember('manager', 'eng', 'admin', 'delivery.manager')
       .workspaceMember('dev_aarav', 'eng', 'member', 'technology.developer')

@@ -11,13 +11,7 @@
 import { ApiError } from './api.js';
 import { listRequisitions, statusLabel, type HiringScope, type Requisition } from './hiring.js';
 import { listOnboardings, type OnboardingRecord, type ReadyHire } from './onboarding.js';
-import {
-  listRequests,
-  requestStatusLabel,
-  requestSummary,
-  TYPE_LABEL,
-  type OfficeRequest,
-} from './requests.js';
+import { listRequests, requestStatusLabel, requestTitle, type OfficeRequest } from './requests.js';
 import { listTasks, TASK_STATUS_LABEL, type ProjectTask } from './tasks.js';
 import {
   getOpening,
@@ -220,21 +214,21 @@ export function buildDesk(sources: DeskSources): Desk {
   }
 
   for (const request of sources.officeRequests) {
-    const what = `${TYPE_LABEL[request.type].toLowerCase()} request`;
-    const summary = requestSummary(request.details);
-    if (request.actions.canDecide) {
+    if (request.actions.canDecide && request.pending !== undefined) {
       mine.push({
         id: `request-${request.id}`,
         screen: 'requests',
-        title: `Decide on ${request.requestedByName ?? 'a colleague'}'s ${what}`,
-        detail: `${summary}.`,
+        title: `${request.pending.label}: ${requestTitle(request)}`,
+        detail: request.mine
+          ? `${request.department}. Started by you.`
+          : `${request.department}. Started by ${request.requestedByName ?? 'a colleague'}.`,
       });
     } else if (request.mine && request.status === 'pending') {
       watching.push({
         id: `request-${request.id}`,
         screen: 'requests',
-        title: `Your ${what}`,
-        detail: `${summary}. ${requestStatusLabel(request)}.`,
+        title: requestTitle(request),
+        detail: `${requestStatusLabel(request)}.`,
       });
     }
   }
@@ -277,8 +271,9 @@ export function buildDesk(sources: DeskSources): Desk {
     starts.push({
       id: 'request',
       screen: 'requests',
-      title: 'Ask for leave, a purchase or IT access',
-      detail: 'It goes to your manager first, then to HR, Finance or IT.',
+      title: 'Start an office workflow',
+      detail:
+        'Leave, purchases, campaigns, bugs, contracts and more — each goes to the right people.',
     });
   }
   if (sources.canManageTasks) {

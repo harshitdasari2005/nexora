@@ -12,7 +12,18 @@ import { api, ApiError } from './api.js';
 
 /** Every person in the demo office (the server's fixed list). */
 export type DemoPersonaKey =
-  'ceo' | 'cto' | 'manager' | 'dev_aarav' | 'dev_meghna' | 'hr' | 'cfo' | 'controller';
+  | 'ceo'
+  | 'cto'
+  | 'manager'
+  | 'dev_aarav'
+  | 'dev_meghna'
+  | 'hr'
+  | 'cfo'
+  | 'controller'
+  | 'marketing'
+  | 'sales'
+  | 'support'
+  | 'legal';
 
 /** A demo persona as published by the server (no email, no user id). */
 export interface DemoPersona {

@@ -84,7 +84,7 @@ interface NavItem {
 // less, so `Dashboard` sends an onboarded user straight to Command Center.
 const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'My desk', icon: 'desk', to: '/app/desk' },
-  { label: 'Requests', icon: 'requests', to: '/app/requests' },
+  { label: 'Office workflows', icon: 'requests', to: '/app/requests' },
   { label: 'Tasks', icon: 'tasks', to: '/app/tasks' },
   { label: 'Command Center', icon: 'command-center', to: '/app/command-center' },
   { label: 'Agent', icon: 'agent', to: '/app/agent' },
@@ -113,7 +113,7 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
 ];
 
 /** The modules of everyday office work (never curated away by a persona). */
-const EVERYDAY_MODULES: readonly string[] = ['My desk', 'Requests', 'Tasks'];
+const EVERYDAY_MODULES: readonly string[] = ['My desk', 'Office workflows', 'Tasks'];
 
 /**
  * Where each destination lives in the rail. The groups are fixed for every
@@ -122,7 +122,7 @@ const EVERYDAY_MODULES: readonly string[] = ['My desk', 'Requests', 'Tasks'];
  * with nothing visible in it is simply not rendered.
  */
 const NAV_SECTIONS: readonly { title: string | null; labels: readonly string[] }[] = [
-  { title: null, labels: ['My desk', 'Requests', 'Command Center'] },
+  { title: null, labels: ['My desk', 'Office workflows', 'Command Center'] },
   { title: 'People', labels: ['Hiring', 'Recruiting', 'Onboarding', 'Employees'] },
   {
     title: 'Work',

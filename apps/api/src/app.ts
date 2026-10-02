@@ -11,7 +11,8 @@
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import type { EventPublisher } from '@nexora/shared/events';
-import type { ApprovalEngine } from '@nexora/ai-runtime';
+import type { ApprovalEngine, ChatProvider } from '@nexora/ai-runtime';
+import { GroqAdapter, OllamaAdapter } from '@nexora/ai-runtime/adapters';
 import type { ConversationStore } from '@nexora/ai-runtime/conversation';
 import {
   createDatabase,
@@ -136,6 +137,7 @@ import { registerFinanceRoutes } from './routes/finance.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerHiringRoutes } from './routes/hiring.js';
+import { OfficeAi } from './office/office-ai.js';
 import { registerOfficeRequestRoutes } from './routes/office-requests.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { registerTaskRoutes } from './routes/tasks.js';
@@ -233,6 +235,11 @@ export interface AppDependencies {
    * registry for the contrived closure scenarios). Never used by production.
    */
   onAiRuntime?: (runtime: AiRuntime) => void;
+  /**
+   * The chat model of the assistant inside the office workflows (tests inject
+   * a fake; production derives it from `config.ai`).
+   */
+  officeChat?: ChatProvider;
 }
 
 /** Builds the Nexora API application. */
@@ -374,7 +381,36 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     permissions: rbac,
     resolveUserName: hiringDisplayName,
   });
+  // The assistant inside the office workflows uses the SAME model connection
+  // the deployment configured for the AI runtime (none / local / Groq). With
+  // none, it answers by plain rules and says so.
+  const officeChat =
+    dependencies.officeChat ??
+    (dependencies.config.ai.provider === 'groq'
+      ? new GroqAdapter({
+          model: dependencies.config.ai.model,
+          ...(dependencies.config.ai.apiKey === undefined
+            ? {}
+            : { apiKey: dependencies.config.ai.apiKey }),
+          ...(dependencies.config.ai.baseUrl === undefined
+            ? {}
+            : { baseUrl: dependencies.config.ai.baseUrl }),
+        }).chat
+      : dependencies.config.ai.provider === 'local'
+        ? new OllamaAdapter({
+            model: dependencies.config.ai.model,
+            ...(dependencies.config.ai.baseUrl === undefined
+              ? {}
+              : { baseUrl: dependencies.config.ai.baseUrl }),
+            ...(dependencies.config.ai.apiKey === undefined
+              ? {}
+              : { apiKey: dependencies.config.ai.apiKey }),
+          }).chat
+        : undefined);
   registerOfficeRequestRoutes(app, {
+    assistant: new OfficeAi(
+      officeChat === undefined ? {} : { chat: officeChat, model: dependencies.config.ai.model },
+    ),
     requests: repositories.officeRequests,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,

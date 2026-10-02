@@ -359,18 +359,18 @@ export const REST_MUTATION_CLASSES: Readonly<Record<string, RestMutationEntry>> 
   'POST /api/requests': {
     class: 'rbac',
     justification:
-      'requests.create; raises an everyday office request from the caller’s own team. A stage the requester would have to decide themselves is recorded as not required, never self-approved.',
+      'requests.create; raises a request of one of the catalogued office workflows from the caller’s own team. The aggregate keeps only the workflow’s own fields and validates each. A decision the requester would have to take themselves is recorded as not required, never self-approved.',
     proof: [cap('requests.create')],
   },
   'POST /api/requests/:requestId/decision': {
     class: 'domain_governed',
     justification:
-      'The authority of the stage the request is waiting at (manager of the request’s own team, HR, Finance or IT), derived server-side. The aggregate enforces the order of the stages and separation of duties: nobody decides their own request, and a rejection needs a reason.',
+      'The authority of the SEAT the pending stage belongs to (manager of the request’s own team, the executive, HR, Finance, IT, engineering, marketing, sales, support, Legal, or the requester for their own step), derived server-side; a decision that would fall to the requester goes up to the executive. The aggregate enforces the order of the stages and separation of duties: nobody decides their own request, and saying no needs a reason.',
     proof: [
       { in: 'route', contains: 'requests.approve_manager' },
       {
         in: 'apps/api/src/routes/office-requests.ts',
-        contains: "stage !== 'manager' || scope.workspaceId === request.workspaceId",
+        contains: "seat !== 'manager' || scope.workspaceId === request.workspaceId",
       },
       {
         in: 'domains/hr/src/entities/office-request.ts',
@@ -393,6 +393,25 @@ export const REST_MUTATION_CLASSES: Readonly<Record<string, RestMutationEntry>> 
         contains: 'Only the requester can withdraw a request',
       },
     ],
+  },
+
+  'POST /api/requests/draft': {
+    class: 'rbac',
+    justification:
+      'requests.create; the assistant turns the caller’s own sentence into SUGGESTED field values. Nothing is stored: the person reviews and submits through POST /api/requests, where every value is validated.',
+    proof: [cap('requests.create')],
+  },
+  'POST /api/requests/:requestId/brief': {
+    class: 'rbac',
+    justification:
+      'requests.create + visibility of the request + the authority to take its pending stage. The assistant summarises a request the caller already sees and facts computed server-side; it decides nothing. The only write is a history note that help was given.',
+    proof: [cap('requests.create'), { in: 'route', contains: 'mayTakePending(' }],
+  },
+  'POST /api/requests/:requestId/write': {
+    class: 'rbac',
+    justification:
+      'requests.create + visibility of the request + the authority to take its pending stage. The assistant drafts text for the person to edit; it is stored only if they submit it through the decision route. The only write is a history note that help was given.',
+    proof: [cap('requests.create'), { in: 'route', contains: 'mayTakePending(' }],
   },
 
   // --- Project tasks -------------------------------------------------------------------------------------

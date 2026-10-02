@@ -8,7 +8,7 @@
 import type { FastifyInstance } from 'fastify';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-import { demoIds, DEMO_PERSONAS, type DemoIds } from '../src/demo/world.js';
+import { demoIds, DEMO_PERSONAS, DEMO_WORKSPACE_KEYS, type DemoIds } from '../src/demo/world.js';
 import { buildTestApp, parseSse } from './helpers.js';
 
 async function signIn(app: FastifyInstance, persona: string): Promise<string> {
@@ -49,7 +49,7 @@ describe('demo office roles', () => {
     await app.ready();
   });
 
-  it('has the whole office: CEO, CTO, Team Manager, two developers, HR, CFO, Controller', () => {
+  it('has the whole office: leadership, engineering, HR, finance, marketing, sales, support, legal', () => {
     expect(DEMO_PERSONAS.map((persona) => persona.title)).toEqual([
       'Chief Executive Officer',
       'Chief Technology Officer',
@@ -59,6 +59,10 @@ describe('demo office roles', () => {
       'HR Manager',
       'Chief Financial Officer',
       'Finance Controller',
+      'Marketing Manager',
+      'Sales Manager',
+      'Support Lead',
+      'General Counsel',
     ]);
   });
 
@@ -73,7 +77,7 @@ describe('demo office roles', () => {
 
   it('the CEO is the CEO in EVERY department — never the CFO, the HR manager or the CTO', async () => {
     const ceo = await signIn(app, 'ceo');
-    for (const workspace of ['eng', 'tech', 'hr', 'fin'] as const) {
+    for (const workspace of DEMO_WORKSPACE_KEYS) {
       expect((await roleIn(ceo, ids.workspaceIds[workspace]))?.roleId, workspace).toBe(
         'executive.ceo',
       );

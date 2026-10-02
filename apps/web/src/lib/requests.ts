@@ -1,34 +1,74 @@
 /**
- * @nexora/app-web — office requests client.
+ * @nexora/app-web — office workflows client.
  *
- * Leave, purchases and IT access: each request goes to the requester's
- * manager first, then to the team that handles it. The server computes what
- * the caller may do with every request (`actions`); the page only shows it.
+ * Every department's everyday work on one engine: a request follows the chain
+ * its workflow defines (leave to the manager and HR, a campaign to the
+ * marketing head, Finance and Legal, a customer problem to support and
+ * engineering…). The server publishes the catalog, computes what the caller
+ * may do with every request (`actions`), and the page only shows it.
+ *
+ * The assistant (`draft`, `brief`, `write`) only suggests; whatever it
+ * produces is sent by a person through the same calls as anything typed.
  */
 
 import { api } from './api.js';
 import type { HiringScope } from './hiring.js';
 
-export type RequestType = 'leave' | 'purchase' | 'access';
-export type RequestStage = 'manager' | 'hr' | 'finance' | 'it';
 export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn';
-export type LeaveKind = 'vacation' | 'sick' | 'personal';
+export type StageState = 'done' | 'current' | 'waiting' | 'skipped' | 'returned';
+export type StageKind = 'decide' | 'do';
+export type FieldType = 'text' | 'longtext' | 'date' | 'money' | 'number' | 'choice';
 
-export type RequestDetails =
-  | { type: 'leave'; kind: LeaveKind; startDate: string; endDate: string; reason: string }
-  | { type: 'purchase'; item: string; amountMinorUnits: number; currency: string; reason: string }
-  | { type: 'access'; what: string; reason: string };
+/** One field of a workflow's form. */
+export interface WorkflowField {
+  key: string;
+  label: string;
+  type: FieldType;
+  required: boolean;
+  options?: readonly string[];
+  placeholder?: string;
+}
 
+/** One workflow of the catalog. */
+export interface Workflow {
+  key: string;
+  name: string;
+  description: string;
+  reasonLabel: string;
+  fields: readonly WorkflowField[];
+  stages: readonly { label: string; kind: StageKind }[];
+}
+
+/** The catalog: every department and its workflows. */
+export interface WorkflowCatalog {
+  departments: readonly { name: string; workflows: readonly Workflow[] }[];
+  /** Whether an AI model is connected (otherwise the assistant works by plain rules). */
+  assistant: { connected: boolean; model?: string };
+}
+
+/** A request as the caller may see it. */
 export interface OfficeRequest {
   id: string;
-  type: RequestType;
-  details: RequestDetails;
+  /** The workflow key. */
+  type: string;
+  /** The workflow's name ("Leave", "Marketing campaign"). */
+  workflow: string;
+  department: string;
+  /** What it asks for, in one line. */
+  summary: string;
+  reasonLabel: string;
+  reason: string;
+  fields: readonly { label: string; value: string; long: boolean }[];
   status: RequestStatus;
-  pendingStage?: RequestStage;
-  stages: readonly {
-    stage: RequestStage;
-    state: 'done' | 'current' | 'waiting' | 'skipped' | 'returned';
-  }[];
+  /** The stage it is waiting at. */
+  pending?: {
+    key: string;
+    label: string;
+    kind: StageKind;
+    noteRequired: boolean;
+    noteLabel?: string;
+  };
+  stages: readonly { key: string; label: string; kind: StageKind; state: StageState }[];
   requestedBy: string;
   requestedByName?: string;
   /** The caller raised this request. */
@@ -37,8 +77,9 @@ export interface OfficeRequest {
     at: string;
     actorId: string;
     actorName?: string;
-    action: 'submitted' | 'not_required' | 'approved' | 'rejected' | 'withdrawn';
-    stage?: RequestStage;
+    action: 'submitted' | 'not_required' | 'approved' | 'rejected' | 'withdrawn' | 'assisted';
+    stage?: string;
+    stageLabel?: string;
     comment?: string;
   }[];
   createdAt: string;
@@ -46,8 +87,25 @@ export interface OfficeRequest {
   actions: { canDecide: boolean; decideBlockedReason?: string; canWithdraw: boolean };
 }
 
+/** A filled-in request suggested by the assistant. */
+export interface RequestDraft {
+  values: Record<string, string | number>;
+  reason: string;
+  source: 'ai' | 'rules';
+}
+
+/** What the assistant prepares for the person who must decide. */
+export interface RequestBrief {
+  recommendation: 'approve' | 'look_closer' | 'reject';
+  summary: string;
+  facts: readonly { label: string; value: string; tone: 'ok' | 'warn' | 'info' }[];
+  source: 'ai' | 'rules';
+}
+
 const query = (scope: HiringScope): string =>
   `organizationId=${encodeURIComponent(scope.organizationId)}&workspaceId=${encodeURIComponent(scope.workspaceId)}`;
+const post = <T>(path: string, scope: HiringScope, body: Record<string, unknown> = {}) =>
+  api<T>(path, { method: 'POST', body: JSON.stringify({ ...scope, ...body }) });
 
 export function listRequests(
   scope: HiringScope,
@@ -55,8 +113,25 @@ export function listRequests(
   return api(`/requests?${query(scope)}`);
 }
 
-export function raiseRequest(scope: HiringScope, details: RequestDetails): Promise<unknown> {
-  return api('/requests', { method: 'POST', body: JSON.stringify({ ...scope, ...details }) });
+export function fetchCatalog(scope: HiringScope): Promise<WorkflowCatalog> {
+  return api(`/requests/catalog?${query(scope)}`);
+}
+
+export function raiseRequest(
+  scope: HiringScope,
+  input: {
+    type: string;
+    reason: string;
+    values: Record<string, string | number>;
+    draftedWithAssistant: boolean;
+  },
+): Promise<unknown> {
+  return post('/requests', scope, {
+    type: input.type,
+    reason: input.reason,
+    values: input.values,
+    ...(input.draftedWithAssistant ? { draftedWithAssistant: true } : {}),
+  });
 }
 
 export function decideRequest(
@@ -66,96 +141,58 @@ export function decideRequest(
   comment: string,
 ): Promise<unknown> {
   const trimmed = comment.trim();
-  return api(`/requests/${encodeURIComponent(id)}/decision`, {
-    method: 'POST',
-    body: JSON.stringify({
-      ...scope,
-      decision,
-      ...(trimmed.length === 0 ? {} : { comment: trimmed }),
-    }),
+  return post(`/requests/${encodeURIComponent(id)}/decision`, scope, {
+    decision,
+    ...(trimmed.length === 0 ? {} : { comment: trimmed }),
   });
 }
 
 export function withdrawRequest(scope: HiringScope, id: string): Promise<unknown> {
-  return api(`/requests/${encodeURIComponent(id)}/withdraw`, {
-    method: 'POST',
-    body: JSON.stringify(scope),
-  });
+  return post(`/requests/${encodeURIComponent(id)}/withdraw`, scope);
 }
 
-export const TYPE_LABEL: Record<RequestType, string> = {
-  leave: 'Leave',
-  purchase: 'Purchase',
-  access: 'IT access or equipment',
-};
-
-/** Who decides each stage, as the requester would say it. */
-export const STAGE_LABEL: Record<RequestStage, string> = {
-  manager: 'Manager',
-  hr: 'HR',
-  finance: 'Finance',
-  it: 'IT',
-};
-
-/** The chain each kind of request travels (shown before it is raised). */
-export const TYPE_CHAIN: Record<RequestType, readonly RequestStage[]> = {
-  leave: ['manager', 'hr'],
-  purchase: ['manager', 'finance'],
-  access: ['manager', 'it'],
-};
-
-const LEAVE_KIND: Record<LeaveKind, string> = {
-  vacation: 'vacation',
-  sick: 'sick leave',
-  personal: 'personal leave',
-};
-
-function day(iso: string): string {
-  const date = new Date(`${iso}T00:00:00Z`);
-  return Number.isNaN(date.getTime())
-    ? iso
-    : date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+/** Asks the assistant to fill in a workflow's form from one sentence. */
+export async function draftRequest(
+  scope: HiringScope,
+  type: string,
+  sentence: string,
+): Promise<RequestDraft> {
+  return (await post<{ draft: RequestDraft }>('/requests/draft', scope, { type, sentence })).draft;
 }
 
-function money(minorUnits: number, currency: string): string {
-  try {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency,
-      maximumFractionDigits: 0,
-    }).format(minorUnits / 100);
-  } catch {
-    return `${currency} ${(minorUnits / 100).toLocaleString('en-IN')}`;
-  }
+/** Asks the assistant to prepare the caller for the stage that is theirs. */
+export async function briefRequest(scope: HiringScope, id: string): Promise<RequestBrief> {
+  return (await post<{ brief: RequestBrief }>(`/requests/${encodeURIComponent(id)}/brief`, scope))
+    .brief;
 }
 
-/** What a request asks for, in one line. */
-export function requestSummary(details: RequestDetails): string {
-  switch (details.type) {
-    case 'leave':
-      return details.startDate === details.endDate
-        ? `${day(details.startDate)}, ${LEAVE_KIND[details.kind]}`
-        : `${day(details.startDate)} to ${day(details.endDate)}, ${LEAVE_KIND[details.kind]}`;
-    case 'purchase':
-      return `${details.item}, ${money(details.amountMinorUnits, details.currency)}`;
-    case 'access':
-      return details.what;
-  }
+/** Asks the assistant to draft the written part of the caller's stage. */
+export async function writeForRequest(
+  scope: HiringScope,
+  id: string,
+): Promise<{ text: string; source: 'ai' | 'rules' }> {
+  return (
+    await post<{ written: { text: string; source: 'ai' | 'rules' } }>(
+      `/requests/${encodeURIComponent(id)}/write`,
+      scope,
+    )
+  ).written;
+}
+
+/** A request's name in a list: "Leave: 10 Nov, 14 Nov, vacation". */
+export function requestTitle(request: Pick<OfficeRequest, 'workflow' | 'summary'>): string {
+  return request.summary === '' ? request.workflow : `${request.workflow}: ${request.summary}`;
 }
 
 /** Where a request stands, in plain words. */
-export function requestStatusLabel(
-  request: Pick<OfficeRequest, 'status' | 'pendingStage'>,
-): string {
+export function requestStatusLabel(request: Pick<OfficeRequest, 'status' | 'pending'>): string {
   switch (request.status) {
     case 'pending':
-      return request.pendingStage === undefined
-        ? 'Pending'
-        : `Waiting for ${STAGE_LABEL[request.pendingStage]}`;
+      return request.pending === undefined ? 'In progress' : `Now: ${request.pending.label}`;
     case 'approved':
-      return 'Approved';
+      return 'Completed';
     case 'rejected':
-      return 'Rejected';
+      return 'Refused';
     case 'withdrawn':
       return 'Withdrawn';
   }
@@ -164,9 +201,59 @@ export function requestStatusLabel(
 /** The route of a request: raised, then each stage. */
 export function requestRoute(
   request: Pick<OfficeRequest, 'stages'>,
-): { label: string; state: 'done' | 'current' | 'waiting' | 'skipped' | 'returned' }[] {
+): { label: string; state: StageState }[] {
   return [
     { label: 'Raised', state: 'done' },
-    ...request.stages.map((entry) => ({ label: STAGE_LABEL[entry.stage], state: entry.state })),
+    ...request.stages.map((stage) => ({ label: stage.label, state: stage.state })),
   ];
+}
+
+/** How the assistant's help is described to the person. */
+export function assistantSourceLabel(
+  source: 'ai' | 'rules',
+  assistant: WorkflowCatalog['assistant'],
+): string {
+  return source === 'ai'
+    ? `Suggested by the assistant${assistant.model === undefined ? '' : ` (${assistant.model})`}. Check it before you send it.`
+    : 'Filled in by plain rules: no AI model is connected. Check it before you send it.';
+}
+
+/** Turns the form's text inputs into the values the server expects. */
+export function valuesFromForm(
+  workflow: Workflow,
+  form: Readonly<Record<string, string>>,
+): { values: Record<string, string | number>; problem: string | null } {
+  const values: Record<string, string | number> = {};
+  for (const field of workflow.fields) {
+    const raw = (form[field.key] ?? '').trim();
+    if (raw === '') {
+      if (field.required) return { values, problem: `${field.label} is needed.` };
+      continue;
+    }
+    if (field.type === 'money' || field.type === 'number') {
+      const amount = Number(raw);
+      if (!Number.isFinite(amount) || amount < 0 || (field.type === 'money' && amount <= 0)) {
+        return { values, problem: `${field.label} must be a number.` };
+      }
+      values[field.key] = field.type === 'money' ? Math.round(amount * 100) : amount;
+    } else {
+      values[field.key] = raw;
+    }
+  }
+  return { values, problem: null };
+}
+
+/** Turns suggested values back into what the form's inputs show. */
+export function formFromValues(
+  workflow: Workflow,
+  values: Readonly<Record<string, string | number>>,
+): Record<string, string> {
+  const form: Record<string, string> = {};
+  for (const field of workflow.fields) {
+    const value = values[field.key];
+    if (value === undefined) continue;
+    form[field.key] =
+      field.type === 'money' && typeof value === 'number' ? String(value / 100) : String(value);
+  }
+  return form;
 }

@@ -1,5 +1,5 @@
 /**
- * Requests and Tasks pages, and their place on My desk: a button appears only
+ * The Tasks page, and its place on My desk: a button appears only
  * where the server said the caller may act; what is asked and where it stands
  * are shown in plain words.
  */
@@ -9,47 +9,12 @@ import { renderToString } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 
 import { buildDesk, type DeskSources } from '../src/lib/desk.js';
-import {
-  requestRoute,
-  requestStatusLabel,
-  requestSummary,
-  type OfficeRequest,
-} from '../src/lib/requests.js';
 import { projectProgress, type ProjectTask, type TaskBoard } from '../src/lib/tasks.js';
-import { historyLine, RequestsView, validateRequest } from '../src/pages/Requests.js';
 import { TasksView } from '../src/pages/Tasks.js';
 
 const scope = { organizationId: 'org_1', workspaceId: 'wsp_eng' };
 const render = (node: JSX.Element): string =>
   renderToString(<MemoryRouter>{node}</MemoryRouter>).replace(/<!-- -->/g, '');
-
-function request(overrides: Partial<OfficeRequest> = {}): OfficeRequest {
-  return {
-    id: 'ofr_1',
-    type: 'leave',
-    details: {
-      type: 'leave',
-      kind: 'vacation',
-      startDate: '2026-11-10',
-      endDate: '2026-11-14',
-      reason: 'Family wedding.',
-    },
-    status: 'pending',
-    pendingStage: 'manager',
-    stages: [
-      { stage: 'manager', state: 'current' },
-      { stage: 'hr', state: 'waiting' },
-    ],
-    requestedBy: 'usr_dev',
-    requestedByName: 'Aarav Kulkarni',
-    mine: false,
-    history: [{ at: '2026-10-02T09:00:00.000Z', actorId: 'usr_dev', action: 'submitted' }],
-    createdAt: '2026-10-02T09:00:00.000Z',
-    updatedAt: '2026-10-02T09:00:00.000Z',
-    actions: { canDecide: false, canWithdraw: false },
-    ...overrides,
-  };
-}
 
 function task(overrides: Partial<ProjectTask> = {}): ProjectTask {
   return {
@@ -78,147 +43,6 @@ const board = (tasks: ProjectTask[], overrides: Partial<TaskBoard> = {}): TaskBo
   assignees: [],
   projects: [],
   ...overrides,
-});
-
-describe('requests in plain words', () => {
-  it('says what is asked for, by kind', () => {
-    expect(requestSummary(request().details)).toBe('10 Nov to 14 Nov, vacation');
-    expect(
-      requestSummary({
-        type: 'leave',
-        kind: 'sick',
-        startDate: '2026-11-10',
-        endDate: '2026-11-10',
-        reason: 'Flu.',
-      }),
-    ).toBe('10 Nov, sick leave');
-    expect(
-      requestSummary({
-        type: 'purchase',
-        item: 'Test devices',
-        amountMinorUnits: 4_500_000,
-        currency: 'INR',
-        reason: 'Device lab.',
-      }),
-    ).toBe('Test devices, ₹45,000');
-    expect(requestSummary({ type: 'access', what: 'VPN', reason: 'Remote work.' })).toBe('VPN');
-  });
-
-  it('says where it stands and draws its route', () => {
-    expect(requestStatusLabel(request())).toBe('Waiting for Manager');
-    expect(requestStatusLabel(request({ status: 'approved', pendingStage: undefined }))).toBe(
-      'Approved',
-    );
-    expect(requestRoute(request())).toEqual([
-      { label: 'Raised', state: 'done' },
-      { label: 'Manager', state: 'current' },
-      { label: 'HR', state: 'waiting' },
-    ]);
-    expect(
-      historyLine({
-        at: 't',
-        actorId: 'u',
-        actorName: 'Rohan Mehta',
-        action: 'rejected',
-        stage: 'manager',
-        comment: 'Not this sprint.',
-      }),
-    ).toBe('Rohan Mehta rejected it (Manager) — “Not this sprint.”');
-  });
-
-  it('checks a new request before it is sent', () => {
-    const base = {
-      type: 'leave' as const,
-      startDate: '',
-      endDate: '',
-      item: '',
-      amount: '',
-      what: '',
-      reason: 'Family wedding.',
-    };
-    expect(validateRequest(base)).toBe('Choose the first and last day.');
-    expect(validateRequest({ ...base, startDate: '2026-11-10', endDate: '2026-11-01' })).toBe(
-      'The last day cannot be before the first day.',
-    );
-    expect(validateRequest({ ...base, type: 'purchase', item: 'Phones', amount: '0' })).toBe(
-      'Enter what it costs.',
-    );
-    expect(validateRequest({ ...base, type: 'access', what: 'VPN', reason: 'pls' })).toBe(
-      'Say why you are asking (a few words).',
-    );
-    expect(validateRequest({ ...base, startDate: '2026-11-10', endDate: '2026-11-14' })).toBeNull();
-  });
-});
-
-describe('RequestsView', () => {
-  it('invites a first request when there are none', () => {
-    const html = render(
-      <RequestsView scope={scope} requests={[]} canCreate onChanged={() => undefined} />,
-    );
-    expect(html).toContain('No requests yet');
-    expect(html).toContain('New request');
-  });
-
-  it('puts requests waiting for the caller first, with Approve and Reject — and only there', () => {
-    const html = render(
-      <RequestsView
-        scope={scope}
-        canCreate
-        onChanged={() => undefined}
-        requests={[
-          request({
-            id: 'ofr_mine',
-            mine: true,
-            requestedByName: 'Rohan Mehta',
-            actions: { canDecide: false, canWithdraw: true },
-          }),
-          request({ id: 'ofr_decide', actions: { canDecide: true, canWithdraw: false } }),
-        ]}
-      />,
-    );
-    expect(html.indexOf('Waiting for your decision')).toBeLessThan(html.indexOf('Your requests'));
-    expect(html.match(/>Approve</g)).toHaveLength(1);
-    expect(html.match(/>Reject</g)).toHaveLength(1);
-    expect(html.match(/>Withdraw</g)).toHaveLength(1);
-    expect(html).toContain('Raised by Aarav Kulkarni.');
-    expect(html).toContain('Raised by you.');
-    expect(html).toContain('Your decision');
-  });
-
-  it('shows a rejection with its reason, and no buttons to decide', () => {
-    const html = render(
-      <RequestsView
-        scope={scope}
-        canCreate={false}
-        onChanged={() => undefined}
-        requests={[
-          request({
-            mine: true,
-            status: 'rejected',
-            pendingStage: undefined,
-            stages: [
-              { stage: 'manager', state: 'returned' },
-              { stage: 'hr', state: 'waiting' },
-            ],
-            history: [
-              { at: 't1', actorId: 'u', action: 'submitted' },
-              {
-                at: 't2',
-                actorId: 'm',
-                actorName: 'Rohan Mehta',
-                action: 'rejected',
-                stage: 'manager',
-                comment: 'Release week.',
-              },
-            ],
-          }),
-        ]}
-      />,
-    );
-    expect(html).toContain('Rejected by Rohan Mehta: “Release week.”');
-    expect(html).not.toContain('>Approve<');
-    expect(html).not.toContain('New request');
-  });
 });
 
 describe('TasksView', () => {
@@ -338,25 +162,6 @@ describe('requests and tasks on My desk', () => {
     tasks: [],
     canManageTasks: false,
     ...overrides,
-  });
-
-  it('a request to decide is yours; your own pending request is in motion', () => {
-    const desk = buildDesk(
-      sources({
-        officeRequests: [
-          request({ id: 'ofr_a', actions: { canDecide: true, canWithdraw: false } }),
-          request({ id: 'ofr_b', mine: true }),
-          request({ id: 'ofr_c', mine: true, status: 'approved', pendingStage: undefined }),
-          request({ id: 'ofr_d' }),
-        ],
-      }),
-    );
-    expect(desk.mine).toMatchObject([
-      { title: "Decide on Aarav Kulkarni's leave request", screen: 'requests' },
-    ]);
-    expect(desk.watching).toMatchObject([
-      { title: 'Your leave request', detail: '10 Nov to 14 Nov, vacation. Waiting for Manager.' },
-    ]);
   });
 
   it('a task is yours to start, to finish or to review — otherwise it is in motion', () => {

@@ -1,14 +1,15 @@
 /**
- * @nexora/app-web — Requests page.
+ * @nexora/app-web — Office workflows page.
  *
- * The everyday requests of an office: leave, purchases, IT access. Each one
- * goes to the requester's manager first, then to the team that handles it
- * (HR, Finance or IT).
+ * Every department's everyday work in one place: pick a workflow, fill it in
+ * (or describe it in a sentence and let the assistant fill it in), and it
+ * travels its chain — each stage to the person who holds that seat.
  *
- * The page shows what the backend says and nothing else: each request carries
- * the caller's `actions` (computed on the server from their role and the
- * request's state), so a button only appears for the person whose turn it is —
- * and the server re-checks every click anyway.
+ * The page shows what the backend says and nothing else: the catalog of
+ * workflows comes from the server, and each request carries the caller's
+ * `actions`, so a button only appears for the person whose turn it is — and
+ * the server re-checks every click anyway. The assistant only suggests: what
+ * it writes lands in a form the person reads, edits and sends themselves.
  */
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
@@ -29,25 +30,29 @@ import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { NavIcon } from '../components/NavIcon.js';
-import { Page, PageHeader, Route, Section, SubHeading, TurnTag } from '../components/Page.js';
+import { Fact, Page, PageHeader, Route, Section, SubHeading, TurnTag } from '../components/Page.js';
 import { ApiError } from '../lib/api.js';
 import type { HiringScope } from '../lib/hiring.js';
 import {
+  assistantSourceLabel,
+  briefRequest,
   decideRequest,
+  draftRequest,
+  fetchCatalog,
+  formFromValues,
   listRequests,
   raiseRequest,
   requestRoute,
   requestStatusLabel,
-  requestSummary,
-  STAGE_LABEL,
-  TYPE_CHAIN,
-  TYPE_LABEL,
+  requestTitle,
+  valuesFromForm,
   withdrawRequest,
-  type LeaveKind,
+  writeForRequest,
   type OfficeRequest,
-  type RequestDetails,
+  type RequestBrief,
   type RequestStatus,
-  type RequestType,
+  type Workflow,
+  type WorkflowCatalog,
 } from '../lib/requests.js';
 import { useShellScope } from '../lib/useShellScope.js';
 
@@ -57,7 +62,6 @@ const STATUS_TONE: Record<RequestStatus, 'warning' | 'success' | 'danger' | 'neu
   rejected: 'danger',
   withdrawn: 'neutral',
 };
-const DEFAULT_CURRENCY = 'INR';
 const errorText = (caught: unknown): string =>
   caught instanceof ApiError ? caught.message : 'That did not work — try again.';
 
@@ -70,7 +74,7 @@ function formatWhen(iso: string): string {
   });
 }
 
-/** The requests page. */
+/** The office workflows page. */
 export function RequestsPage(): JSX.Element {
   const { dashboard, loading, error, reload } = useShellScope();
   const organizationId = dashboard?.organization?.id;
@@ -78,14 +82,16 @@ export function RequestsPage(): JSX.Element {
   const [state, setState] = useState<{
     requests: OfficeRequest[];
     canCreate: boolean;
+    catalog: WorkflowCatalog | null;
     loaded: boolean;
     error: string | null;
-  }>({ requests: [], canCreate: false, loaded: false, error: null });
+  }>({ requests: [], canCreate: false, catalog: null, loaded: false, error: null });
 
   const load = useCallback(() => {
     if (organizationId === undefined || workspaceId === undefined) return;
-    listRequests({ organizationId, workspaceId }).then(
-      (listed) => setState({ ...listed, loaded: true, error: null }),
+    const scope = { organizationId, workspaceId };
+    Promise.all([listRequests(scope), fetchCatalog(scope)]).then(
+      ([listed, catalog]) => setState({ ...listed, catalog, loaded: true, error: null }),
       (caught: unknown) =>
         setState((current) => ({ ...current, loaded: true, error: errorText(caught) })),
     );
@@ -110,11 +116,11 @@ export function RequestsPage(): JSX.Element {
     >
       {state.error !== null ? (
         <ErrorState message={state.error} onRetry={load} />
-      ) : !state.loaded ? (
+      ) : !state.loaded || state.catalog === null ? (
         <Page>
-          <PageHeader title="Requests" />
+          <PageHeader title="Office workflows" />
           <Card padding={5}>
-            <p style={{ color: 'var(--nexora-textSecondary)' }}>Reading the requests…</p>
+            <p style={{ color: 'var(--nexora-textSecondary)' }}>Reading the workflows…</p>
           </Card>
         </Page>
       ) : (
@@ -122,6 +128,7 @@ export function RequestsPage(): JSX.Element {
           scope={scope}
           requests={state.requests}
           canCreate={state.canCreate}
+          catalog={state.catalog}
           onChanged={load}
         />
       )}
@@ -134,6 +141,7 @@ export interface RequestsViewProps {
   scope: HiringScope;
   requests: readonly OfficeRequest[];
   canCreate: boolean;
+  catalog: WorkflowCatalog;
   /** Called after any change so the list is read back from the server. */
   onChanged: () => void;
 }
@@ -143,70 +151,112 @@ export function RequestsView({
   scope,
   requests,
   canCreate,
+  catalog,
   onChanged,
 }: RequestsViewProps): JSX.Element {
-  const [creating, setCreating] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const toDecide = requests.filter((request) => request.actions.canDecide);
   const mine = requests.filter((request) => request.mine && !request.actions.canDecide);
   const others = requests.filter((request) => !request.mine && !request.actions.canDecide);
+  const { assistant } = catalog;
 
   return (
     <Page>
       <PageHeader
-        title="Requests"
-        lede="Leave, purchases and IT access. Every request goes to your manager first, then to the team that handles it."
+        title="Office workflows"
+        lede="Every department’s everyday work. Start a workflow and it goes to the right people, one step at a time."
         actions={
-          canCreate && !creating ? (
-            <Button onClick={() => setCreating(true)}>New request</Button>
+          canCreate && !picking && workflow === null ? (
+            <Button onClick={() => setPicking(true)}>Start a workflow</Button>
           ) : undefined
         }
       />
 
-      {creating ? (
+      <p className="nexora-assistant-note" data-connected={assistant.connected}>
+        <NavIcon name="sparkles" size={14} />
+        {assistant.connected
+          ? `The assistant is connected${assistant.model === undefined ? '' : ` (${assistant.model})`}. It drafts and prepares; people decide.`
+          : 'No AI model is connected, so the assistant works by plain rules. It drafts and prepares; people decide.'}
+      </p>
+
+      {picking && workflow === null ? (
+        <WorkflowPicker
+          catalog={catalog}
+          onCancel={() => setPicking(false)}
+          onPick={(picked) => setWorkflow(picked)}
+        />
+      ) : null}
+
+      {workflow !== null ? (
         <RequestForm
-          onCancel={() => setCreating(false)}
-          onSubmit={async (details) => {
-            await raiseRequest(scope, details);
-            setCreating(false);
+          scope={scope}
+          workflow={workflow}
+          assistant={assistant}
+          onCancel={() => {
+            setWorkflow(null);
+            setPicking(false);
+          }}
+          onSent={() => {
+            setWorkflow(null);
+            setPicking(false);
             onChanged();
           }}
         />
       ) : null}
 
-      {requests.length === 0 && !creating ? (
+      {requests.length === 0 && !picking && workflow === null ? (
         <Card padding={10}>
           <EmptyState
             icon={<NavIcon name="requests" size={18} />}
-            title="No requests yet"
+            title="Nothing in motion yet"
             description={
               canCreate
-                ? 'Need time off, something bought, or access to a system? Raise a request and it goes to the right people.'
-                : 'Requests you take part in will appear here.'
+                ? 'Need time off, a purchase, a campaign approved, a bug fixed? Start a workflow and it goes to the right people.'
+                : 'Work you take part in will appear here.'
             }
           />
         </Card>
       ) : null}
 
       {toDecide.length > 0 ? (
-        <Section title="Waiting for your decision" count={toDecide.length}>
+        <Section title="Waiting for you" count={toDecide.length}>
           {toDecide.map((request) => (
-            <RequestCard key={request.id} scope={scope} request={request} onChanged={onChanged} />
+            <RequestCard
+              key={request.id}
+              scope={scope}
+              request={request}
+              assistant={assistant}
+              onChanged={onChanged}
+            />
           ))}
         </Section>
       ) : null}
 
       {mine.length > 0 ? (
-        <Section title="Your requests" count={mine.length}>
+        <Section title="Started by you" count={mine.length}>
           {mine.map((request) => (
-            <RequestCard key={request.id} scope={scope} request={request} onChanged={onChanged} />
+            <RequestCard
+              key={request.id}
+              scope={scope}
+              request={request}
+              assistant={assistant}
+              onChanged={onChanged}
+            />
           ))}
         </Section>
       ) : null}
 
       {others.length > 0 ? (
-        <Section title="Other requests" count={others.length}>
+        <Section title="Others you take part in" count={others.length}>
           {others.map((request) => (
-            <RequestCard key={request.id} scope={scope} request={request} onChanged={onChanged} />
+            <RequestCard
+              key={request.id}
+              scope={scope}
+              request={request}
+              assistant={assistant}
+              onChanged={onChanged}
+            />
           ))}
         </Section>
       ) : null}
@@ -214,107 +264,460 @@ export function RequestsView({
   );
 }
 
+/** Choose a department, then one of its workflows. */
+export function WorkflowPicker({
+  catalog,
+  onPick,
+  onCancel,
+}: {
+  catalog: WorkflowCatalog;
+  onPick: (workflow: Workflow) => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const [department, setDepartment] = useState(catalog.departments[0]?.name ?? '');
+  const current = catalog.departments.find((entry) => entry.name === department);
+  return (
+    <Card padding={5}>
+      <Stack gap={4} stretch>
+        <div className="nexora-page-head" style={{ alignItems: 'center' }}>
+          <h2 className="nexora-section-title">Which kind of work is it?</h2>
+          <Button size="sm" variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+        <div className="nexora-tabs" role="tablist" aria-label="Department">
+          {catalog.departments.map((entry) => (
+            <button
+              key={entry.name}
+              type="button"
+              role="tab"
+              aria-selected={entry.name === department}
+              className="nexora-tab"
+              onClick={() => setDepartment(entry.name)}
+            >
+              {entry.name}
+            </button>
+          ))}
+        </div>
+        <div className="nexora-choice">
+          {(current?.workflows ?? []).map((workflow) => (
+            <button
+              key={workflow.key}
+              type="button"
+              className="nexora-choice-option"
+              onClick={() => onPick(workflow)}
+            >
+              <span style={{ fontWeight: typography.weights.semibold }}>{workflow.name}</span>
+              <span style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+                {workflow.description}
+              </span>
+              <span style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+                {workflow.stages.length} {workflow.stages.length === 1 ? 'step' : 'steps'}:{' '}
+                {workflow.stages.map((stage) => stage.label).join(', then ')}
+              </span>
+            </button>
+          ))}
+        </div>
+      </Stack>
+    </Card>
+  );
+}
+
+/** The form of one workflow, with the assistant's "fill it in from a sentence". */
+export function RequestForm({
+  scope,
+  workflow,
+  assistant,
+  onSent,
+  onCancel,
+}: {
+  scope: HiringScope;
+  workflow: Workflow;
+  assistant: WorkflowCatalog['assistant'];
+  onSent: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const [sentence, setSentence] = useState('');
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [reason, setReason] = useState('');
+  const [drafted, setDrafted] = useState<'ai' | 'rules' | null>(null);
+  const [busy, setBusy] = useState<'draft' | 'send' | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const fill = (): void => {
+    setBusy('draft');
+    setProblem(null);
+    draftRequest(scope, workflow.key, sentence.trim())
+      .then((draft) => {
+        setForm((current) => ({ ...current, ...formFromValues(workflow, draft.values) }));
+        setReason(draft.reason);
+        setDrafted(draft.source);
+      })
+      .catch((caught: unknown) => setProblem(errorText(caught)))
+      .finally(() => setBusy(null));
+  };
+
+  const submit = (event: FormEvent): void => {
+    event.preventDefault();
+    const { values, problem: found } = valuesFromForm(workflow, form);
+    if (found !== null) return setProblem(found);
+    if (reason.trim().length < 5) return setProblem(`${workflow.reasonLabel}: write a few words.`);
+    setProblem(null);
+    setBusy('send');
+    raiseRequest(scope, {
+      type: workflow.key,
+      reason: reason.trim(),
+      values,
+      draftedWithAssistant: drafted !== null,
+    })
+      .then(onSent)
+      .catch((caught: unknown) => setProblem(errorText(caught)))
+      .finally(() => setBusy(null));
+  };
+
+  const set = (key: string, value: string): void =>
+    setForm((current) => ({ ...current, [key]: value }));
+
+  return (
+    <Card padding={5}>
+      <form onSubmit={submit}>
+        <Stack gap={4} stretch>
+          <Stack gap={1}>
+            <h2 className="nexora-section-title">{workflow.name}</h2>
+            <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+              {workflow.description}
+            </p>
+          </Stack>
+
+          <Route
+            stops={[
+              { label: 'You raise it', state: 'current' },
+              ...workflow.stages.map((stage) => ({
+                label: stage.label,
+                state: 'waiting' as const,
+                note: '',
+              })),
+            ]}
+          />
+
+          <div className="nexora-inset">
+            <Stack gap={2} stretch>
+              <Field
+                label="Describe it in a sentence"
+                hint="Optional. The assistant fills in the form below for you to check."
+              >
+                <Textarea
+                  rows={2}
+                  value={sentence}
+                  onChange={(event) => setSentence(event.target.value)}
+                  maxLength={1000}
+                />
+              </Field>
+              <div className="nexora-actions">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  loading={busy === 'draft'}
+                  disabled={busy !== null || sentence.trim().length < 5}
+                  onClick={fill}
+                >
+                  Fill in with the assistant
+                </Button>
+                {drafted === null ? null : (
+                  <span style={{ fontSize: typography.sizes.sm }}>
+                    {assistantSourceLabel(drafted, assistant)}
+                  </span>
+                )}
+              </div>
+            </Stack>
+          </div>
+
+          <div className="nexora-fields">
+            {workflow.fields
+              .filter((field) => field.type !== 'longtext')
+              .map((field) => (
+                <Field key={field.key} label={field.label} required={field.required}>
+                  {field.type === 'choice' ? (
+                    <Select
+                      value={form[field.key] ?? ''}
+                      onChange={(event) => set(field.key, event.target.value)}
+                    >
+                      <option value="">Choose</option>
+                      {(field.options ?? []).map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input
+                      type={
+                        field.type === 'date'
+                          ? 'date'
+                          : field.type === 'money' || field.type === 'number'
+                            ? 'number'
+                            : 'text'
+                      }
+                      min={field.type === 'money' || field.type === 'number' ? '0' : undefined}
+                      value={form[field.key] ?? ''}
+                      onChange={(event) => set(field.key, event.target.value)}
+                      placeholder={field.type === 'money' ? 'Amount in rupees' : field.placeholder}
+                      maxLength={160}
+                    />
+                  )}
+                </Field>
+              ))}
+          </div>
+          {workflow.fields
+            .filter((field) => field.type === 'longtext')
+            .map((field) => (
+              <Field key={field.key} label={field.label} required={field.required}>
+                <Textarea
+                  rows={3}
+                  value={form[field.key] ?? ''}
+                  onChange={(event) => set(field.key, event.target.value)}
+                  maxLength={4000}
+                />
+              </Field>
+            ))}
+          <Field label={workflow.reasonLabel} required>
+            <Textarea
+              rows={2}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              maxLength={2000}
+            />
+          </Field>
+
+          {problem !== null ? (
+            <p
+              role="alert"
+              style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-danger)' }}
+            >
+              {problem}
+            </p>
+          ) : null}
+          <div className="nexora-actions">
+            <Button type="submit" loading={busy === 'send'} disabled={busy !== null}>
+              Send
+            </Button>
+            <Button type="button" variant="ghost" onClick={onCancel} disabled={busy !== null}>
+              Cancel
+            </Button>
+          </div>
+        </Stack>
+      </form>
+    </Card>
+  );
+}
+
+const RECOMMENDATION: Record<RequestBrief['recommendation'], { label: string; tone: string }> = {
+  approve: { label: 'Nothing stands in the way', tone: 'ok' },
+  look_closer: { label: 'Look closer before deciding', tone: 'warn' },
+  reject: { label: 'The assistant would say no', tone: 'warn' },
+};
+
 /** One request: what is asked, where it stands, and what the caller may do. */
 export function RequestCard({
   scope,
   request,
+  assistant,
   onChanged,
 }: {
   scope: HiringScope;
   request: OfficeRequest;
+  assistant: WorkflowCatalog['assistant'];
   onChanged: () => void;
 }): JSX.Element {
-  const [open, setOpen] = useState(request.actions.canDecide);
+  const [open, setOpen] = useState(false);
   const [comment, setComment] = useState('');
+  const [brief, setBrief] = useState<RequestBrief | null>(null);
+  const [written, setWritten] = useState<'ai' | 'rules' | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const run = (label: string, work: () => Promise<unknown>): void => {
+  const run = (label: string, work: () => Promise<unknown>, after?: () => void): void => {
     setBusy(label);
     setError(null);
     work()
-      .then(() => {
-        setComment('');
-        onChanged();
-      })
+      .then(() => after?.())
       .catch((caught: unknown) => setError(errorText(caught)))
       .finally(() => setBusy(null));
   };
+  const finish = (label: string, decision: 'approve' | 'reject'): void =>
+    run(
+      label,
+      () => decideRequest(scope, request.id, decision, comment),
+      () => {
+        setComment('');
+        onChanged();
+      },
+    );
 
-  const rejection = request.history.find((entry) => entry.action === 'rejected');
+  const { pending, actions } = request;
+  const isWork = pending?.kind === 'do';
+  const refusal = request.history.find((entry) => entry.action === 'rejected');
+  const noteMissing = pending?.noteRequired === true && comment.trim().length < 3;
   return (
-    <Card padding={5} className={request.actions.canDecide ? 'nexora-turn' : undefined}>
+    <Card padding={5} className={actions.canDecide ? 'nexora-turn' : undefined}>
       <Stack gap={4} stretch>
         <div className="nexora-page-head" style={{ alignItems: 'flex-start' }}>
           <Stack gap={1}>
             <h3 style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.lg }}>
-              {TYPE_LABEL[request.type]}: {requestSummary(request.details)}
+              {requestTitle(request)}
             </h3>
             <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+              {request.department}.{' '}
               {request.mine
-                ? 'Raised by you.'
-                : `Raised by ${request.requestedByName ?? 'a colleague'}.`}
+                ? 'Started by you.'
+                : `Started by ${request.requestedByName ?? 'a colleague'}.`}
             </div>
           </Stack>
           <div className="nexora-actions" style={{ gap: 8 }}>
-            {request.actions.canDecide ? <TurnTag>Your decision</TurnTag> : null}
+            {actions.canDecide ? <TurnTag>Your turn</TurnTag> : null}
             <Badge tone={STATUS_TONE[request.status]}>{requestStatusLabel(request)}</Badge>
           </div>
         </div>
 
         <Route stops={requestRoute(request)} />
 
-        <p style={{ color: 'var(--nexora-text)', overflowWrap: 'anywhere' }}>
-          {request.details.reason}
-        </p>
-        {rejection?.comment === undefined ? null : (
+        {request.fields.length > 0 ? (
+          <div className="nexora-facts">
+            {request.fields
+              .filter((field) => !field.long)
+              .map((field) => (
+                <Fact key={field.label} label={field.label}>
+                  {field.value}
+                </Fact>
+              ))}
+          </div>
+        ) : null}
+        {request.fields
+          .filter((field) => field.long)
+          .map((field) => (
+            <Fact key={field.label} label={field.label}>
+              {field.value}
+            </Fact>
+          ))}
+        <Fact label={request.reasonLabel}>{request.reason}</Fact>
+
+        {refusal?.comment === undefined ? null : (
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-danger)' }}>
-            Rejected by {rejection.actorName ?? 'the approver'}: “{rejection.comment}”
+            Refused by {refusal.actorName ?? 'the approver'}: “{refusal.comment}”
           </p>
         )}
 
-        {request.actions.canDecide ? (
+        {actions.canDecide && pending !== undefined ? (
           <Stack gap={3} stretch>
+            {isWork ? null : (
+              <div className="nexora-actions">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={busy === 'brief'}
+                  disabled={busy !== null}
+                  onClick={() =>
+                    run('brief', async () => setBrief(await briefRequest(scope, request.id)))
+                  }
+                >
+                  Prepare me with the assistant
+                </Button>
+              </div>
+            )}
+            {brief === null ? null : (
+              <div className="nexora-brief" data-tone={RECOMMENDATION[brief.recommendation].tone}>
+                <SubHeading>{RECOMMENDATION[brief.recommendation].label}</SubHeading>
+                <p>{brief.summary}</p>
+                <ul>
+                  {brief.facts.map((fact) => (
+                    <li key={fact.label} data-tone={fact.tone}>
+                      <span>{fact.label}</span>
+                      <strong>{fact.value}</strong>
+                    </li>
+                  ))}
+                </ul>
+                <p style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+                  {brief.source === 'ai'
+                    ? `Written by the assistant${assistant.model === undefined ? '' : ` (${assistant.model})`} from the checked facts above. The decision is yours.`
+                    : 'Built from the checked facts by plain rules: no AI model is connected. The decision is yours.'}
+                </p>
+              </div>
+            )}
+
             <Field
-              label="Comment"
-              hint="Optional when approving. Required when rejecting — say why."
+              label={isWork ? (pending.noteLabel ?? 'Note') : 'Comment'}
+              required={pending.noteRequired}
+              hint={
+                isWork
+                  ? pending.noteRequired
+                    ? 'This is kept on the record.'
+                    : 'Optional.'
+                  : 'Optional when you say yes. Needed when you say no — say why.'
+              }
             >
               <Textarea
-                rows={2}
+                rows={isWork ? 4 : 2}
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
-                maxLength={1000}
+                maxLength={4000}
               />
             </Field>
+            {isWork && pending.noteRequired ? (
+              <div className="nexora-actions">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  loading={busy === 'write'}
+                  disabled={busy !== null}
+                  onClick={() =>
+                    run('write', async () => {
+                      const draft = await writeForRequest(scope, request.id);
+                      setComment(draft.text);
+                      setWritten(draft.source);
+                    })
+                  }
+                >
+                  Draft it with the assistant
+                </Button>
+                {written === null ? null : (
+                  <span style={{ fontSize: typography.sizes.sm }}>
+                    {written === 'ai'
+                      ? 'A draft from the assistant. Edit it before you finish.'
+                      : 'A skeleton by plain rules: no AI model is connected. Fill it in.'}
+                  </span>
+                )}
+              </div>
+            ) : null}
             <div className="nexora-actions">
               <Button
-                loading={busy === 'approve'}
-                disabled={busy !== null}
-                onClick={() =>
-                  run('approve', () => decideRequest(scope, request.id, 'approve', comment))
-                }
+                loading={busy === 'yes'}
+                disabled={busy !== null || noteMissing}
+                onClick={() => finish('yes', 'approve')}
               >
-                Approve
+                {isWork ? 'Mark as done' : 'Approve'}
               </Button>
               <Button
                 variant="secondary"
-                loading={busy === 'reject'}
+                loading={busy === 'no'}
                 disabled={busy !== null || comment.trim().length < 3}
-                onClick={() =>
-                  run('reject', () => decideRequest(scope, request.id, 'reject', comment))
-                }
+                onClick={() => finish('no', 'reject')}
               >
-                Reject
+                {isWork ? 'Cannot be done' : 'Refuse'}
               </Button>
             </div>
           </Stack>
+        ) : actions.decideBlockedReason !== undefined ? (
+          <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+            {actions.decideBlockedReason}
+          </p>
         ) : null}
 
         <div className="nexora-actions">
           <Button size="sm" variant="ghost" onClick={() => setOpen((value) => !value)}>
             {open ? 'Hide history' : 'Show history'}
           </Button>
-          {request.actions.canWithdraw ? (
+          {actions.canWithdraw ? (
             <Button
               size="sm"
               variant="ghost"
@@ -322,7 +725,7 @@ export function RequestCard({
               disabled={busy !== null}
               onClick={() => {
                 if (window.confirm('Withdraw this request?')) {
-                  run('withdraw', () => withdrawRequest(scope, request.id));
+                  run('withdraw', () => withdrawRequest(scope, request.id), onChanged);
                 }
               }}
             >
@@ -347,7 +750,9 @@ export function RequestCard({
                 <span style={{ color: 'var(--nexora-textMuted)', flex: '0 0 130px' }}>
                   {formatWhen(entry.at)}
                 </span>
-                <span style={{ flex: '1 1 220px', minWidth: 0 }}>{historyLine(entry)}</span>
+                <span style={{ flex: '1 1 220px', minWidth: 0, overflowWrap: 'anywhere' }}>
+                  {historyLine(entry)}
+                </span>
               </div>
             ))}
           </Stack>
@@ -366,207 +771,20 @@ export function RequestCard({
 /** What a history entry says, in plain words. */
 export function historyLine(entry: OfficeRequest['history'][number]): string {
   const who = entry.actorName ?? 'Someone';
-  const stage = entry.stage === undefined ? '' : STAGE_LABEL[entry.stage];
+  const stage = entry.stageLabel ?? entry.stage ?? '';
   const note = entry.comment === undefined ? '' : ` — “${entry.comment}”`;
   switch (entry.action) {
     case 'submitted':
-      return `${who} raised the request`;
+      return `${who} started it`;
     case 'not_required':
-      return `${stage} decision not needed: ${who} holds that role`;
+      return `“${stage}” not needed: ${who} holds that seat`;
     case 'approved':
-      return `${who} approved it (${stage})${note}`;
+      return `${stage}: done by ${who}${note}`;
     case 'rejected':
-      return `${who} rejected it (${stage})${note}`;
+      return `${stage}: refused by ${who}${note}`;
     case 'withdrawn':
-      return `${who} withdrew the request`;
+      return `${who} withdrew it`;
+    case 'assisted':
+      return `The assistant helped ${who}: ${entry.comment ?? 'drafted text'}`;
   }
-}
-
-/** Client-side checks that mirror the server's (the server remains authoritative). */
-export function validateRequest(input: {
-  type: RequestType;
-  startDate: string;
-  endDate: string;
-  item: string;
-  amount: string;
-  what: string;
-  reason: string;
-}): string | null {
-  if (input.type === 'leave') {
-    if (input.startDate === '' || input.endDate === '') return 'Choose the first and last day.';
-    if (input.endDate < input.startDate) return 'The last day cannot be before the first day.';
-  }
-  if (input.type === 'purchase') {
-    if (input.item.trim().length < 2) return 'Say what should be bought.';
-    const amount = Number(input.amount);
-    if (input.amount.trim() === '' || !Number.isFinite(amount) || amount <= 0) {
-      return 'Enter what it costs.';
-    }
-  }
-  if (input.type === 'access' && input.what.trim().length < 2) {
-    return 'Say what you need access to.';
-  }
-  if (input.reason.trim().length < 5) return 'Say why you are asking (a few words).';
-  return null;
-}
-
-function RequestForm({
-  onSubmit,
-  onCancel,
-}: {
-  onSubmit: (details: RequestDetails) => Promise<void>;
-  onCancel: () => void;
-}): JSX.Element {
-  const [type, setType] = useState<RequestType>('leave');
-  const [kind, setKind] = useState<LeaveKind>('vacation');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [item, setItem] = useState('');
-  const [amount, setAmount] = useState('');
-  const [what, setWhat] = useState('');
-  const [reason, setReason] = useState('');
-  const [problem, setProblem] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const submit = async (event: FormEvent): Promise<void> => {
-    event.preventDefault();
-    const found = validateRequest({ type, startDate, endDate, item, amount, what, reason });
-    setProblem(found);
-    if (found !== null) return;
-    const details: RequestDetails =
-      type === 'leave'
-        ? { type, kind, startDate, endDate, reason: reason.trim() }
-        : type === 'purchase'
-          ? {
-              type,
-              item: item.trim(),
-              amountMinorUnits: Math.round(Number(amount) * 100),
-              currency: DEFAULT_CURRENCY,
-              reason: reason.trim(),
-            }
-          : { type, what: what.trim(), reason: reason.trim() };
-    setSubmitting(true);
-    try {
-      await onSubmit(details);
-    } catch (caught) {
-      setProblem(errorText(caught));
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Card padding={5}>
-      <form onSubmit={(event) => void submit(event)}>
-        <Stack gap={4} stretch>
-          <h2 className="nexora-section-title">New request</h2>
-          <div className="nexora-choice" role="radiogroup" aria-label="Kind of request">
-            {(Object.keys(TYPE_LABEL) as RequestType[]).map((option) => (
-              <button
-                key={option}
-                type="button"
-                role="radio"
-                aria-checked={type === option}
-                className="nexora-choice-option"
-                onClick={() => setType(option)}
-              >
-                <span style={{ fontWeight: typography.weights.semibold }}>
-                  {TYPE_LABEL[option]}
-                </span>
-                <span style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
-                  Your manager, then {STAGE_LABEL[TYPE_CHAIN[option][1] ?? 'manager']}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {type === 'leave' ? (
-            <div className="nexora-fields">
-              <Field label="Kind of leave" required>
-                <Select value={kind} onChange={(event) => setKind(event.target.value as LeaveKind)}>
-                  <option value="vacation">Vacation</option>
-                  <option value="sick">Sick leave</option>
-                  <option value="personal">Personal leave</option>
-                </Select>
-              </Field>
-              <Field label="First day" required>
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                />
-              </Field>
-              <Field label="Last day" required>
-                <Input
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                />
-              </Field>
-            </div>
-          ) : null}
-
-          {type === 'purchase' ? (
-            <div className="nexora-fields">
-              <Field label="What should be bought" required>
-                <Input
-                  value={item}
-                  onChange={(event) => setItem(event.target.value)}
-                  placeholder="Two Android test phones"
-                  maxLength={160}
-                />
-              </Field>
-              <Field label={`Cost (${DEFAULT_CURRENCY})`} required>
-                <Input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  placeholder="45000"
-                />
-              </Field>
-            </div>
-          ) : null}
-
-          {type === 'access' ? (
-            <Field label="What do you need" required>
-              <Input
-                value={what}
-                onChange={(event) => setWhat(event.target.value)}
-                placeholder="Read access to the production logs"
-                maxLength={160}
-              />
-            </Field>
-          ) : null}
-
-          <Field label="Why" required>
-            <Textarea
-              rows={2}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              maxLength={1000}
-            />
-          </Field>
-
-          {problem !== null ? (
-            <p
-              role="alert"
-              style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-danger)' }}
-            >
-              {problem}
-            </p>
-          ) : null}
-          <div className="nexora-actions">
-            <Button type="submit" loading={submitting} disabled={submitting}>
-              Send request
-            </Button>
-            <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
-              Cancel
-            </Button>
-          </div>
-        </Stack>
-      </form>
-    </Card>
-  );
 }

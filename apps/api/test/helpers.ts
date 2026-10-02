@@ -181,6 +181,8 @@ export async function buildTestApp(
     policyEngine?: Parameters<typeof buildApp>[0]['policyEngine'];
     /** Extra environment variables (e.g. `NEXORA_DEMO_MODE: 'true'`). */
     env?: Record<string, string>;
+    /** A fake chat model for the assistant inside the office workflows. */
+    officeChat?: Parameters<typeof buildApp>[0]['officeChat'];
   } = {},
 ): Promise<{ app: FastifyInstance; repos: RepositorySet; store: InMemoryConversationStore }> {
   const config = loadConfig({
@@ -243,6 +245,7 @@ export async function buildTestApp(
     ...(options.agentClock === undefined ? {} : { agentClock: options.agentClock }),
     ...(options.approvalClock === undefined ? {} : { approvalClock: options.approvalClock }),
     ...(options.policyEngine === undefined ? {} : { policyEngine: options.policyEngine }),
+    ...(options.officeChat === undefined ? {} : { officeChat: options.officeChat }),
     webhookHttp: options.webhookHttp,
     connectors: options.connectors,
     // Journal governed agent executions in-memory so the agent tests can

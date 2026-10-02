@@ -163,6 +163,55 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
   box-shadow: inset 0 0 0 1px var(--nexora-primary);
 }
 
+/* Tabs: a row of names that scrolls sideways when it does not fit. */
+.nexora-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.nexora-tab {
+  flex: 0 0 auto;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--nexora-border);
+  background: transparent;
+  color: var(--nexora-textSecondary);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.nexora-tab:hover { border-color: var(--nexora-borderStrong); color: var(--nexora-text); }
+.nexora-tab[aria-selected='true'] { background: var(--nexora-text); border-color: var(--nexora-text); color: var(--nexora-bg); }
+
+/* The assistant: one line saying what it is, and the brief it prepares. */
+.nexora-assistant-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.8125rem;
+  color: var(--nexora-textSecondary);
+}
+.nexora-assistant-note > svg { margin-top: 3px; color: var(--nexora-ai); }
+.nexora-brief {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--nexora-radius-md, 10px);
+  border: 1px solid color-mix(in srgb, var(--nexora-ai) 30%, var(--nexora-border));
+  background: color-mix(in srgb, var(--nexora-ai) 6%, var(--nexora-surface));
+}
+.nexora-brief[data-tone='warn'] { border-color: var(--nexora-warning); }
+.nexora-brief ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.nexora-brief li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 16px;
+  padding: 6px 0;
+  border-top: 1px solid var(--nexora-border);
+  font-size: 0.8125rem;
+}
+.nexora-brief li > span { color: var(--nexora-textSecondary); }
+.nexora-brief li[data-tone='warn'] > strong { color: var(--nexora-warning); }
+
 /* A board: one column per state, side by side when there is room. */
 .nexora-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 20px 16px; align-items: start; }
 .nexora-board-column { display: flex; flex-direction: column; gap: 10px; min-width: 0; }

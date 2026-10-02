@@ -25,7 +25,7 @@ const SCREEN: Record<DeskScreen, { label: string; icon: IconName }> = {
   hiring: { label: 'Hiring', icon: 'hiring' },
   recruiting: { label: 'Recruiting', icon: 'recruiting' },
   onboarding: { label: 'Onboarding', icon: 'onboarding' },
-  requests: { label: 'Requests', icon: 'requests' },
+  requests: { label: 'Workflows', icon: 'requests' },
   tasks: { label: 'Tasks', icon: 'tasks' },
 };
 

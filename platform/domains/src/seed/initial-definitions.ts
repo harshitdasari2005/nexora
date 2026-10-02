@@ -192,6 +192,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'requests.read',
       'requests.approve_manager',
       'tasks.manage',
+      'requests.approve_executive',
     ],
   },
   {
@@ -300,6 +301,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'requests.approve_it',
       'tasks.manage',
       'tasks.work',
+      'requests.approve_engineering',
     ],
   },
   {
@@ -334,6 +336,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'requests.approve_it',
       'tasks.manage',
       'tasks.work',
+      'requests.approve_engineering',
     ],
   },
   {
@@ -397,6 +400,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'insights.read',
       'agent.use',
       'activity.read',
+      'requests.create',
+      'requests.approve_sales',
     ],
   },
   {
@@ -413,6 +418,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'insights.read',
       'agent.use',
       'activity.read',
+      'requests.create',
+      'requests.approve_marketing',
     ],
   },
   {
@@ -492,6 +499,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'requests.approve_manager',
       'tasks.manage',
       'tasks.work',
+      'requests.approve_engineering',
     ],
   },
   {
@@ -522,6 +530,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'audit.read',
       'policy.read',
       'policy.manage',
+      'requests.create',
+      'requests.approve_legal',
     ],
   },
   {
@@ -562,6 +572,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'activity.read',
       'integrations.manage',
       'marketplace.manage',
+      'requests.create',
+      'requests.approve_legal',
     ],
   },
   {
@@ -577,6 +589,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'documents.read',
       'agent.use',
       'activity.read',
+      'requests.create',
+      'requests.approve_support',
     ],
   },
   {
@@ -584,7 +598,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'Support Manager',
     description: 'Leads customer support',
     domainId: 'customersuccess',
-    capabilityIds: [],
+    capabilityIds: ['requests.create', 'requests.approve_support'],
   },
   {
     id: 'procurement.manager',
@@ -757,6 +771,41 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     id: 'requests.approve_it',
     name: 'Decide Office Requests (IT)',
     description: 'Take the IT decision on an access or equipment request, after the manager',
+  },
+  {
+    id: 'requests.approve_executive',
+    name: 'Decide Office Requests (Executive)',
+    description:
+      'Take the chief executive’s stage of an office workflow (project proposals, contracts, budgets, policies, incident reviews)',
+  },
+  {
+    id: 'requests.approve_engineering',
+    name: 'Take Office Requests (Engineering)',
+    description:
+      'Take engineering’s stage of an office workflow (triage and fix bugs, approve releases, restore service)',
+  },
+  {
+    id: 'requests.approve_marketing',
+    name: 'Take Office Requests (Marketing)',
+    description:
+      'Take marketing’s stage of an office workflow (approve campaigns and content, launch, record results)',
+  },
+  {
+    id: 'requests.approve_sales',
+    name: 'Take Office Requests (Sales)',
+    description: 'Take the sales head’s stage of an office workflow (discounts, contracts)',
+  },
+  {
+    id: 'requests.approve_support',
+    name: 'Take Office Requests (Support)',
+    description:
+      'Take support’s stage of an office workflow (resolve customer problems, approve refunds, reply to customers)',
+  },
+  {
+    id: 'requests.approve_legal',
+    name: 'Take Office Requests (Legal)',
+    description:
+      'Take Legal’s stage of an office workflow (review contracts, campaigns and policies)',
   },
   {
     id: 'tasks.manage',

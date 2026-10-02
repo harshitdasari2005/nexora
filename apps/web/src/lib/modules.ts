@@ -30,7 +30,7 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   { navLabel: 'My desk' },
   // Anyone who can raise an office request, or decide one at some stage.
   {
-    navLabel: 'Requests',
+    navLabel: 'Office workflows',
     anyOfPermissions: [
       'requests.create',
       'requests.read',

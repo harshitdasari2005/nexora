@@ -1,25 +1,26 @@
 /**
  * @nexora/domain-hr — OfficeRequest aggregate root.
  *
- * The everyday requests of an office, each travelling its own chain of people:
+ * One piece of office work travelling its chain. What it asks for and which
+ * stages it passes through come from the workflow catalog
+ * (`workflow-catalog.ts`): leave goes to the manager and then HR, a marketing
+ * campaign to the marketing head, Finance and Legal before it is launched and
+ * measured, a customer problem to support and engineering, and so on.
  *
- *   leave     the employee asks → their manager → HR
- *   purchase  the employee asks → their manager → Finance
- *   access    the employee asks → their manager → IT
+ * The rules are the same for every workflow and are enforced here, whoever
+ * calls:
  *
- * One aggregate carries all of them: the request type decides which stages it
- * passes through and which details it needs. The rules are the same for every
- * type and are enforced here, whoever calls:
+ * - stages are taken in order, one at a time;
+ * - nobody takes a DECISION on their own request (doing your own part of the
+ *   work is fine);
+ * - saying no needs a reason and ends the request;
+ * - a stage whose result must be written down cannot be finished without it;
+ * - only the requester can withdraw, and only while the request is pending.
  *
- * - stages are decided in order, one at a time;
- * - nobody decides their own request;
- * - a rejection needs a reason and ends the request;
- * - only the requester can withdraw it, and only while it is still pending.
- *
- * A stage the requester would have to decide themselves (HR asking for leave
+ * A decision the requester would have to take themselves (HR asking for leave
  * has no HR above them; the CEO has no manager) is recorded as not required
- * when the request is raised and passed over when the chain reaches it, so a
- * request never waits on its own requester.
+ * when the request is raised and passed over when the chain reaches it — but
+ * at least one decision always stays with someone else.
  */
 
 import { nowIso } from '@nexora/shared/time';
@@ -31,39 +32,41 @@ import {
   OfficeRequestStateError,
 } from '../errors/index.js';
 import { OfficeRequestId } from '../value-objects/recruiting-ids.js';
-
-/** Who decides a stage. */
-export const OFFICE_REQUEST_STAGES = ['manager', 'hr', 'finance', 'it'] as const;
-export type OfficeRequestStage = (typeof OFFICE_REQUEST_STAGES)[number];
-
-/** The kinds of request, with the chain each one travels. */
-export const OFFICE_REQUEST_TYPES = {
-  leave: { stages: ['manager', 'hr'] },
-  purchase: { stages: ['manager', 'finance'] },
-  access: { stages: ['manager', 'it'] },
-} as const satisfies Record<string, { stages: readonly OfficeRequestStage[] }>;
-export type OfficeRequestType = keyof typeof OFFICE_REQUEST_TYPES;
-export const OFFICE_REQUEST_TYPE_KEYS = Object.keys(OFFICE_REQUEST_TYPES) as OfficeRequestType[];
+import {
+  findWorkflow,
+  findWorkflowStage,
+  type WorkflowDefinition,
+  type WorkflowStageDefinition,
+} from './workflow-catalog.js';
 
 export const OFFICE_REQUEST_STATUSES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;
 export type OfficeRequestStatus = (typeof OFFICE_REQUEST_STATUSES)[number];
 
-export const LEAVE_KINDS = ['vacation', 'sick', 'personal'] as const;
-export type LeaveKind = (typeof LEAVE_KINDS)[number];
+/** The currency money fields are kept in (one per deployment for now). */
+export const OFFICE_REQUEST_CURRENCY = 'INR';
 
-/** What the requester fills in, by type. */
-export type OfficeRequestDetails =
-  | { type: 'leave'; kind: LeaveKind; startDate: string; endDate: string; reason: string }
-  | { type: 'purchase'; item: string; amountMinorUnits: number; currency: string; reason: string }
-  | { type: 'access'; what: string; reason: string };
+/**
+ * What the requester fills in: the workflow, why they ask, and the workflow's
+ * own fields (text, dates as `YYYY-MM-DD`, money in minor units, numbers).
+ */
+export type OfficeRequestDetails = {
+  /** The workflow key (see the catalog). */
+  type: string;
+  reason: string;
+} & Record<string, string | number>;
 
 /** One step in a request's life. */
 export interface OfficeRequestHistoryEntry {
   /** ISO-8601 UTC time. */
   at: string;
   actorId: string;
-  action: 'submitted' | 'not_required' | 'approved' | 'rejected' | 'withdrawn';
-  stage?: OfficeRequestStage;
+  /**
+   * `assisted`: the assistant helped the actor (drafted the request, prepared a
+   * brief, drafted a piece of writing). It records help, never a decision.
+   */
+  action: 'submitted' | 'not_required' | 'approved' | 'rejected' | 'withdrawn' | 'assisted';
+  /** The stage key the step belongs to. */
+  stage?: string;
   comment?: string;
 }
 
@@ -74,8 +77,13 @@ export interface SubmitOfficeRequestInput {
   workspaceId: WorkspaceId;
   requestedBy: string;
   details: OfficeRequestDetails;
-  /** Stages the requester would have to decide themselves: recorded as not required. */
-  notRequired?: readonly OfficeRequestStage[];
+  /**
+   * Keys of the stages whose seat the requester holds themselves (decisions
+   * and work alike). Their own decisions are passed over; their own work stays.
+   */
+  heldByRequester?: readonly string[];
+  /** The assistant drafted the request from the requester's own words. */
+  draftedWithAssistant?: boolean;
 }
 
 /** A persistence snapshot of the {@link OfficeRequest}. */
@@ -85,9 +93,9 @@ export interface OfficeRequestSnapshot {
   workspaceId: WorkspaceId;
   requestedBy: string;
   details: OfficeRequestDetails;
-  /** The stages this request passes through, in order (fixed when raised). */
-  stages: readonly OfficeRequestStage[];
-  /** How many stages are behind it (decided or not required). */
+  /** The keys of the stages this request passes through, in order (fixed when raised). */
+  stages: readonly string[];
+  /** How many stages are behind it (taken or not required). */
   stageIndex: number;
   status: OfficeRequestStatus;
   history: readonly OfficeRequestHistoryEntry[];
@@ -97,81 +105,89 @@ export interface OfficeRequestSnapshot {
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_MONEY = 100_000_000_000;
 
-function text(path: string, value: unknown, min: number, max: number, label: string): string {
-  const trimmed = typeof value === 'string' ? value.trim() : '';
-  if (trimmed.length < min || trimmed.length > max) {
-    throw new InvalidEmployeeValueError('Invalid request', [
-      { path, message: `${label} (${min}–${max} characters)` },
-    ]);
-  }
-  return trimmed;
+function invalid(path: string, message: string): never {
+  throw new InvalidEmployeeValueError('Invalid request', [{ path, message }]);
+}
+
+function requireWorkflow(type: unknown): WorkflowDefinition {
+  const definition = typeof type === 'string' ? findWorkflow(type) : undefined;
+  if (definition === undefined) invalid('type', 'Choose one of the office workflows');
+  return definition;
 }
 
 /** Validates and normalizes the requester's details (throws on anything invalid). */
 export function normalizeOfficeRequestDetails(details: OfficeRequestDetails): OfficeRequestDetails {
-  const reason = text('reason', details.reason, 5, 1000, 'Say why you are asking');
-  switch (details.type) {
-    case 'leave': {
-      if (!LEAVE_KINDS.includes(details.kind)) {
-        throw new InvalidEmployeeValueError('Invalid request', [
-          { path: 'kind', message: `Must be one of: ${LEAVE_KINDS.join(', ')}` },
-        ]);
-      }
-      const valid = (value: string): boolean =>
-        DATE.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
-      if (!valid(details.startDate) || !valid(details.endDate)) {
-        throw new InvalidEmployeeValueError('Invalid request', [
-          { path: 'startDate', message: 'Give the first and last day as dates' },
-        ]);
-      }
-      if (details.endDate < details.startDate) {
-        throw new InvalidEmployeeValueError('Invalid request', [
-          { path: 'endDate', message: 'The last day cannot be before the first day' },
-        ]);
-      }
-      return {
-        type: 'leave',
-        kind: details.kind,
-        startDate: details.startDate,
-        endDate: details.endDate,
-        reason,
-      };
-    }
-    case 'purchase': {
-      if (
-        !Number.isInteger(details.amountMinorUnits) ||
-        details.amountMinorUnits <= 0 ||
-        details.amountMinorUnits > 100_000_000_000
-      ) {
-        throw new InvalidEmployeeValueError('Invalid request', [
-          { path: 'amountMinorUnits', message: 'Enter what it costs' },
-        ]);
-      }
-      if (typeof details.currency !== 'string' || !/^[A-Z]{3}$/.test(details.currency)) {
-        throw new InvalidEmployeeValueError('Invalid request', [
-          { path: 'currency', message: 'Must be a three-letter currency code' },
-        ]);
-      }
-      return {
-        type: 'purchase',
-        item: text('item', details.item, 2, 160, 'Say what should be bought'),
-        amountMinorUnits: details.amountMinorUnits,
-        currency: details.currency,
-        reason,
-      };
-    }
-    case 'access':
-      return {
-        type: 'access',
-        what: text('what', details.what, 2, 160, 'Say what you need access to'),
-        reason,
-      };
-    default:
-      throw new InvalidEmployeeValueError('Invalid request', [
-        { path: 'type', message: `Must be one of: ${OFFICE_REQUEST_TYPE_KEYS.join(', ')}` },
-      ]);
+  const definition = requireWorkflow(details.type);
+  const reason = typeof details.reason === 'string' ? details.reason.trim() : '';
+  if (reason.length < 5 || reason.length > 2000) {
+    invalid('reason', `${definition.reasonLabel}: write a few words (5–2000 characters)`);
   }
+  const normalized: OfficeRequestDetails = { type: definition.key, reason };
+  for (const field of definition.fields) {
+    const raw = details[field.key];
+    const missing =
+      raw === undefined || raw === '' || (typeof raw === 'string' && raw.trim() === '');
+    if (missing) {
+      if (field.required) invalid(field.key, `${field.label} is required`);
+      continue;
+    }
+    switch (field.type) {
+      case 'text':
+      case 'longtext': {
+        const value = typeof raw === 'string' ? raw.trim() : '';
+        const max = field.type === 'text' ? 160 : 4000;
+        if (value.length < 2 || value.length > max) {
+          invalid(field.key, `${field.label}: 2–${max} characters`);
+        }
+        normalized[field.key] = value;
+        break;
+      }
+      case 'date': {
+        const value = typeof raw === 'string' ? raw : '';
+        if (!DATE.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) {
+          invalid(field.key, `${field.label} must be a date`);
+        }
+        normalized[field.key] = value;
+        break;
+      }
+      case 'money': {
+        if (typeof raw !== 'number' || !Number.isInteger(raw) || raw <= 0 || raw > MAX_MONEY) {
+          invalid(field.key, `${field.label} must be an amount above zero`);
+        }
+        normalized[field.key] = raw;
+        normalized['currency'] = OFFICE_REQUEST_CURRENCY;
+        break;
+      }
+      case 'number': {
+        if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0 || raw > 1_000_000) {
+          invalid(field.key, `${field.label} must be a number`);
+        }
+        normalized[field.key] = raw;
+        break;
+      }
+      case 'choice': {
+        if (typeof raw !== 'string' || !(field.options ?? []).includes(raw)) {
+          invalid(field.key, `${field.label}: choose one of ${(field.options ?? []).join(', ')}`);
+        }
+        normalized[field.key] = raw;
+        break;
+      }
+    }
+  }
+  // The one rule that spans two fields: a period cannot end before it starts.
+  for (const [start, end] of [
+    ['startDate', 'endDate'],
+    ['from', 'to'],
+  ] as const) {
+    const first = normalized[start];
+    const last = normalized[end];
+    if (typeof first === 'string' && typeof last === 'string' && last < first) {
+      invalid(end, 'The last day cannot be before the first day');
+    }
+  }
+  return normalized;
 }
 
 /** The {@link OfficeRequest} aggregate root. */
@@ -185,7 +201,7 @@ export class OfficeRequest {
   /** Raises a request; it waits at the first stage that is required. */
   static submit(input: SubmitOfficeRequestInput, now = nowIso()): OfficeRequest {
     const details = normalizeOfficeRequestDetails(input.details);
-    const stages = OFFICE_REQUEST_TYPES[details.type].stages;
+    const stages = requireWorkflow(details.type).stages.map((stage) => stage.key);
     const request = new OfficeRequest({
       id: OfficeRequestId.create(),
       organizationId: input.organizationId,
@@ -195,12 +211,24 @@ export class OfficeRequest {
       stages: [...stages],
       stageIndex: 0,
       status: 'pending',
-      history: [{ at: now, actorId: input.requestedBy, action: 'submitted' }],
+      history: [
+        { at: now, actorId: input.requestedBy, action: 'submitted' },
+        ...(input.draftedWithAssistant === true
+          ? [
+              {
+                at: now,
+                actorId: input.requestedBy,
+                action: 'assisted' as const,
+                comment: 'drafted the request from their description',
+              },
+            ]
+          : []),
+      ],
       createdAt: now,
       updatedAt: now,
       version: 1,
     });
-    request.#markNotRequired(input.notRequired ?? [], now);
+    request.#markNotRequired(input.heldByRequester ?? [], now);
     request.#passNotRequired();
     return request;
   }
@@ -230,67 +258,88 @@ export class OfficeRequest {
   get requestedBy(): string {
     return this.#state.requestedBy;
   }
-  get type(): OfficeRequestType {
+  /** The workflow key. */
+  get type(): string {
     return this.#state.details.type;
+  }
+  /** The workflow this request follows (undefined only for a retired workflow). */
+  get workflow(): WorkflowDefinition | undefined {
+    return findWorkflow(this.#state.details.type);
   }
   get status(): OfficeRequestStatus {
     return this.#state.status;
   }
-  get stages(): readonly OfficeRequestStage[] {
+  get stages(): readonly string[] {
     return this.#state.stages;
   }
   get version(): number {
     return this.#state.version;
   }
 
-  /** The stage the request is waiting at, while it is pending. */
-  get pendingStage(): OfficeRequestStage | undefined {
+  /** The key of the stage the request is waiting at, while it is pending. */
+  get pendingStage(): string | undefined {
     return this.#state.status === 'pending'
       ? this.#state.stages[this.#state.stageIndex]
       : undefined;
   }
 
-  /** Why this person cannot decide the request right now (undefined when they can). */
+  /** The definition of the stage the request is waiting at. */
+  get pendingStageDefinition(): WorkflowStageDefinition | undefined {
+    const key = this.pendingStage;
+    const workflow = this.workflow;
+    return key === undefined || workflow === undefined
+      ? undefined
+      : findWorkflowStage(workflow, key);
+  }
+
+  /** Why this person cannot take the pending stage right now (undefined when they can). */
   decisionBlocker(actorId: string): string | undefined {
-    if (this.#state.status !== 'pending') return 'This request is no longer waiting for a decision';
-    if (actorId === this.#state.requestedBy) return 'You cannot decide your own request';
+    const stage = this.pendingStageDefinition;
+    if (stage === undefined) return 'This request is no longer waiting for anyone';
+    const isRequester = actorId === this.#state.requestedBy;
+    if (stage.seat === 'requester') {
+      return isRequester ? undefined : 'Only the person who raised this can take this step';
+    }
+    if (stage.kind === 'decide' && isRequester) return 'You cannot decide your own request';
     return undefined;
   }
 
-  /** Decides the stage the request is waiting at. */
+  /**
+   * Takes the stage the request is waiting at: `approve` says yes to a
+   * decision or finishes a piece of work; `reject` says no, with a reason.
+   */
   decide(
     input: {
-      stage: OfficeRequestStage;
+      stage: string;
       decision: 'approve' | 'reject';
       actorId: string;
       comment?: string;
     },
     now = nowIso(),
   ): void {
-    const pending = this.pendingStage;
+    const pending = this.pendingStageDefinition;
     if (pending === undefined) {
-      throw new OfficeRequestStateError('This request is no longer waiting for a decision', {
+      throw new OfficeRequestStateError('This request is no longer waiting for anyone', {
         status: this.#state.status,
       });
     }
-    if (input.stage !== pending) {
+    if (input.stage !== pending.key) {
       throw new OfficeRequestStateError('This request is waiting at a different stage', {
-        pendingStage: pending,
+        pendingStage: pending.key,
       });
     }
-    if (input.actorId === this.#state.requestedBy) {
-      throw new OfficeRequestNotPermittedError('You cannot decide your own request');
-    }
+    const blocker = this.decisionBlocker(input.actorId);
+    if (blocker !== undefined) throw new OfficeRequestNotPermittedError(blocker);
     const comment = typeof input.comment === 'string' ? input.comment.trim() : '';
-    if (comment.length > 1000) {
+    if (comment.length > 4000) {
       throw new InvalidEmployeeValueError('Invalid comment', [
-        { path: 'comment', message: 'At most 1000 characters' },
+        { path: 'comment', message: 'At most 4000 characters' },
       ]);
     }
     if (input.decision === 'reject') {
       if (comment.length < 3) {
-        throw new InvalidEmployeeValueError('A reason is required to reject a request', [
-          { path: 'comment', message: 'Say why the request is rejected' },
+        throw new InvalidEmployeeValueError('A reason is required to say no', [
+          { path: 'comment', message: 'Say why' },
         ]);
       }
       this.#state.status = 'rejected';
@@ -298,21 +347,34 @@ export class OfficeRequest {
         at: now,
         actorId: input.actorId,
         action: 'rejected',
-        stage: pending,
+        stage: pending.key,
         comment,
       });
       return;
+    }
+    if (pending.noteRequired === true && comment.length < 3) {
+      throw new InvalidEmployeeValueError('This step needs to be written down', [
+        { path: 'comment', message: pending.noteLabel ?? 'Write down the outcome' },
+      ]);
     }
     this.#state.stageIndex += 1;
     this.#record({
       at: now,
       actorId: input.actorId,
       action: 'approved',
-      stage: pending,
+      stage: pending.key,
       ...(comment.length === 0 ? {} : { comment }),
     });
     this.#passNotRequired();
     if (this.#state.stageIndex >= this.#state.stages.length) this.#state.status = 'approved';
+  }
+
+  /**
+   * Records that the assistant helped someone with this request: who asked,
+   * and with what. Help is on the record like everything else.
+   */
+  noteAssistance(actorId: string, what: string, now = nowIso()): void {
+    this.#record({ at: now, actorId, action: 'assisted', comment: what.slice(0, 200) });
   }
 
   /** The requester takes the request back while it is still pending. */
@@ -330,21 +392,27 @@ export class OfficeRequest {
   }
 
   /**
-   * Records the stages the requester would have to decide themselves. A
-   * request always needs at least one other person, so when that would be
-   * every stage, the last one stays required.
+   * Records the DECISIONS the requester would have to take themselves. Work
+   * stages are never passed over. And a request never completes without
+   * someone else: when nobody but the requester would touch it, the last
+   * decision stays required (and waits for someone above them).
    */
-  #markNotRequired(notRequired: readonly OfficeRequestStage[], now: string): void {
-    const stages = this.#state.stages;
-    const marked = stages.filter((stage) => notRequired.includes(stage));
-    if (marked.length === stages.length) marked.pop();
+  #markNotRequired(heldByRequester: readonly string[], now: string): void {
+    const workflow = this.workflow;
+    if (workflow === undefined) return;
+    const others = workflow.stages.filter((stage) => stage.seat !== 'requester');
+    const marked = others.filter(
+      (stage) => stage.kind === 'decide' && heldByRequester.includes(stage.key),
+    );
+    const someoneElseInvolved = others.some((stage) => !heldByRequester.includes(stage.key));
+    if (!someoneElseInvolved) marked.pop();
     this.#state.history = [
       ...this.#state.history,
       ...marked.map((stage) => ({
         at: now,
         actorId: this.#state.requestedBy,
         action: 'not_required' as const,
-        stage,
+        stage: stage.key,
       })),
     ];
   }
@@ -358,7 +426,7 @@ export class OfficeRequest {
     );
     while (
       this.#state.stageIndex < this.#state.stages.length &&
-      skipped.has(this.#state.stages[this.#state.stageIndex])
+      skipped.has(this.#state.stages[this.#state.stageIndex] as string)
     ) {
       this.#state.stageIndex += 1;
     }
