@@ -12,7 +12,7 @@ import type { EventPublisher } from '@nexora/shared/events';
 import type { MembershipRepository, OrganizationRepository } from '@nexora/domain-organizations';
 import type { RoleRepository, SessionRepository, UserRepository } from '@nexora/domain-identity';
 import type { ProjectRepository, ResourceAssignmentRepository } from '@nexora/domain-projects';
-import type { EmployeeRepository } from '@nexora/domain-hr';
+import type { EmployeeRepository, HiringRequisitionRepository } from '@nexora/domain-hr';
 import type {
   DocumentRepository,
   DocumentTemplateRepository,
@@ -98,6 +98,7 @@ import {
   CreateEmployeeHandler,
   RevokeHireHandler,
   EmployeeApplicationService,
+  HiringRequisitionApplicationService,
   FindEmployeeByNameHandler,
   ListEmployeesByIdsHandler,
   ListEmployeesHandler,
@@ -194,6 +195,7 @@ export interface RepositorySet {
   projects: ProjectRepository;
   resourceAssignments: ResourceAssignmentRepository;
   employees: EmployeeRepository;
+  hiringRequisitions: HiringRequisitionRepository;
   documents: DocumentRepository;
   documentVersions: DocumentVersionRepository;
   documentTemplates: DocumentTemplateRepository;
@@ -273,6 +275,8 @@ export interface Container {
   listProjectMembers: ListProjectMembersHandler;
   /** Employee creation handler. */
   createEmployee: CreateEmployeeHandler;
+  /** The hiring request chain (raise → executive → finance). */
+  hiringRequisitions: HiringRequisitionApplicationService;
   /** Hire compensation (the workflow rollback of the hire step). */
   revokeHire: RevokeHireHandler;
   /** Employee listing handler. */
@@ -504,6 +508,10 @@ export function buildContainer(options: BuildContainerOptions): Container {
     employeesService,
     publisher,
   });
+  const hiringRequisitionService = new HiringRequisitionApplicationService({
+    requisitions: repositories.hiringRequisitions,
+    publisher,
+  });
   const documentService = new DocumentApplicationService({
     documentsService,
     documents: repositories.documents,
@@ -564,6 +572,7 @@ export function buildContainer(options: BuildContainerOptions): Container {
     assignEmployeeToProject: new AssignEmployeeToProjectHandler(projectService),
     listProjectMembers: new ListProjectMembersHandler(projectService),
     createEmployee: new CreateEmployeeHandler(employeeService),
+    hiringRequisitions: hiringRequisitionService,
     revokeHire: new RevokeHireHandler(employeeService),
     listEmployees: new ListEmployeesHandler(employeeService),
     findEmployeeByName: new FindEmployeeByNameHandler(employeeService),

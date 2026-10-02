@@ -3,3 +3,4 @@
  */
 
 export * from './employee.js';
+export * from './hiring-requisition.js';

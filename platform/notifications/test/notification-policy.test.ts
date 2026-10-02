@@ -47,6 +47,32 @@ describe('NotificationPolicy — recipient determination', () => {
     expect(outcome.activity[0]?.actorId).toBe(ACTOR);
   });
 
+  it('records every step of the hiring chain as activity (audit trail), with no notification', () => {
+    const steps: [string, string, Record<string, unknown>][] = [
+      ['hiring.requisition.submitted', 'Hiring request raised', {}],
+      ['hiring.requisition.stage_approved', 'Hiring request approved by the executive', {}],
+      ['hiring.requisition.approved', 'Hiring request approved', {}],
+      ['hiring.requisition.changes_requested', 'Hiring request returned', { stage: 'finance' }],
+      ['hiring.requisition.resubmitted', 'Hiring request resubmitted', {}],
+      ['hiring.requisition.withdrawn', 'Hiring request withdrawn', {}],
+    ];
+    for (const [type, title, extra] of steps) {
+      const outcome = new NotificationPolicy().evaluate(
+        envelope(type, { payload: { jobTitle: 'Backend Developer', ...extra } }),
+      );
+      expect(outcome.notifications, type).toEqual([]);
+      expect(outcome.activity, type).toHaveLength(1);
+      expect(outcome.activity[0]).toMatchObject({ type, title, actorId: ACTOR });
+      expect(outcome.activity[0]?.body).toContain('Backend Developer');
+    }
+    const returned = new NotificationPolicy().evaluate(
+      envelope('hiring.requisition.changes_requested', {
+        payload: { jobTitle: 'QA', stage: 'finance' },
+      }),
+    );
+    expect(returned.activity[0]?.body).toContain('by Finance');
+  });
+
   it('maps employee.created to an employee notification', () => {
     const outcome = new NotificationPolicy().evaluate(
       envelope('employee.created', { payload: { name: 'Sarah Chen' } }),

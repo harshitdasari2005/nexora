@@ -246,6 +246,44 @@ export const employees = pgTable(
 );
 
 /**
+ * hiring_requisitions — the {@link @nexora/domain-hr!HiringRequisition}
+ * aggregate: a team's request to hire, with its decision chain. The
+ * organization id is the tenant scope; `workspace_id` is the team it was
+ * raised from. `history` is the append-only trail (who did what, when);
+ * `version` guards every update (optimistic concurrency).
+ */
+export const hiringRequisitions = pgTable(
+  'hiring_requisitions',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    requestedBy: varchar('requested_by', { length: 64 }).notNull(),
+    jobTitle: varchar('job_title', { length: 120 }).notNull(),
+    department: varchar('department', { length: 80 }).notNull(),
+    projectId: varchar('project_id', { length: 64 }),
+    headcount: integer('headcount').notNull(),
+    employmentType: varchar('employment_type', { length: 32 }).notNull(),
+    salaryMinMinorUnits: bigint('salary_min_minor_units', { mode: 'number' }).notNull(),
+    salaryMaxMinorUnits: bigint('salary_max_minor_units', { mode: 'number' }).notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    justification: text('justification').notNull(),
+    urgency: varchar('urgency', { length: 16 }).notNull(),
+    targetStartDate: varchar('target_start_date', { length: 10 }),
+    status: varchar('status', { length: 32 }).notNull(),
+    round: integer('round').notNull().default(1),
+    history: jsonb('history').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('hiring_requisitions_org_idx').on(table.organizationId, table.createdAt),
+    index('hiring_requisitions_requester_idx').on(table.organizationId, table.requestedBy),
+  ],
+);
+
+/**
  * resource_assignments — the
  * {@link @nexora/domain-projects!ResourceAssignment} aggregate.
  * Links a project (Projects BC) to an employee id (HR BC reference, AP-13:

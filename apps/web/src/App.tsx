@@ -16,6 +16,7 @@ import { Documents } from './pages/Documents.js';
 import { Knowledge } from './pages/Knowledge.js';
 import { Apps } from './pages/Apps.js';
 import { Employees } from './pages/Employees.js';
+import { Hiring } from './pages/Hiring.js';
 import { Integrations } from './pages/Integrations.js';
 import { Insights } from './pages/Insights.js';
 import { Agent } from './pages/Agent.js';
@@ -123,6 +124,14 @@ export function App(): JSX.Element {
               element={
                 <RequireAuth>
                   <Employees />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/app/hiring"
+              element={
+                <RequireAuth>
+                  <Hiring />
                 </RequireAuth>
               }
             />

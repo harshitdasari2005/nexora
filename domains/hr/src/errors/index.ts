@@ -76,3 +76,35 @@ export function toHrError(error: unknown): HrDomainError {
   }
   return new HrDomainError(String(error), 'INTERNAL_ERROR');
 }
+
+/** The hiring requisition does not exist (or is not visible to the caller). */
+export class RequisitionNotFoundError extends HrDomainError {
+  constructor(details?: unknown) {
+    super('Hiring request not found', 'NOT_FOUND', details);
+  }
+}
+
+/** A requisition transition was attempted that its current state forbids. */
+export class RequisitionStateError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'BUSINESS_RULE_VIOLATION', details);
+  }
+}
+
+/** The actor may not perform this step of the requisition (separation of duties, not the requester, …). */
+export class RequisitionNotPermittedError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'AUTHORIZATION_ERROR', details);
+  }
+}
+
+/** The requisition changed since it was read (a concurrent decision or edit won). */
+export class RequisitionConflictError extends HrDomainError {
+  constructor(details?: unknown) {
+    super(
+      'The hiring request was changed by someone else — reload and try again',
+      'CONFLICT',
+      details,
+    );
+  }
+}

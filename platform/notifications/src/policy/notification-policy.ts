@@ -243,6 +243,54 @@ export class NotificationPolicy {
           ],
         };
       }
+      // The hiring chain is an auditable business process: every step (raised,
+      // decided, returned, resubmitted, withdrawn) appears in the activity feed
+      // — and therefore the Audit Center — with the trusted actor. Activity only:
+      // the people whose turn it is see the request on the Hiring page.
+      case 'hiring.requisition.submitted':
+      case 'hiring.requisition.stage_approved':
+      case 'hiring.requisition.approved':
+      case 'hiring.requisition.changes_requested':
+      case 'hiring.requisition.resubmitted':
+      case 'hiring.requisition.withdrawn': {
+        const jobTitle = readString(event.payload, 'jobTitle') ?? 'a role';
+        const stage = readString(event.payload, 'stage');
+        const stageLabel = stage === 'finance' ? 'Finance' : 'the executive';
+        const wording: Record<string, { title: string; body: string }> = {
+          'hiring.requisition.submitted': {
+            title: 'Hiring request raised',
+            body: `A hiring request for ${jobTitle} was raised.`,
+          },
+          'hiring.requisition.stage_approved': {
+            title: 'Hiring request approved by the executive',
+            body: `The hiring request for ${jobTitle} was approved by the executive and now waits for Finance.`,
+          },
+          'hiring.requisition.approved': {
+            title: 'Hiring request approved',
+            body: `The hiring request for ${jobTitle} was approved by Finance and is ready for HR.`,
+          },
+          'hiring.requisition.changes_requested': {
+            title: 'Hiring request returned',
+            body: `The hiring request for ${jobTitle} was returned to the requester by ${stageLabel}.`,
+          },
+          'hiring.requisition.resubmitted': {
+            title: 'Hiring request resubmitted',
+            body: `The hiring request for ${jobTitle} was revised and resubmitted.`,
+          },
+          'hiring.requisition.withdrawn': {
+            title: 'Hiring request withdrawn',
+            body: `The hiring request for ${jobTitle} was withdrawn by the requester.`,
+          },
+        };
+        const text = wording[event.type];
+        return {
+          notifications: [],
+          activity:
+            text === undefined
+              ? []
+              : [{ workspaceId, type: event.type, title: text.title, body: text.body, actorId }],
+        };
+      }
       case 'workflow.completed':
         return {
           notifications: actorId

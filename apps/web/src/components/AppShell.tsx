@@ -87,6 +87,7 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'Problems', icon: 'problems', to: '/app/problems' },
   { label: 'Projects', icon: 'projects', to: '/app/projects' },
   { label: 'Employees', icon: 'employees', to: '/app/employees' },
+  { label: 'Hiring', icon: 'employees', to: '/app/hiring' },
   { label: 'Documents', icon: 'documents', to: '/app/documents' },
   { label: 'Knowledge', icon: 'knowledge', to: '/app/knowledge' },
   { label: 'Workflows', icon: 'workflows', to: '/app/workflows' },

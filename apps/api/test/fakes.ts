@@ -38,6 +38,11 @@ import type {
 } from '@nexora/domain-projects';
 import type { AssignmentId } from '@nexora/domain-projects';
 import type { Employee, EmployeeRepository } from '@nexora/domain-hr';
+import {
+  HiringRequisition,
+  type HiringRequisitionRepository,
+  type HiringRequisitionSnapshot,
+} from '@nexora/domain-hr';
 import type { CalendarEntry, CalendarEntryRepository } from '@nexora/module-calendar';
 import type { Budget, BudgetRepository, Expense, ExpenseRepository } from '@nexora/module-finance';
 import type {
@@ -569,6 +574,35 @@ export class FakeKnowledgeCategoryRepository implements KnowledgeCategoryReposit
 }
 
 /** An in-memory {@link EmployeeRepository}. */
+/** An in-memory {@link HiringRequisitionRepository} (optimistic updates, like Postgres). */
+export class FakeHiringRequisitionRepository implements HiringRequisitionRepository {
+  readonly rows = new Map<string, HiringRequisitionSnapshot>();
+
+  async findById(id: HiringRequisition['id']): Promise<HiringRequisition | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : HiringRequisition.hydrate(structuredClone(row));
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly HiringRequisition[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => HiringRequisition.hydrate(structuredClone(row)));
+  }
+
+  async insert(requisition: HiringRequisition): Promise<void> {
+    this.rows.set(requisition.id, structuredClone(HiringRequisition.snapshot(requisition)));
+  }
+
+  async update(requisition: HiringRequisition, expectedVersion: number): Promise<boolean> {
+    // Check-and-set with no await in between: atomic, like the conditional UPDATE.
+    const stored = this.rows.get(requisition.id);
+    if (stored === undefined || stored.version !== expectedVersion) return false;
+    this.rows.set(requisition.id, structuredClone(HiringRequisition.snapshot(requisition)));
+    return true;
+  }
+}
+
 export class FakeEmployeeRepository implements EmployeeRepository {
   readonly employees = new Map<string, Employee>();
 

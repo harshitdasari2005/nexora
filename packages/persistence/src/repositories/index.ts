@@ -7,6 +7,7 @@ export * from './organizations.js';
 export * from './workspaces.js';
 export * from './projects.js';
 export * from './hr.js';
+export * from './hiring-requisitions.js';
 export * from './resource-assignments.js';
 export * from './workflows.js';
 export * from './documents.js';

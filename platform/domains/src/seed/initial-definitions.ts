@@ -181,6 +181,9 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'budgets.manage',
       'expenses.read',
       'expenses.create',
+      'requisitions.create',
+      'requisitions.read',
+      'requisitions.approve_executive',
     ],
   },
   {
@@ -224,6 +227,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'expenses.create',
       'expenses.decide',
       'policy.read',
+      'requisitions.read',
+      'requisitions.approve_finance',
     ],
   },
   {
@@ -240,6 +245,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'problems.read',
       'agent.use',
       'activity.read',
+      'requisitions.read',
     ],
   },
   {
@@ -268,6 +274,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'github.issues.create',
       'integrations.manage',
       'marketplace.manage',
+      'requisitions.create',
     ],
   },
   {
@@ -293,6 +300,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'github.issues.create',
       'integrations.manage',
       'marketplace.manage',
+      'requisitions.create',
     ],
   },
   {
@@ -441,6 +449,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'github.issues.create',
       'slack.channels.read',
       'slack.messages.send',
+      'requisitions.create',
     ],
   },
   {
@@ -609,6 +618,30 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     name: 'Manage Employees',
     description:
       'Manage employee records (existing surface: create-employee; broader manage surfaces land with the People domain)',
+  },
+  {
+    id: 'requisitions.create',
+    name: 'Raise Hiring Requests',
+    description:
+      'Raise a hiring request for one’s team, see one’s own requests, and revise or withdraw them (surface: the hiring requisition routes)',
+  },
+  {
+    id: 'requisitions.read',
+    name: 'Read Hiring Requests',
+    description:
+      'See every hiring request of the organization, not only one’s own (surface: the hiring requisition list/read)',
+  },
+  {
+    id: 'requisitions.approve_executive',
+    name: 'Decide Hiring Requests (Executive)',
+    description:
+      'Take the executive decision on a hiring request — the first stage of the chain; never one’s own request',
+  },
+  {
+    id: 'requisitions.approve_finance',
+    name: 'Decide Hiring Requests (Finance)',
+    description:
+      'Take the finance decision on a hiring request — the second stage of the chain, after the executive decision; never one’s own request',
   },
   {
     id: 'workflows.read',

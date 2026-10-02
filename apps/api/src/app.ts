@@ -26,6 +26,7 @@ import {
   PgEmailOutboxRepository,
   PgInboundMessageRepository,
   PgEmployeeRepository,
+  PgHiringRequisitionRepository,
   PgKnowledgeArticleRepository,
   PgKnowledgeCategoryRepository,
   PgKnowledgeIndexStore,
@@ -127,6 +128,7 @@ import { registerCalendarRoutes } from './routes/calendar.js';
 import { registerFinanceRoutes } from './routes/finance.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
+import { registerHiringRoutes } from './routes/hiring.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { registerDomainRoutes } from './routes/domains.js';
@@ -321,6 +323,19 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listEmployees: container.listEmployees,
     listOrganizations: container.listOrganizations,
     permissions: rbac,
+  });
+  registerHiringRoutes(app, {
+    requisitions: container.hiringRequisitions,
+    projects: repositories.projects,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    // Display names only — never an email fallback (same rule as the governance read models).
+    resolveUserName: async (userId) => {
+      const user = await repositories.users.findById(userId as never);
+      const displayName = user?.profile.displayName.value;
+      return displayName === undefined || displayName.length === 0 ? undefined : displayName;
+    },
   });
   registerDocumentRoutes(app, {
     uploadDocument: container.uploadDocument,
@@ -1069,6 +1084,7 @@ export function buildPgRepositories(
     projects: new PgProjectRepository(database),
     resourceAssignments: new PgResourceAssignmentRepository(database),
     employees: new PgEmployeeRepository(database),
+    hiringRequisitions: new PgHiringRequisitionRepository(database),
     documents: new PgDocumentRepository(database),
     documentVersions: new PgDocumentVersionRepository(database),
     documentTemplates: new PgDocumentTemplateRepository(database),

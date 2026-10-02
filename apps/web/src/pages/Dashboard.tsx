@@ -28,6 +28,7 @@ import {
 import { ActivityFeed } from '../components/ActivityFeed.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
+import { useDemo } from '../demo/demo-state.js';
 import { api, ApiError } from '../lib/api.js';
 import type { DashboardResponse } from '../lib/types.js';
 import { useSession } from '../session.js';
@@ -35,6 +36,7 @@ import { useSession } from '../session.js';
 /** The dashboard page (fetches the read model). */
 export function Dashboard(): JSX.Element {
   const { data: session } = useSession();
+  const demo = useDemo();
   const [searchParams] = useSearchParams();
 
   const [state, setState] = useState<{
@@ -90,29 +92,98 @@ export function Dashboard(): JSX.Element {
     );
   }
 
-  // The user has not onboarded yet.
+  // The user has not onboarded yet: choose how to start.
+  return <WelcomeChoice demoAvailable={demo.status === 'enabled'} />;
+}
+
+/**
+ * The first screen after signing in with no organization: start your own
+ * organization, or look around the demo office first (offered only when the
+ * backend reports demo mode — the link is never shown otherwise).
+ */
+export function WelcomeChoice({ demoAvailable }: { demoAvailable: boolean }): JSX.Element {
+  const option = {
+    flex: '1 1 260px',
+    display: 'flex',
+  } as const;
   return (
     <div
       style={{
-        height: '100vh',
+        minHeight: '100vh',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         padding: 24,
       }}
     >
-      <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
-        <EmptyState
-          icon="🚀"
-          title="Welcome to Nexora"
-          description="Create your organization to get started. Your workspace, apps, and AI agents will live here."
-          action={
-            <Link to="/onboarding/organization">
-              <Button size="lg">Create your organization</Button>
-            </Link>
-          }
-        />
-      </Card>
+      <Stack gap={6} style={{ maxWidth: 760, width: '100%' }}>
+        <Stack gap={2}>
+          <h1
+            style={{
+              fontSize: typography.sizes['3xl'],
+              fontWeight: typography.weights.bold,
+              letterSpacing: '-0.03em',
+            }}
+          >
+            Welcome to Nexora
+          </h1>
+          <p style={{ color: 'var(--nexora-textSecondary)' }}>
+            {demoAvailable
+              ? 'How would you like to start?'
+              : 'Create your organization to get started.'}
+          </p>
+        </Stack>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <div style={option}>
+            <Card padding={8} elevationLevel="md" style={{ width: '100%' }}>
+              <Stack gap={4} style={{ height: '100%' }}>
+                <div style={{ fontSize: 28 }}>🚀</div>
+                <div style={{ fontWeight: typography.weights.semibold }}>
+                  Create your organization
+                </div>
+                <p
+                  style={{
+                    color: 'var(--nexora-textSecondary)',
+                    fontSize: typography.sizes.sm,
+                    flex: 1,
+                  }}
+                >
+                  Set up your own company: your workspace, your people and your AI agents will live
+                  here.
+                </p>
+                <Link to="/onboarding/organization">
+                  <Button size="lg">Create your organization</Button>
+                </Link>
+              </Stack>
+            </Card>
+          </div>
+          {demoAvailable ? (
+            <div style={option}>
+              <Card padding={8} elevationLevel="md" style={{ width: '100%' }}>
+                <Stack gap={4} style={{ height: '100%' }}>
+                  <div style={{ fontSize: 28 }}>🏢</div>
+                  <div style={{ fontWeight: typography.weights.semibold }}>Go to the demo</div>
+                  <p
+                    style={{
+                      color: 'var(--nexora-textSecondary)',
+                      fontSize: typography.sizes.sm,
+                      flex: 1,
+                    }}
+                  >
+                    Look around a ready-made office first. Sign in as the CEO, a manager, HR,
+                    Finance or a developer and see how work moves between them.
+                  </p>
+                  <Link to="/demo">
+                    <Button size="lg" variant="secondary">
+                      Go to the demo
+                    </Button>
+                  </Link>
+                </Stack>
+              </Card>
+            </div>
+          ) : null}
+        </div>
+      </Stack>
     </div>
   );
 }

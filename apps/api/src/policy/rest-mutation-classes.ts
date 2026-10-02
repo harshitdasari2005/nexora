@@ -307,6 +307,54 @@ export const REST_MUTATION_CLASSES: Readonly<Record<string, RestMutationEntry>> 
       'employees.manage; direct human HR action. The AI hire tool is consequential (approval); no policy DENY rule governs the capability.',
     proof: [cap('employees.manage')],
   },
+  // --- Hiring requisitions (the office hiring chain) --------------------------------------------------
+  'POST /api/hiring/requisitions': {
+    class: 'rbac',
+    justification:
+      'requisitions.create; raising a request changes nothing but the request itself — it then has to pass the executive and finance decisions.',
+    proof: [cap('requisitions.create')],
+  },
+  'POST /api/hiring/requisitions/:requisitionId/decision': {
+    class: 'domain_governed',
+    justification:
+      'The stage is derived from the request (never the body) and the caller must hold THAT stage’s capability; the aggregate then refuses a decision on one’s own request, a second stage by the same person, and any stage the request is not waiting at.',
+    proof: [
+      cap('requisitions.approve_executive'),
+      cap('requisitions.approve_finance'),
+      {
+        in: 'domains/hr/src/entities/hiring-requisition.ts',
+        contains: 'You cannot decide your own hiring request',
+      },
+      {
+        in: 'domains/hr/src/entities/hiring-requisition.ts',
+        contains: 'You already decided an earlier stage of this hiring request',
+      },
+    ],
+  },
+  'PUT /api/hiring/requisitions/:requisitionId': {
+    class: 'domain_governed',
+    justification:
+      'requisitions.create + requester-only (aggregate): a returned request may be revised by the person who raised it; resubmitting restarts the whole chain.',
+    proof: [
+      cap('requisitions.create'),
+      {
+        in: 'domains/hr/src/entities/hiring-requisition.ts',
+        contains: 'Only the requester can revise a hiring request',
+      },
+    ],
+  },
+  'POST /api/hiring/requisitions/:requisitionId/withdraw': {
+    class: 'domain_governed',
+    justification:
+      'requisitions.create + requester-only (aggregate); an approved request can no longer be withdrawn.',
+    proof: [
+      cap('requisitions.create'),
+      {
+        in: 'domains/hr/src/entities/hiring-requisition.ts',
+        contains: 'Only the requester can withdraw a hiring request',
+      },
+    ],
+  },
   'POST /api/workspaces': {
     class: 'rbac',
     justification: 'workspaces.create; no policy DENY rule governs the capability.',
