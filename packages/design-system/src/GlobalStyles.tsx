@@ -242,6 +242,22 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 }
 .nexora-desk-icon[data-mine='true'] { background: var(--nexora-marker); color: var(--nexora-markerInk); }
 
+/* The demo's front door: the big stories side by side, each with its outline. */
+.nexora-story-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; align-items: stretch; }
+.nexora-story-outline { list-style: none; margin: 0; padding: 0; counter-reset: outline; display: flex; flex-direction: column; gap: 6px; }
+.nexora-story-outline > li { counter-increment: outline; display: flex; gap: 10px; align-items: baseline; font-size: 14px; color: var(--nexora-textSecondary); }
+.nexora-story-outline > li::before {
+  content: counter(outline);
+  flex: 0 0 auto;
+  width: 22px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--nexora-textMuted);
+}
+.nexora-story-outline > li[data-done='true'] { color: var(--nexora-text); }
+.nexora-story-outline > li[data-done='true']::before { content: '✓'; color: var(--nexora-primary); }
+.nexora-choice-option:disabled { opacity: 0.6; cursor: default; }
+
 /* People & teams: one card per team, the people in it as a ruled list. */
 .nexora-people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 16px; align-items: start; }
 .nexora-people-list { list-style: none; margin: 0; padding: 0; }

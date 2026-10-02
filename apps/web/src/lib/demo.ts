@@ -149,6 +149,8 @@ export interface StorySummary extends StoryInfo {
   stepCount: number;
   stepsDone: number;
   waitingFor: readonly DemoPersonaKey[];
+  /** What happens, step by step. */
+  steps?: readonly string[];
 }
 
 /** The story the demo opens with. */
@@ -184,6 +186,11 @@ export function fetchDemoStory(key: string = DEFAULT_STORY): Promise<DemoStory> 
 /** Reads every story line with where it stands. */
 export async function fetchDemoStories(): Promise<StorySummary[]> {
   return (await api<{ stories: StorySummary[] }>('/demo/stories')).stories;
+}
+
+/** The same list for the demo's front door (no session needed in demo mode). */
+export async function fetchDemoStorylines(): Promise<StorySummary[]> {
+  return (await api<{ stories: StorySummary[] }>('/demo/storylines')).stories;
 }
 
 /** The approval as read back from `GET /api/approvals/:id` (persisted state). */

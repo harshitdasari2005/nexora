@@ -213,6 +213,22 @@ describe('story lines through the API', () => {
     });
   });
 
+  it('offers the same list at the front door, before anyone took a seat', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/demo/storylines' });
+    expect(response.statusCode).toBe(200);
+    const { stories } = response.json() as {
+      stories: { key: string; steps: string[]; stepCount: number; waitingFor: string[] }[];
+    };
+    expect(stories.map((entry) => entry.key)).toEqual(STORIES.map((entry) => entry.key));
+    for (const entry of stories) {
+      expect(entry.steps).toHaveLength(entry.stepCount);
+      // Somebody of the demo office can always start it.
+      expect(entry.waitingFor.length).toBeGreaterThan(0);
+    }
+    // Nothing about pay or people beyond who acts next.
+    expect(response.body).not.toMatch(/salary|MinorUnits|@/i);
+  });
+
   it('marketing: the campaign story names the right person at every step', async () => {
     const key = 'flow.campaign';
     expect((await story(key)).next).toMatchObject({ step: 'raise', who: ['marketing'] });

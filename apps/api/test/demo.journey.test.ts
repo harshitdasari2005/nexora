@@ -303,6 +303,7 @@ describe('Demo mode disabled', () => {
       ['GET', '/api/demo/config'],
       ['POST', '/api/demo/login'],
       ['POST', '/api/demo/reset'],
+      ['GET', '/api/demo/storylines'],
     ] as const) {
       const response = await app.inject({
         method,

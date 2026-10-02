@@ -133,6 +133,54 @@ describe('DemoStart', () => {
     expect(html).toContain('real seeded account with a real session');
   });
 
+  it('offers every story line at the front door, each started from the seat that acts first', () => {
+    const story = (
+      key: string,
+      title: string,
+      department: string,
+      waitingFor: StorySummary['waitingFor'],
+      overrides: Partial<StorySummary> = {},
+    ): StorySummary => ({
+      key,
+      title,
+      department,
+      about: `About ${title}.`,
+      status: 'not_started',
+      stepCount: 3,
+      stepsDone: 0,
+      waitingFor,
+      steps: ['First step', 'Second step', 'Third step'],
+      ...overrides,
+    });
+    const html = render(
+      <DemoStart
+        initialStories={[
+          story('hiring', 'Hiring a developer', 'People', ['manager']),
+          story('project', 'A project, from proposal to release', 'Engineering', ['cfo'], {
+            status: 'in_progress',
+            stepsDone: 1,
+          }),
+          story('flow.leave', 'Leave', 'People', ['manager']),
+          story('flow.purchase', 'Purchase', 'Finance', [], { status: 'finished', stepsDone: 3 }),
+        ]}
+      />,
+      state({}),
+    );
+    expect(html).toContain('Watch an office work, one story at a time.');
+    expect(html).toContain('Hiring a developer');
+    expect(html).toContain('Start as Rohan, Team Manager');
+    // A story already under way is continued by whoever it waits for.
+    expect(html).toContain('A project, from proposal to release');
+    expect(html).toContain('Continue as Karan, Chief Financial Officer');
+    expect(html).toContain('1 of 3 steps done');
+    expect(html).toContain('data-done="true"');
+    // The departments' own workflows are there too, not only hiring.
+    expect(html).toContain('Every department&#x27;s everyday work');
+    expect(html).toContain('About Leave.');
+    expect(html).toContain('See how it went');
+    expect(html).toContain('Enter as Team Manager');
+  });
+
   it('flags an unseeded demo organization instead of pretending', () => {
     const html = render(<DemoStart />, state({ config: { ...CONFIG, seeded: false } }));
     expect(html).toContain('not seeded yet');

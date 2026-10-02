@@ -600,6 +600,8 @@ export class StoriesReader {
       stepCount: number;
       stepsDone: number;
       waitingFor: readonly DemoPersonaKey[];
+      /** What happens, step by step (the titles only). */
+      steps: readonly string[];
     })[]
   > {
     const out = [];
@@ -619,6 +621,7 @@ export class StoriesReader {
         stepCount: story.steps.length,
         stepsDone,
         waitingFor: story.next?.who ?? [],
+        steps: story.steps.map((step) => step.title),
       });
     }
     return out;

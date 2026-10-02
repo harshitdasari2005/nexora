@@ -186,6 +186,13 @@ export function registerDemoRoutes(
     return { stories: await dependencies.stories.list() };
   });
 
+  // The same list for the demo's front door, before anyone took a seat: which
+  // stories there are and whose turn each one is. It describes the fictional
+  // demo office only (titles, step names, first names of seeded personas).
+  app.get('/api/demo/storylines', { config: { public: true } }, async () => ({
+    stories: await dependencies.stories.list(),
+  }));
+
   app.post('/api/demo/reset', async (request, reply) => {
     const auth = requireAuth(request);
     // The browser cannot choose what is reset: no property is accepted.
@@ -231,6 +238,7 @@ export function registerDemoDisabledRoutes(app: FastifyInstance): void {
   app.post('/api/demo/reset', { config: { public: true } }, notFound);
   app.get('/api/demo/story', { config: { public: true } }, notFound);
   app.get('/api/demo/stories', { config: { public: true } }, notFound);
+  app.get('/api/demo/storylines', { config: { public: true } }, notFound);
 }
 
 function sendDemoError(reply: FastifyReply, requestId: string, error: unknown): FastifyReply {
