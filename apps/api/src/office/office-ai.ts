@@ -201,7 +201,11 @@ export class OfficeAi {
       : { connected: true, ...(this.#model === undefined ? {} : { model: this.#model }) };
   }
 
-  async #ask(prompt: string, maxTokens: number): Promise<Record<string, unknown> | undefined> {
+  async #ask(
+    prompt: string,
+    maxTokens: number,
+    temperature = 0.2,
+  ): Promise<Record<string, unknown> | undefined> {
     if (this.#chat === undefined) return undefined;
     try {
       const response = await this.#chat.complete({
@@ -209,7 +213,7 @@ export class OfficeAi {
           { role: 'system', content: SYSTEM },
           { role: 'user', content: prompt },
         ],
-        temperature: 0.2,
+        temperature,
         maxTokens,
       });
       const parsed = parseJson(response.content);
@@ -242,6 +246,8 @@ export class OfficeAi {
         `<data>${sentence}</data>`,
       ].join('\n'),
       60,
+      // The same sentence should start the same workflow every time.
+      0,
     );
     if (answer !== undefined) {
       const key = answer['workflow'];
@@ -299,6 +305,8 @@ export class OfficeAi {
         'The summary is at most three short sentences: what is asked, what matters most,',
         'and why you recommend what you recommend. Use only the request and the checked',
         'facts below. If a checked fact is a warning, do not recommend "approve".',
+        "Say nothing about limits, budgets, policies or a person's record unless a checked",
+        'fact states it; "no warnings were found" is as far as you may go.',
         `<data>${describeRequest(request)}</data>`,
         'Checked facts:',
         ...facts.map((fact) => `- [${fact.tone}] ${fact.label}: ${fact.value}`),

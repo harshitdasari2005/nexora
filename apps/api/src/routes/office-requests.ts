@@ -404,7 +404,12 @@ export function registerOfficeRequestRoutes(
         }, 0);
       facts.push({
         label: field.label,
-        value: amount >= 50_000_000 ? `${money(amount)} — a large amount` : `${money(amount)}`,
+        // Said in full, so that "within limits" in a brief is a checked fact and
+        // not the assistant's guess.
+        value:
+          amount >= 50_000_000
+            ? `${money(amount)} — a large amount`
+            : `${money(amount)}, under the ${money(50_000_000)} that calls for a closer look`,
         tone: amount >= 50_000_000 ? 'warn' : 'ok',
       });
       if (pendingElsewhere > 0) {

@@ -42,7 +42,7 @@ export function workflowOf(catalog: WorkflowCatalog, key: string): Workflow | un
 /** Things people say, to show what the box is for. */
 export const ASK_EXAMPLES = [
   'I need next Monday to Wednesday off for a wedding',
-  'We need two Android test phones, about ₹45,000 each',
+  'Please buy two Android test phones for the device lab, about ₹45,000 each',
   'The login screen crashes when the OTP is pasted',
 ] as const;
 
