@@ -203,16 +203,7 @@ export function KnowledgeView({
     <Stack gap={8} style={{ maxWidth: 960, margin: '0 auto' }}>
       <Stack direction="row" gap={4} align="center" justify="space-between">
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Knowledge Base
-          </h1>
+          <h1 className="nexora-page-title">Knowledge Base</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName}
           </p>
@@ -233,7 +224,7 @@ export function KnowledgeView({
         style={{ maxWidth: 420 }}
       />
 
-      <Stack direction="row" gap={6} align="flex-start">
+      <Stack direction="row" gap={6} align="flex-start" className="nexora-split">
         {/* Category rail */}
         <Stack gap={3} style={{ width: 200, flexShrink: 0 }}>
           <Stack
@@ -490,7 +481,13 @@ function ArticleCreator({
           rows={4}
           style={TEXTAREA_STYLE}
         />
-        <Stack direction="row" gap={3} align="center" justify="space-between">
+        <Stack
+          direction="row"
+          gap={3}
+          align="center"
+          justify="space-between"
+          style={{ flexWrap: 'wrap' }}
+        >
           <select
             id="knowledge-article-category"
             name="articleCategory"
@@ -709,7 +706,13 @@ function ArticleRow({
               rows={5}
               style={TEXTAREA_STYLE}
             />
-            <Stack direction="row" gap={3} align="center" justify="space-between">
+            <Stack
+              direction="row"
+              gap={3}
+              align="center"
+              justify="space-between"
+              style={{ flexWrap: 'wrap' }}
+            >
               <select
                 id="knowledge-edit-category"
                 name="articleCategory"

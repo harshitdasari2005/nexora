@@ -6,7 +6,7 @@
  * the application root (DESIGN_SYSTEM.md §3).
  */
 
-import { darkThemeCss, elevation, lightThemeCss } from './tokens.js';
+import { darkThemeCss, elevation, landingThemeCss, lightThemeCss, typography } from './tokens.js';
 
 const resetCss = `
 * { box-sizing: border-box; }
@@ -15,25 +15,158 @@ body {
   margin: 0;
   background: var(--nexora-bg);
   color: var(--nexora-text);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: ${typography.fontSans};
   font-size: 14px;
   line-height: 1.5;
-  letter-spacing: -0.011em;
-  font-feature-settings: 'cv02' 1, 'cv03' 1, 'cv04' 1, 'cv11' 1;
+  letter-spacing: -0.004em;
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 h1, h2, h3, h4, p { margin: 0; }
-h1, h2, h3, h4 { letter-spacing: -0.02em; }
+h1, h2, h3, h4 {
+  font-family: ${typography.fontDisplay};
+  letter-spacing: -0.022em;
+  font-optical-sizing: auto;
+}
 button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
 a { color: var(--nexora-link); text-decoration: none; }
-a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-underline-offset: 2px; }
-::selection { background: var(--nexora-primarySoft); color: var(--nexora-text); }
+a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-underline-offset: 3px; }
+::selection { background: var(--nexora-markerSoft); color: var(--nexora-text); }
 :focus-visible {
   outline: 2px solid var(--nexora-ring);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: 6px;
+}
+
+/* --- Page scaffolding -------------------------------------------------------
+   One fluid container for every app page: comfortable on a wide monitor,
+   edge-to-edge-with-breathing-room on a phone. */
+.nexora-page { width: 100%; max-width: 1040px; margin-inline: auto; }
+.nexora-page-wide { max-width: 1280px; }
+/* A page with no app shell around it brings its own gutters. */
+.nexora-page-standalone { padding: clamp(20px, 5vw, 64px) clamp(16px, 4vw, 40px); }
+.nexora-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px 24px;
+}
+.nexora-page-head > :first-child { flex: 1 1 320px; min-width: 0; }
+/* Two-up fields that fall to one column when there is no room. */
+.nexora-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 14px 16px; }
+.nexora-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 14px 20px; }
+/* A checklist mark: empty ring, amber ring when it is yours, filled when done. */
+.nexora-check {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--nexora-borderStrong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--nexora-primaryForeground);
+}
+.nexora-check[data-mine='true'] { border-color: var(--nexora-marker); box-shadow: 0 0 0 3px var(--nexora-markerSoft); }
+.nexora-check[data-done='true'] { background: var(--nexora-primary); border-color: var(--nexora-primary); box-shadow: none; }
+/* A quieter block inside a card (a candidate, a sub-form) — tinted, not boxed again. */
+.nexora-inset {
+  background: var(--nexora-surfaceMuted);
+  border-radius: var(--nexora-radius-md, 10px);
+  padding: 14px 16px;
+}
+.nexora-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+@media (max-width: 480px) {
+  .nexora-actions > .nexora-btn { flex: 1 1 auto; }
+}
+.nexora-page-title {
+  font-size: clamp(1.6rem, 1.1rem + 1.9vw, 2.25rem);
+  line-height: 1.08;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+.nexora-page-lede { color: var(--nexora-textSecondary); max-width: 64ch; }
+.nexora-section-title {
+  font-family: ${typography.fontDisplay};
+  font-size: 1.05rem;
+  font-weight: 620;
+  letter-spacing: -0.015em;
+  color: var(--nexora-text);
+}
+/* "It is your turn" — the one loud thing in the interface. */
+.nexora-turn {
+  position: relative;
+  border-color: var(--nexora-marker) !important;
+  box-shadow: inset 4px 0 0 var(--nexora-marker);
+}
+.nexora-turn-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--nexora-marker);
+  color: var(--nexora-markerInk);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+/* A row of items separated by hairlines instead of boxed one by one. */
+.nexora-rows > * + * { border-top: 1px solid var(--nexora-border); }
+
+/* Route: the stations a request passes through. */
+.nexora-route { display: flex; align-items: flex-start; gap: 0; width: 100%; }
+.nexora-route-stop { flex: 1 1 0; min-width: 0; position: relative; padding-top: 22px; }
+.nexora-route-stop::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--nexora-border);
+}
+.nexora-route-stop:first-child::before { left: 7px; }
+.nexora-route-stop:last-child::before { right: calc(100% - 7px); }
+.nexora-route-stop[data-reached='true']::before { background: var(--nexora-primary); }
+.nexora-route-dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--nexora-surface);
+  border: 2px solid var(--nexora-borderStrong);
+}
+.nexora-route-stop[data-state='done'] .nexora-route-dot { background: var(--nexora-primary); border-color: var(--nexora-primary); }
+.nexora-route-stop[data-state='current'] .nexora-route-dot {
+  background: var(--nexora-marker);
+  border-color: var(--nexora-marker);
+  box-shadow: 0 0 0 4px var(--nexora-markerSoft);
+}
+.nexora-route-stop[data-state='returned'] .nexora-route-dot { background: var(--nexora-danger); border-color: var(--nexora-danger); }
+.nexora-route-stop[data-state='skipped'] .nexora-route-dot { border-style: dashed; }
+@media (max-width: 560px) {
+  .nexora-route { flex-direction: column; gap: 10px; }
+  .nexora-route-stop { padding-top: 0; padding-left: 26px; }
+  .nexora-route-stop::before { top: 14px; bottom: -10px; left: 6px !important; right: auto !important; width: 2px; height: auto; }
+  .nexora-route-stop:last-child::before { display: none; }
+}
+
+/* A side rail beside content: side by side when there is room, stacked when not. */
+@media (max-width: 760px) {
+  .nexora-split { flex-direction: column !important; align-items: stretch !important; }
+  .nexora-split > * { width: 100% !important; max-width: none !important; }
+}
+
+/* Forms stack on narrow screens without each page re-implementing it. */
+@media (max-width: 640px) {
+  .nexora-btn { min-height: 38px; }
+  .nexora-input { font-size: 16px !important; } /* stops iOS zooming on focus */
 }
 
 /* Thin, unobtrusive scrollbars — the surface does the work, not chrome. */
@@ -68,39 +201,86 @@ export function GlobalStyles(): JSX.Element {
     <style id="nexora-global-styles">
       {`:root {
   ${lightThemeCss}
-  /* App-shell structural tones (light): the sidebar sits flush with the
-     page (a single quiet plane, not a stacked panel); the topbar is an
-     opaque surface with a hairline underline; elevated cards are pure
-     white. Separation comes from the 1px hairline, never a shadow. */
-  --nexora-shellSidebar: var(--nexora-bg);
-  --nexora-shellTopbar: var(--nexora-surface);
+  /* The amber marker — reserved for "it is your turn". */
+  --nexora-marker: #f5b82e;
+  --nexora-markerSoft: #fdf0cc;
+  --nexora-markerInk: #3d2c00;
+  /* Shape (overridable per scope; see .nexora-landing). */
+  --nexora-radius-sm: 7px;
+  --nexora-radius-md: 10px;
+  --nexora-radius-lg: 16px;
+  --nexora-radius-xl: 22px;
+  --nexora-control-sm: 32px;
+  --nexora-control-md: 38px;
+  --nexora-control-lg: 44px;
+  /* App shell: a dark ink rail beside the light desk. */
+  --nexora-shellSidebar: #14201c;
+  --nexora-shellTopbar: color-mix(in srgb, var(--nexora-bg) 86%, transparent);
   --nexora-shellCardElevated: #ffffff;
-  /* Card surface (light): a plain opaque card — no glass, nothing behind
-     it to blur. The [data-theme="dark"] block below keeps real glass for
-     the Login scene only. */
   --nexora-cardBg: var(--nexora-surface);
   --nexora-cardBackdropFilter: none;
   --nexora-cardInsetHighlight: none;
 }
 [data-theme="dark"] {
   ${darkThemeCss}
-  /* App-shell structural tones (dark): same principle — sidebar flush
-     with the page, topbar an opaque surface, cards one step up. */
-  --nexora-shellSidebar: var(--nexora-bg);
-  --nexora-shellTopbar: var(--nexora-surface);
-  --nexora-shellCardElevated: #1a1a1a;
-  /* Card surface (dark): translucent glass over the 3D scene (Login only
-     as of S44 — the authenticated shell no longer runs this theme). */
+  --nexora-marker: #f5b82e;
+  --nexora-markerSoft: rgba(245, 184, 46, 0.18);
+  --nexora-markerInk: #2b1f00;
+  --nexora-shellSidebar: #080d0b;
+  --nexora-shellTopbar: color-mix(in srgb, var(--nexora-bg) 86%, transparent);
+  --nexora-shellCardElevated: #18231f;
+  --nexora-cardBg: var(--nexora-surface);
+  --nexora-cardBackdropFilter: none;
+  --nexora-cardInsetHighlight: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+/* The ink rail: everything inside the sidebar reads light-on-dark in BOTH
+   themes, by re-pointing the same variables the components already use. */
+.nexora-sidebar {
+  --nexora-text: #eef4f1;
+  --nexora-textSecondary: #b3c4bc;
+  --nexora-textMuted: #7f928a;
+  --nexora-border: rgba(255, 255, 255, 0.10);
+  --nexora-borderStrong: rgba(255, 255, 255, 0.20);
+  --nexora-surface: rgba(255, 255, 255, 0.05);
+  --nexora-surfaceMuted: rgba(255, 255, 255, 0.09);
+  --nexora-primary: #5fd6b6;
+  --nexora-primarySoft: rgba(95, 214, 182, 0.16);
+  --nexora-primaryForeground: #06231c;
+  --nexora-link: #7fe0c6;
+  --nexora-cardBg: rgba(255, 255, 255, 0.05);
+  --nexora-popoverBg: #1d2b26;
+  color: var(--nexora-text);
+}
+/* The landing page keeps its own cinematic look: its previous palette,
+   typeface and shape, untouched by the app's visual language. */
+.nexora-landing {
+  ${landingThemeCss}
+  --nexora-radius-sm: 5px;
+  --nexora-radius-md: 8px;
+  --nexora-radius-lg: 12px;
+  --nexora-radius-xl: 16px;
+  --nexora-control-sm: 30px;
+  --nexora-control-md: 34px;
+  --nexora-control-lg: 40px;
+  --nexora-control-weight: 500;
   --nexora-cardBg: var(--nexora-surfaceGlass);
   --nexora-cardBackdropFilter: blur(20px) saturate(150%);
   --nexora-cardInsetHighlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  font-family: ${typography.fontLanding};
+  letter-spacing: -0.011em;
+  font-feature-settings: 'cv02' 1, 'cv03' 1, 'cv04' 1, 'cv11' 1;
+  font-variant-numeric: normal;
+}
+.nexora-landing h1, .nexora-landing h2, .nexora-landing h3, .nexora-landing h4 {
+  font-family: inherit;
+  letter-spacing: -0.02em;
 }
 .nexora-card-interactive { cursor: pointer; transition: border-color 140ms ease, box-shadow 140ms ease; }
 .nexora-card-interactive:hover {
   border-color: var(--nexora-borderStrong);
   box-shadow: ${elevation.md};
 }
-.nexora-btn:not(:disabled):hover { }
+.nexora-btn:not(:disabled):active { transform: translateY(0.5px); }
 .nexora-btn-primary:not(:disabled):hover { background: var(--nexora-primaryHover); }
 .nexora-btn-primary:not(:disabled):active { filter: brightness(0.92); }
 .nexora-btn-secondary:not(:disabled):hover { background: var(--nexora-surfaceMuted); border-color: var(--nexora-borderStrong); }
@@ -108,7 +288,7 @@ export function GlobalStyles(): JSX.Element {
 .nexora-btn-danger:not(:disabled):hover { filter: brightness(0.93); }
 .nexora-btn-danger:not(:disabled):active { filter: brightness(0.86); }
 .nexora-input::placeholder { color: var(--nexora-textMuted); }
-.nexora-input:hover:not(:focus):not(:disabled) { border-color: var(--nexora-text); }
+.nexora-input:hover:not(:focus):not(:disabled) { border-color: var(--nexora-borderStrong); }
 .nexora-input:focus {
   border-color: var(--nexora-ring);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--nexora-ring) 16%, transparent);

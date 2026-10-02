@@ -116,16 +116,7 @@ export function Assistant(): JSX.Element {
         }}
       >
         <div style={{ marginBottom: 16 }}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            AI Assistant
-          </h1>
+          <h1 className="nexora-page-title">AI Assistant</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {dashboard.organization.name} · {dashboard.workspace.name} — your Nexora business
             operator.

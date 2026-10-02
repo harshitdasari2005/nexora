@@ -359,21 +359,12 @@ export function CommandCenterView({
               fontSize: '11px',
               fontWeight: typography.weights.semibold,
               color: 'var(--nexora-textMuted)',
-              textTransform: 'uppercase',
-              letterSpacing: typography.tracking.caps,
             }}
           >
             {theme.identity}
           </div>
           <Stack direction="row" gap={3} align="center" style={{ flexWrap: 'wrap' }}>
-            <h1
-              style={{
-                fontSize: typography.sizes['4xl'],
-                fontWeight: typography.weights.bold,
-                letterSpacing: typography.tracking.tighter,
-                lineHeight: 1.05,
-              }}
-            >
+            <h1 className="nexora-page-title">
               {greeting()}
               {firstName !== undefined ? `, ${firstName}` : ''}.
             </h1>
@@ -460,8 +451,6 @@ export function CommandCenterView({
                           fontSize: typography.sizes.xs,
                           fontWeight: typography.weights.semibold,
                           color: 'var(--nexora-textMuted)',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
                         }}
                       >
                         {theme.briefLabel}
@@ -646,8 +635,6 @@ export function CommandCenterView({
                           fontSize: typography.sizes.xs,
                           fontWeight: typography.weights.semibold,
                           color: 'var(--nexora-textMuted)',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
                         }}
                       >
                         Ask Nexora
@@ -680,8 +667,6 @@ export function CommandCenterView({
                           fontSize: typography.sizes.xs,
                           fontWeight: typography.weights.semibold,
                           color: 'var(--nexora-textMuted)',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.06em',
                         }}
                       >
                         Quick actions

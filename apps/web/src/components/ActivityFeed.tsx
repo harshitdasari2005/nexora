@@ -199,8 +199,6 @@ export function ActivityFeed({
             style={{
               fontSize: typography.sizes.xs,
               color: 'var(--nexora-textMuted)',
-              textTransform: 'uppercase',
-              letterSpacing: 1,
             }}
           >
             Today
@@ -214,8 +212,6 @@ export function ActivityFeed({
             style={{
               fontSize: typography.sizes.xs,
               color: 'var(--nexora-textMuted)',
-              textTransform: 'uppercase',
-              letterSpacing: 1,
             }}
           >
             Earlier

@@ -14,6 +14,8 @@ import { Badge, Button, Card, EmptyState, Input, Stack, typography } from '@nexo
 import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
+import { NavIcon } from '../components/NavIcon.js';
+import { Page, PageHeader, Section, TurnTag } from '../components/Page.js';
 import { api, ApiError } from '../lib/api.js';
 import type { HiringScope } from '../lib/hiring.js';
 import {
@@ -130,72 +132,46 @@ export function OnboardingView({
   const inProgress = onboardings.filter((record) => record.status === 'in_progress');
   const finished = onboardings.filter((record) => record.status === 'completed');
   return (
-    <div style={{ padding: 32, maxWidth: 980, margin: '0 auto' }}>
-      <Stack gap={6} stretch>
-        <Stack gap={1}>
-          <h1 style={{ fontSize: typography.sizes['3xl'], fontWeight: typography.weights.bold }}>
-            Onboarding
-          </h1>
-          <p style={{ color: 'var(--nexora-textSecondary)' }}>
-            HR, IT and the hiring manager each complete their part. When everything is done the new
-            colleague is active and can be put on a project.
-          </p>
-        </Stack>
+    <Page>
+      <PageHeader
+        title="Onboarding"
+        lede="HR, IT and the hiring manager each complete their part. When everything is done the new colleague is active and can be put on a project."
+      />
 
-        {ready.length > 0 ? (
-          <Stack gap={3} stretch>
-            <SectionTitle>Hired — onboarding not started ({ready.length})</SectionTitle>
-            {ready.map((hire) => (
-              <ReadyCard key={hire.employeeId} scope={scope} hire={hire} onChanged={onChanged} />
-            ))}
-          </Stack>
-        ) : null}
+      {ready.length > 0 ? (
+        <Section title="Hired, onboarding not started" count={ready.length}>
+          {ready.map((hire) => (
+            <ReadyCard key={hire.employeeId} scope={scope} hire={hire} onChanged={onChanged} />
+          ))}
+        </Section>
+      ) : null}
 
-        {onboardings.length === 0 && ready.length === 0 ? (
-          <Card padding={10}>
-            <EmptyState
-              icon="🧑‍💻"
-              title="Nobody is being onboarded"
-              description="A new hire appears here once a candidate accepts an offer."
-            />
-          </Card>
-        ) : null}
+      {onboardings.length === 0 && ready.length === 0 ? (
+        <Card padding={10}>
+          <EmptyState
+            icon={<NavIcon name="onboarding" size={18} />}
+            title="Nobody is being onboarded"
+            description="A new hire appears here once a candidate accepts an offer."
+          />
+        </Card>
+      ) : null}
 
-        {inProgress.length > 0 ? (
-          <Stack gap={3} stretch>
-            <SectionTitle>In progress</SectionTitle>
-            {inProgress.map((record) => (
-              <OnboardingCard key={record.id} scope={scope} record={record} onChanged={onChanged} />
-            ))}
-          </Stack>
-        ) : null}
+      {inProgress.length > 0 ? (
+        <Section title="In progress" count={inProgress.length}>
+          {inProgress.map((record) => (
+            <OnboardingCard key={record.id} scope={scope} record={record} onChanged={onChanged} />
+          ))}
+        </Section>
+      ) : null}
 
-        {finished.length > 0 ? (
-          <Stack gap={3} stretch>
-            <SectionTitle>Completed</SectionTitle>
-            {finished.map((record) => (
-              <OnboardingCard key={record.id} scope={scope} record={record} onChanged={onChanged} />
-            ))}
-          </Stack>
-        ) : null}
-      </Stack>
-    </div>
-  );
-}
-
-function SectionTitle({ children }: { children: React.ReactNode }): JSX.Element {
-  return (
-    <div
-      style={{
-        fontSize: typography.sizes.xs,
-        fontWeight: typography.weights.semibold,
-        letterSpacing: '0.06em',
-        textTransform: 'uppercase',
-        color: 'var(--nexora-textMuted)',
-      }}
-    >
-      {children}
-    </div>
+      {finished.length > 0 ? (
+        <Section title="Completed" count={finished.length}>
+          {finished.map((record) => (
+            <OnboardingCard key={record.id} scope={scope} record={record} onChanged={onChanged} />
+          ))}
+        </Section>
+      ) : null}
+    </Page>
   );
 }
 
@@ -211,10 +187,12 @@ function ReadyCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <Card padding={5} data-testid="ready-hire">
-      <Stack direction="row" justify="space-between" align="center" gap={3}>
+    <Card padding={5} className="nexora-turn">
+      <div className="nexora-page-head" style={{ alignItems: 'center' }}>
         <Stack gap={1}>
-          <div style={{ fontWeight: typography.weights.semibold }}>{hire.name}</div>
+          <h3 style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.lg }}>
+            {hire.name}
+          </h3>
           <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {[
               hire.jobTitle,
@@ -222,7 +200,7 @@ function ReadyCard({
               hire.startDate === undefined ? undefined : `starts ${hire.startDate}`,
             ]
               .filter(Boolean)
-              .join(' · ')}
+              .join(', ')}
           </div>
           {error === null ? null : (
             <p
@@ -233,22 +211,24 @@ function ReadyCard({
             </p>
           )}
         </Stack>
-        <Button
-          size="sm"
-          loading={busy}
-          disabled={busy}
-          onClick={() => {
-            setBusy(true);
-            setError(null);
-            startOnboarding(scope, hire.employeeId)
-              .then(onChanged)
-              .catch((caught: unknown) => setError(errorText(caught)))
-              .finally(() => setBusy(false));
-          }}
-        >
-          Start onboarding
-        </Button>
-      </Stack>
+        <div className="nexora-actions">
+          <TurnTag>Ready for you</TurnTag>
+          <Button
+            loading={busy}
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setError(null);
+              startOnboarding(scope, hire.employeeId)
+                .then(onChanged)
+                .catch((caught: unknown) => setError(errorText(caught)))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Start onboarding
+          </Button>
+        </div>
+      </div>
     </Card>
   );
 }
@@ -276,14 +256,21 @@ export function OnboardingCard({
       .finally(() => setBusy(null));
   };
 
+  const canAssignNow =
+    record.status === 'completed' &&
+    record.projectName !== undefined &&
+    !record.assignedToProject &&
+    record.canAssign &&
+    record.projectId !== undefined;
+  const myTurn = canAssignNow || record.items.some((item) => item.canComplete);
   return (
-    <Card padding={5} data-testid="onboarding-card">
+    <Card padding={5} className={myTurn ? 'nexora-turn' : undefined}>
       <Stack gap={4} stretch>
-        <Stack direction="row" justify="space-between" align="flex-start" gap={3}>
+        <div className="nexora-page-head" style={{ alignItems: 'flex-start' }}>
           <Stack gap={1}>
-            <div style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.lg }}>
+            <h3 style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.lg }}>
               {record.employeeName}
-            </div>
+            </h3>
             <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
               {[
                 record.jobTitle,
@@ -293,15 +280,18 @@ export function OnboardingCard({
                   : `hiring manager ${record.hiringManagerName}`,
               ]
                 .filter(Boolean)
-                .join(' · ')}
+                .join(', ')}
             </div>
           </Stack>
-          <Badge tone={record.status === 'completed' ? 'success' : 'warning'}>
-            {record.status === 'completed' ? 'Active' : progressLabel(record)}
-          </Badge>
-        </Stack>
+          <div className="nexora-actions" style={{ gap: 8 }}>
+            {myTurn ? <TurnTag>Your part</TurnTag> : null}
+            <Badge tone={record.status === 'completed' ? 'success' : 'warning'}>
+              {record.status === 'completed' ? 'Active' : progressLabel(record)}
+            </Badge>
+          </div>
+        </div>
 
-        <Stack gap={2} stretch>
+        <div className="nexora-rows" style={{ borderTop: '1px solid var(--nexora-border)' }}>
           {record.items.map((item) => (
             <div
               key={item.key}
@@ -310,26 +300,41 @@ export function OnboardingCard({
                 gap: 12,
                 alignItems: 'center',
                 flexWrap: 'wrap',
-                padding: '8px 0',
-                borderTop: '1px solid var(--nexora-border)',
+                padding: '12px 0',
               }}
             >
-              <span style={{ width: 20, textAlign: 'center' }} aria-hidden>
-                {item.done ? '✓' : '○'}
+              <span
+                aria-hidden
+                className="nexora-check"
+                data-done={item.done}
+                data-mine={item.canComplete}
+              >
+                {item.done ? <NavIcon name="check" size={12} /> : null}
               </span>
-              <div style={{ flex: '1 1 240px' }}>
-                <div style={{ fontSize: typography.sizes.sm }}>{item.title}</div>
+              <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: typography.sizes.base,
+                    fontWeight: typography.weights.medium,
+                    color: item.done ? 'var(--nexora-textSecondary)' : 'var(--nexora-text)',
+                  }}
+                >
+                  {item.title}
+                </div>
                 <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
                   {OWNER_LABEL[item.owner]}
                   {item.done
-                    ? ` · done${item.doneByName === undefined ? '' : ` by ${item.doneByName}`}${
-                        item.note === undefined ? '' : ` — ${item.note}`
+                    ? `, done${item.doneByName === undefined ? '' : ` by ${item.doneByName}`}${
+                        item.note === undefined ? '' : ` (${item.note})`
                       }`
-                    : ' · waiting'}
+                    : ', waiting'}
                 </div>
               </div>
               {item.canComplete ? (
-                <Stack direction="row" gap={2} align="center">
+                <div
+                  className="nexora-actions"
+                  style={{ flex: '1 1 260px', justifyContent: 'flex-end' }}
+                >
                   <Input
                     value={notes[item.key] ?? ''}
                     onChange={(event) =>
@@ -337,7 +342,8 @@ export function OnboardingCard({
                     }
                     placeholder={item.key === 'buddy' ? 'Who is the buddy?' : 'Note (optional)'}
                     maxLength={300}
-                    style={{ width: 200 }}
+                    aria-label={item.key === 'buddy' ? 'Buddy name' : 'Note'}
+                    style={{ flex: '1 1 160px', width: 'auto', minWidth: 0 }}
                   />
                   <Button
                     size="sm"
@@ -352,19 +358,20 @@ export function OnboardingCard({
                   >
                     Mark done
                   </Button>
-                </Stack>
+                </div>
               ) : null}
             </div>
           ))}
-        </Stack>
+        </div>
 
         {record.status === 'completed' && record.projectName !== undefined ? (
           record.assignedToProject ? (
-            <Badge tone="success">Assigned to {record.projectName}</Badge>
+            <Badge tone="success" style={{ alignSelf: 'flex-start' }}>
+              Assigned to {record.projectName}
+            </Badge>
           ) : record.canAssign && record.projectId !== undefined ? (
             <div>
               <Button
-                size="sm"
                 loading={busy === 'assign'}
                 disabled={busy !== null}
                 onClick={() =>

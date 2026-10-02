@@ -79,8 +79,8 @@ describe('OnboardingView', () => {
         },
       ],
     });
-    expect(html).toContain('Hired — onboarding not started (1)');
-    expect(html).toContain('Backend Developer · starts 2026-11-01');
+    expect(html).toContain('Hired, onboarding not started');
+    expect(html).toContain('Backend Developer, starts 2026-11-01');
     expect(html).toContain('Start onboarding');
   });
 
@@ -89,9 +89,9 @@ describe('OnboardingView', () => {
     expect(html).toContain('Sarah Thomas');
     expect(html).toContain('hiring manager Rohan Mehta');
     expect(html).toContain('1 of 5 done');
-    expect(html).toContain('HR · done by Priya Menon');
-    expect(html).toContain('IT · waiting');
-    expect(html).toContain('Hiring manager · waiting');
+    expect(html).toContain('HR, done by Priya Menon');
+    expect(html).toContain('IT, waiting');
+    expect(html).toContain('Hiring manager, waiting');
     // Nothing is completable for this caller.
     expect(html).not.toContain('Mark done');
   });

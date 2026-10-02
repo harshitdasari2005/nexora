@@ -90,16 +90,21 @@ describe('DemoPanel', () => {
   });
 
   it('lists the server personas, marks the current one, and never shows emails or user ids', () => {
-    const html = render(<DemoPanel />, state({ persona: CONFIG.personas[1] ?? null }));
-    expect(html).toContain('Demo personas');
-    for (const label of ['CEO', 'Team Manager', 'Controller', 'CFO']) expect(html).toContain(label);
+    const html = render(<DemoPanel defaultOpen />, state({ persona: CONFIG.personas[1] ?? null }));
+    expect(html).toContain('Demo office');
+    for (const candidate of CONFIG.personas) {
+      expect(html).toContain(candidate.title);
+      expect(html).toContain(candidate.displayName);
+    }
     expect(html).toContain('Signed in as Rohan Mehta');
-    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('aria-checked="true"');
     expect(html).not.toMatch(/usr_|@/);
   });
 
   it('warns when the session is not a demo persona', () => {
-    expect(render(<DemoPanel />, state({}))).toContain('Not signed in as a demo persona');
+    expect(render(<DemoPanel defaultOpen />, state({}))).toContain(
+      'Not signed in as a demo persona',
+    );
   });
 });
 
@@ -216,11 +221,13 @@ describe('the whole office can sign in', () => {
     expect(html).toContain('Enter as HR Manager');
   });
 
-  it('the sidebar switcher lists every person', () => {
-    const html = render(<DemoPanel />, state({ config: OFFICE }));
-    for (const label of ['CEO', 'CTO', 'Team Manager', 'Developer · Aarav', 'HR', 'CFO']) {
-      expect(html).toContain(label);
+  it('the top-bar switcher lists every person', () => {
+    const html = render(<DemoPanel defaultOpen />, state({ config: OFFICE }));
+    for (const candidate of OFFICE.personas) {
+      expect(html).toContain(candidate.displayName);
+      expect(html).toContain(candidate.title);
     }
+    expect(html.match(/role="menuitemradio"/g)).toHaveLength(OFFICE.personas.length);
   });
 
   it('story people land in the guided story; everyone else lands in their own workspace', () => {

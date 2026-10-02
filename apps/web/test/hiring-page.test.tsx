@@ -149,7 +149,7 @@ describe('HiringView', () => {
   it("shows a request with its status, requester and progress — and NO decision buttons when it is not the caller's turn", () => {
     const html = render([requisition()]);
     expect(html).toContain('Senior Backend Developer');
-    expect(html).toContain('requested by Rohan Mehta');
+    expect(html).toContain('Raised by Rohan Mehta');
     expect(html).toContain('Waiting for the CEO');
     expect(html).toContain('Urgent');
     expect(html).toContain('CEO decision');
@@ -167,7 +167,7 @@ describe('HiringView', () => {
         actions: { canDecide: true, canRevise: false, canWithdraw: false },
       }),
     ]);
-    expect(html).toContain('Waiting for your decision (1)');
+    expect(html).toContain('Waiting for your decision');
     expect(html.indexOf('Data Engineer')).toBeLessThan(html.indexOf('QA Engineer'));
     expect(html).toContain('>Approve<');
     expect(html).toContain('Reject and send back');

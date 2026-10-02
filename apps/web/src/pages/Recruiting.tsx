@@ -22,12 +22,15 @@ import {
   Input,
   Select,
   Stack,
+  Textarea,
   typography,
 } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
+import { NavIcon } from '../components/NavIcon.js';
+import { Page, PageHeader, Route, Section, SubHeading, TurnTag } from '../components/Page.js';
 import { api, ApiError } from '../lib/api.js';
 import type { HiringScope } from '../lib/hiring.js';
 import {
@@ -43,6 +46,7 @@ import {
   OPENING_STATUS_LABEL,
   RECOMMENDATION_LABEL,
   recordOfferResponse,
+  candidateRoute,
   seatSummary,
   STAGE_LABEL,
   type Candidate,
@@ -188,69 +192,47 @@ export function RecruitingView({
   onChanged,
 }: RecruitingViewProps): JSX.Element {
   return (
-    <div style={{ padding: 32, maxWidth: 980, margin: '0 auto' }}>
-      <Stack gap={6} stretch>
-        <Stack gap={1}>
-          <h1 style={{ fontSize: typography.sizes['3xl'], fontWeight: typography.weights.bold }}>
-            Recruiting
-          </h1>
-          <p style={{ color: 'var(--nexora-textSecondary)' }}>
-            {canManage
-              ? 'Open a position for an approved hiring request, then take candidates from application to offer.'
-              : 'The positions being hired for, their candidates and where each one stands.'}
-          </p>
-        </Stack>
+    <Page>
+      <PageHeader
+        title="Recruiting"
+        lede={
+          canManage
+            ? 'Open a position for an approved hiring request, then take candidates from application to offer.'
+            : 'The positions being hired for, their candidates and where each one stands.'
+        }
+      />
 
-        {ready.length > 0 ? (
-          <Stack gap={3} stretch>
-            <SectionTitle>Approved requests waiting for a position ({ready.length})</SectionTitle>
-            {ready.map((requisition) => (
-              <ReadyCard
-                key={requisition.id}
-                scope={scope}
-                requisition={requisition}
-                onChanged={onChanged}
-              />
-            ))}
-          </Stack>
-        ) : null}
-
-        {openings.length === 0 && ready.length === 0 ? (
-          <Card padding={10}>
-            <EmptyState
-              icon="🧑‍💼"
-              title="Nothing to recruit for yet"
-              description="A position appears here once a hiring request has been approved by the CEO and by Finance."
+      {ready.length > 0 ? (
+        <Section title="Approved and waiting for a position" count={ready.length}>
+          {ready.map((requisition) => (
+            <ReadyCard
+              key={requisition.id}
+              scope={scope}
+              requisition={requisition}
+              onChanged={onChanged}
             />
-          </Card>
-        ) : null}
+          ))}
+        </Section>
+      ) : null}
 
-        {openings.length > 0 ? (
-          <Stack gap={3} stretch>
-            <SectionTitle>Positions</SectionTitle>
-            {openings.map((opening) => (
-              <OpeningCard key={opening.id} scope={scope} opening={opening} onChanged={onChanged} />
-            ))}
-          </Stack>
-        ) : null}
-      </Stack>
-    </div>
-  );
-}
+      {openings.length === 0 && ready.length === 0 ? (
+        <Card padding={10}>
+          <EmptyState
+            icon={<NavIcon name="recruiting" size={18} />}
+            title="Nothing to recruit for yet"
+            description="A position appears here once a hiring request has been approved by the CEO and by Finance."
+          />
+        </Card>
+      ) : null}
 
-function SectionTitle({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <div
-      style={{
-        fontSize: typography.sizes.xs,
-        fontWeight: typography.weights.semibold,
-        letterSpacing: '0.06em',
-        textTransform: 'uppercase',
-        color: 'var(--nexora-textMuted)',
-      }}
-    >
-      {children}
-    </div>
+      {openings.length > 0 ? (
+        <Section title="Positions" count={openings.length}>
+          {openings.map((opening) => (
+            <OpeningCard key={opening.id} scope={scope} opening={opening} onChanged={onChanged} />
+          ))}
+        </Section>
+      ) : null}
+    </Page>
   );
 }
 
@@ -304,30 +286,31 @@ function ReadyCard({
   };
 
   return (
-    <Card padding={5} data-testid="ready-requisition">
+    <Card padding={5} className="nexora-turn">
       <Stack gap={3} stretch>
-        <Stack direction="row" justify="space-between" align="flex-start" gap={3}>
+        <div className="nexora-page-head" style={{ alignItems: 'flex-start' }}>
           <Stack gap={1}>
-            <div style={{ fontWeight: typography.weights.semibold }}>
-              {requisition.jobTitle} × {requisition.headcount}
-            </div>
+            <h3 style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.lg }}>
+              {requisition.jobTitle}
+              {requisition.headcount > 1 ? ` × ${requisition.headcount}` : ''}
+            </h3>
             <Muted>
-              {requisition.department} · requested by {requisition.requestedByName ?? 'a manager'} ·
-              approved range {money(requisition.salaryMinMinorUnits, requisition.currency)} –{' '}
-              {money(requisition.salaryMaxMinorUnits, requisition.currency)}
+              For {requisition.department}, raised by {requisition.requestedByName ?? 'a manager'}.
+              Approved range {money(requisition.salaryMinMinorUnits, requisition.currency)} –{' '}
+              {money(requisition.salaryMaxMinorUnits, requisition.currency)}.
             </Muted>
           </Stack>
-          {!opening ? (
-            <Button size="sm" onClick={() => setOpening(true)}>
-              Open position
-            </Button>
-          ) : null}
-        </Stack>
+          <div className="nexora-actions">
+            <TurnTag>Ready for you</TurnTag>
+            {!opening ? <Button onClick={() => setOpening(true)}>Open position</Button> : null}
+          </div>
+        </div>
         {opening ? (
           <form onSubmit={(event) => void submit(event)}>
             <Stack gap={3} stretch>
               <Field label="Job posting" required hint="What candidates will read about the role.">
-                <Input
+                <Textarea
+                  rows={3}
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   placeholder="Build and run the mobile banking backend services…"
@@ -335,14 +318,14 @@ function ReadyCard({
                 />
               </Field>
               <ErrorLine message={error} />
-              <Stack direction="row" gap={3}>
+              <div className="nexora-actions">
                 <Button type="submit" size="sm" loading={busy} disabled={busy}>
                   Open position
                 </Button>
                 <Button type="button" size="sm" variant="ghost" onClick={() => setOpening(false)}>
                   Cancel
                 </Button>
-              </Stack>
+              </div>
             </Stack>
           </form>
         ) : null}
@@ -394,15 +377,15 @@ function OpeningCard({
   };
 
   return (
-    <Card padding={5} data-testid="opening-card">
+    <Card padding={5}>
       <Stack gap={4} stretch>
-        <Stack direction="row" justify="space-between" align="flex-start" gap={3}>
+        <div className="nexora-page-head" style={{ alignItems: 'flex-start' }}>
           <Stack gap={1}>
-            <div style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.lg }}>
+            <h3 style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.lg }}>
               {opening.title}
-            </div>
+            </h3>
             <Muted>
-              {opening.department} · hiring manager {opening.hiringManagerName ?? '—'} ·{' '}
+              For {opening.department}. Hiring manager: {opening.hiringManagerName ?? 'not set'}.{' '}
               {seatSummary(opening)}
             </Muted>
           </Stack>
@@ -417,8 +400,8 @@ function OpeningCard({
           >
             {OPENING_STATUS_LABEL[opening.status]}
           </Badge>
-        </Stack>
-        <Stack direction="row" gap={3} style={{ flexWrap: 'wrap' }}>
+        </div>
+        <div className="nexora-actions">
           <Button
             size="sm"
             variant="secondary"
@@ -444,7 +427,7 @@ function OpeningCard({
               Resume recruiting
             </Button>
           ) : null}
-        </Stack>
+        </div>
         <ErrorLine message={error} />
 
         {open ? (
@@ -457,7 +440,7 @@ function OpeningCard({
             {opening.canManage && opening.status === 'open' && !adding ? (
               <div>
                 <Button size="sm" onClick={() => setAdding(true)}>
-                  + Add candidate
+                  Add candidate
                 </Button>
               </div>
             ) : null}
@@ -537,13 +520,13 @@ function AddCandidateForm({
     }
   };
 
-  const half = { flex: '1 1 200px' } as const;
+  const half = { minWidth: 0 } as const;
   return (
-    <Card padding={4} data-testid="add-candidate-form">
+    <div className="nexora-inset">
       <form onSubmit={(event) => void submit(event)}>
         <Stack gap={3} stretch>
-          <div style={{ fontWeight: typography.weights.semibold }}>Add a candidate</div>
-          <Stack direction="row" gap={3} stretch style={{ flexWrap: 'wrap' }}>
+          <SubHeading>Add a candidate</SubHeading>
+          <div className="nexora-fields">
             <div style={half}>
               <Field label="Name" required>
                 <Input
@@ -563,8 +546,8 @@ function AddCandidateForm({
                 />
               </Field>
             </div>
-          </Stack>
-          <Stack direction="row" gap={3} stretch style={{ flexWrap: 'wrap' }}>
+          </div>
+          <div className="nexora-fields">
             <div style={half}>
               <Field label="Phone" hint="Optional">
                 <Input
@@ -588,26 +571,27 @@ function AddCandidateForm({
                 </Select>
               </Field>
             </div>
-          </Stack>
+          </div>
           <Field label="Resume notes" hint="Optional — experience, skills, anything worth knowing.">
-            <Input
+            <Textarea
+              rows={2}
               value={resumeNotes}
               onChange={(event) => setResumeNotes(event.target.value)}
               maxLength={4000}
             />
           </Field>
           <ErrorLine message={error} />
-          <Stack direction="row" gap={3}>
+          <div className="nexora-actions">
             <Button type="submit" size="sm" loading={busy} disabled={busy}>
               Add candidate
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={onCancel} disabled={busy}>
               Cancel
             </Button>
-          </Stack>
+          </div>
         </Stack>
       </form>
-    </Card>
+    </div>
   );
 }
 
@@ -655,24 +639,29 @@ export function CandidateCard({
 
   const { actions } = candidate;
   return (
-    <Card padding={4} data-testid="candidate-card">
+    <div className="nexora-inset">
       <Stack gap={3} stretch>
-        <Stack direction="row" justify="space-between" align="flex-start" gap={3}>
+        <div className="nexora-page-head" style={{ alignItems: 'flex-start' }}>
           <Stack gap={1}>
-            <div style={{ fontWeight: typography.weights.semibold }}>{candidate.name}</div>
+            <h4 style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.md }}>
+              {candidate.name}
+            </h4>
             <Muted>
               {candidate.email}
-              {candidate.phone === undefined ? '' : ` · ${candidate.phone}`} ·{' '}
-              {SOURCE_LABEL[candidate.source]}
+              {candidate.phone === undefined ? '' : `, ${candidate.phone}`}. Came through:{' '}
+              {SOURCE_LABEL[candidate.source].toLowerCase()}.
             </Muted>
           </Stack>
           <Badge tone={STAGE_TONE[candidate.stage]}>{STAGE_LABEL[candidate.stage]}</Badge>
-        </Stack>
+        </div>
+        {candidateRoute(candidate.stage) === undefined ? null : (
+          <Route stops={candidateRoute(candidate.stage) ?? []} />
+        )}
         {candidate.resumeNotes === undefined ? null : <Muted>{candidate.resumeNotes}</Muted>}
 
         {candidate.feedback.length > 0 ? (
           <Stack gap={1} stretch>
-            <SectionTitle>Interview feedback</SectionTitle>
+            <SubHeading>Interview feedback</SubHeading>
             {candidate.feedback.map((entry, index) => (
               <div key={`${entry.by}-${index}`} style={{ fontSize: typography.sizes.sm }}>
                 <strong>{entry.byName ?? 'An interviewer'}</strong> ({entry.stage}) — {entry.rating}
@@ -695,10 +684,12 @@ export function CandidateCard({
           <Muted>Reason: {candidate.closedReason}</Muted>
         ) : null}
         {candidate.stage === 'hired' ? (
-          <Badge tone="success">Hired — an employee record was created</Badge>
+          <Badge tone="success" style={{ alignSelf: 'flex-start' }}>
+            Hired, employee record created
+          </Badge>
         ) : null}
 
-        <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
+        <div className="nexora-actions">
           {actions.canAdvance && candidate.nextStage !== undefined ? (
             <Button
               size="sm"
@@ -749,12 +740,12 @@ export function CandidateCard({
               Reject / withdrew
             </Button>
           ) : null}
-        </Stack>
+        </div>
 
         {panel === 'feedback' ? (
           <Stack gap={3} stretch>
-            <Stack direction="row" gap={3} stretch style={{ flexWrap: 'wrap' }}>
-              <div style={{ flex: '1 1 140px' }}>
+            <div className="nexora-fields">
+              <div style={{ minWidth: 0 }}>
                 <Field label="Rating (1–5)" required>
                   <Select value={rating} onChange={(event) => setRating(event.target.value)}>
                     {['1', '2', '3', '4', '5'].map((value) => (
@@ -765,7 +756,7 @@ export function CandidateCard({
                   </Select>
                 </Field>
               </div>
-              <div style={{ flex: '1 1 180px' }}>
+              <div style={{ minWidth: 0 }}>
                 <Field label="Would you hire them?" required>
                   <Select
                     value={recommendation}
@@ -779,15 +770,16 @@ export function CandidateCard({
                   </Select>
                 </Field>
               </div>
-            </Stack>
+            </div>
             <Field label="Notes" required>
-              <Input
+              <Textarea
+                rows={2}
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
                 maxLength={2000}
               />
             </Field>
-            <Stack direction="row" gap={3}>
+            <div className="nexora-actions">
               <Button
                 size="sm"
                 loading={busy === 'feedback'}
@@ -807,7 +799,7 @@ export function CandidateCard({
               <Button size="sm" variant="ghost" onClick={() => setPanel(null)}>
                 Cancel
               </Button>
-            </Stack>
+            </div>
           </Stack>
         ) : null}
 
@@ -818,8 +810,8 @@ export function CandidateCard({
               {money(opening.salaryMaxMinorUnits, opening.currency)} per year. The offer must be
               inside that range.
             </Muted>
-            <Stack direction="row" gap={3} stretch style={{ flexWrap: 'wrap' }}>
-              <div style={{ flex: '1 1 200px' }}>
+            <div className="nexora-fields">
+              <div style={{ minWidth: 0 }}>
                 <Field label={`Salary (${opening.currency} / year)`} required>
                   <Input
                     type="number"
@@ -830,7 +822,7 @@ export function CandidateCard({
                   />
                 </Field>
               </div>
-              <div style={{ flex: '1 1 200px' }}>
+              <div style={{ minWidth: 0 }}>
                 <Field label="Start date" required>
                   <Input
                     type="date"
@@ -839,8 +831,8 @@ export function CandidateCard({
                   />
                 </Field>
               </div>
-            </Stack>
-            <Stack direction="row" gap={3}>
+            </div>
+            <div className="nexora-actions">
               <Button
                 size="sm"
                 loading={busy === 'offer'}
@@ -859,14 +851,14 @@ export function CandidateCard({
               <Button size="sm" variant="ghost" onClick={() => setPanel(null)}>
                 Cancel
               </Button>
-            </Stack>
+            </div>
           </Stack>
         ) : null}
 
         {panel === 'close' ? (
           <Stack gap={3} stretch>
-            <Stack direction="row" gap={3} stretch style={{ flexWrap: 'wrap' }}>
-              <div style={{ flex: '1 1 180px' }}>
+            <div className="nexora-fields">
+              <div style={{ minWidth: 0 }}>
                 <Field label="What happened?" required>
                   <Select
                     value={outcome}
@@ -877,7 +869,7 @@ export function CandidateCard({
                   </Select>
                 </Field>
               </div>
-              <div style={{ flex: '2 1 260px' }}>
+              <div style={{ minWidth: 0 }}>
                 <Field label="Reason" required>
                   <Input
                     value={reason}
@@ -886,8 +878,8 @@ export function CandidateCard({
                   />
                 </Field>
               </div>
-            </Stack>
-            <Stack direction="row" gap={3}>
+            </div>
+            <div className="nexora-actions">
               <Button
                 size="sm"
                 variant="secondary"
@@ -904,12 +896,12 @@ export function CandidateCard({
               <Button size="sm" variant="ghost" onClick={() => setPanel(null)}>
                 Cancel
               </Button>
-            </Stack>
+            </div>
           </Stack>
         ) : null}
 
         <ErrorLine message={error} />
       </Stack>
-    </Card>
+    </div>
   );
 }

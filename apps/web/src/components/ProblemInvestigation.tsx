@@ -47,19 +47,7 @@ export function severityAccent(severity: BusinessProblemDto['severity']): string
 
 /** A small uppercase eyebrow label above a section of investigation content. */
 export function SectionLabel({ children }: { children: ReactNode }): JSX.Element {
-  return (
-    <div
-      style={{
-        fontSize: '11px',
-        fontWeight: typography.weights.semibold,
-        color: 'var(--nexora-textMuted)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.06em',
-      }}
-    >
-      {children}
-    </div>
-  );
+  return <div className="nexora-section-title">{children}</div>;
 }
 
 /** Readable labels for evidence source keys (never a raw bracketed tag). */
@@ -95,8 +83,6 @@ export function RecommendationBanner({
             fontSize: typography.sizes.xs,
             fontWeight: typography.weights.semibold,
             color: 'var(--nexora-primary)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
             marginBottom: 3,
           }}
         >

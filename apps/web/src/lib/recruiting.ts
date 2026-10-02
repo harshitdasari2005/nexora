@@ -223,3 +223,21 @@ export function seatSummary(
       : ` · ${opening.offersOut} offer${opening.offersOut === 1 ? '' : 's'} out`;
   return `${opening.hiredCount} of ${opening.headcount} hired${offers}`;
 }
+
+/** The stages a candidate walks through, in order. */
+const PIPELINE: readonly CandidateStage[] = ['applied', 'screening', 'interview', 'offer', 'hired'];
+
+/**
+ * A candidate's progress as a route of stations. A candidate who was rejected
+ * or withdrew has left the route, so there is nothing to draw.
+ */
+export function candidateRoute(
+  stage: CandidateStage,
+): { label: string; state: 'done' | 'current' | 'waiting' }[] | undefined {
+  const at = PIPELINE.indexOf(stage);
+  if (at < 0) return undefined;
+  return PIPELINE.map((step, index) => ({
+    label: STAGE_LABEL[step],
+    state: index < at || stage === 'hired' ? 'done' : index === at ? 'current' : 'waiting',
+  }));
+}

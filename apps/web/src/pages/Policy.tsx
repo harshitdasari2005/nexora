@@ -311,16 +311,7 @@ export function PolicyView({
         style={{ flexWrap: 'wrap' }}
       >
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Policy Administration
-          </h1>
+          <h1 className="nexora-page-title">Policy Administration</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName} · {workspaceName} — governed rules and their version history
           </p>

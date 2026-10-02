@@ -7,14 +7,20 @@
  * matches the input rather than the OS.
  */
 
-import type { CSSProperties, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import type {
+  CSSProperties,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+} from 'react';
 import { motion, radius, spacing, typography } from '../tokens.js';
 import { Stack } from './Stack.js';
 
 /** Base styling shared by inputs and selects. */
 const controlStyle: React.CSSProperties = {
   width: '100%',
-  height: 34,
+  height: 'var(--nexora-control-md, 38px)',
   paddingInline: spacing[3],
   background: 'var(--nexora-surface)',
   border: '1px solid var(--nexora-borderStrong)',
@@ -86,6 +92,42 @@ export function Input({ invalid = false, className, style, ...rest }: InputProps
   };
   return (
     <input
+      className={['nexora-input', invalid ? 'nexora-input-invalid' : '', className]
+        .filter(Boolean)
+        .join(' ')}
+      style={merged}
+      {...rest}
+    />
+  );
+}
+
+/** Props of {@link Textarea}. */
+export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  /** Invalid state (danger border). */
+  invalid?: boolean;
+}
+
+/** A styled multi-line text input (grows with `rows`; resizable vertically). */
+export function Textarea({
+  invalid = false,
+  className,
+  style,
+  rows = 3,
+  ...rest
+}: TextareaProps): JSX.Element {
+  const merged: CSSProperties = {
+    ...controlStyle,
+    height: 'auto',
+    minHeight: 'var(--nexora-control-md, 38px)',
+    paddingBlock: spacing[2],
+    lineHeight: 1.5,
+    resize: 'vertical',
+    borderColor: invalid ? 'var(--nexora-danger)' : undefined,
+    ...style,
+  };
+  return (
+    <textarea
+      rows={rows}
       className={['nexora-input', invalid ? 'nexora-input-invalid' : '', className]
         .filter(Boolean)
         .join(' ')}

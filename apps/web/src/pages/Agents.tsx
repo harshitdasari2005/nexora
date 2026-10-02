@@ -253,16 +253,7 @@ export function AgentsView({
   return (
     <Stack gap={6} style={{ maxWidth: 1080, margin: '0 auto' }}>
       <Stack gap={1}>
-        <h1
-          style={{
-            fontSize: typography.sizes['3xl'],
-            fontWeight: typography.weights.bold,
-            letterSpacing: '-0.03em',
-            lineHeight: 1.1,
-          }}
-        >
-          Agents
-        </h1>
+        <h1 className="nexora-page-title">Agents</h1>
         <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
           Agent identities of {workspaceName}, and the capabilities delegated to them.
         </p>

@@ -22,12 +22,15 @@ import {
   Input,
   Select,
   Stack,
+  Textarea,
   typography,
 } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
+import { NavIcon } from '../components/NavIcon.js';
+import { Fact, Page, PageHeader, Route, Section, SubHeading, TurnTag } from '../components/Page.js';
 import { api, ApiError } from '../lib/api.js';
 import {
   chainSteps,
@@ -221,147 +224,89 @@ export function HiringView({
   const others = requisitions.filter((entry) => !entry.actions.canDecide);
 
   return (
-    <div style={{ padding: 32, maxWidth: 980, margin: '0 auto' }}>
-      <Stack gap={6} stretch>
-        <Stack direction="row" justify="space-between" align="flex-start" gap={4}>
-          <Stack gap={1}>
-            <h1 style={{ fontSize: typography.sizes['3xl'], fontWeight: typography.weights.bold }}>
-              Hiring requests
-            </h1>
-            <p style={{ color: 'var(--nexora-textSecondary)' }}>
-              A team raises a request → the CEO decides → Finance decides → HR hires. A rejection
-              goes back to the requester.
-            </p>
-          </Stack>
-          {canCreate && !creating ? (
-            <Button onClick={() => setCreating(true)}>+ New hiring request</Button>
-          ) : null}
-        </Stack>
+    <Page>
+      <PageHeader
+        title="Hiring requests"
+        lede="A team asks for a hire, the CEO decides, then Finance, then HR recruits. A rejected request goes back to the person who raised it."
+        actions={
+          canCreate && !creating ? (
+            <Button onClick={() => setCreating(true)}>New hiring request</Button>
+          ) : undefined
+        }
+      />
 
-        {creating ? (
-          <RequisitionForm
-            title="New hiring request"
-            submitLabel="Send for approval"
-            defaultDepartment={workspaceName}
-            projects={projects}
-            onCancel={() => setCreating(false)}
-            onSubmit={async (details) => {
-              await submitRequisition(scope, details);
-              setCreating(false);
-              onChanged();
-            }}
+      {creating ? (
+        <RequisitionForm
+          title="New hiring request"
+          submitLabel="Send for approval"
+          defaultDepartment={workspaceName}
+          projects={projects}
+          onCancel={() => setCreating(false)}
+          onSubmit={async (details) => {
+            await submitRequisition(scope, details);
+            setCreating(false);
+            onChanged();
+          }}
+        />
+      ) : null}
+
+      {requisitions.length === 0 && !creating ? (
+        <Card padding={10}>
+          <EmptyState
+            icon={<NavIcon name="hiring" size={18} />}
+            title="No hiring requests yet"
+            description={
+              canCreate
+                ? 'When your team needs someone, raise a hiring request. It goes to the CEO, then to Finance.'
+                : 'Hiring requests raised by the teams will appear here.'
+            }
           />
-        ) : null}
+        </Card>
+      ) : null}
 
-        {requisitions.length === 0 && !creating ? (
-          <Card padding={10}>
-            <EmptyState
-              icon="🧑‍💼"
-              title="No hiring requests yet"
-              description={
-                canCreate
-                  ? 'When your team needs someone, raise a hiring request. It goes to the CEO, then to Finance.'
-                  : 'Hiring requests raised by the teams will appear here.'
-              }
+      {waitingForMe.length > 0 ? (
+        <Section title="Waiting for your decision" count={waitingForMe.length}>
+          {waitingForMe.map((requisition) => (
+            <RequisitionCard
+              key={requisition.id}
+              scope={scope}
+              requisition={requisition}
+              projects={projects}
+              onChanged={onChanged}
+              initiallyOpen
             />
-          </Card>
-        ) : null}
+          ))}
+        </Section>
+      ) : null}
 
-        {waitingForMe.length > 0 ? (
-          <Stack gap={3} stretch>
-            <SectionTitle>Waiting for your decision ({waitingForMe.length})</SectionTitle>
-            {waitingForMe.map((requisition) => (
-              <RequisitionCard
-                key={requisition.id}
-                scope={scope}
-                requisition={requisition}
-                projects={projects}
-                onChanged={onChanged}
-                initiallyOpen
-              />
-            ))}
-          </Stack>
-        ) : null}
-
-        {others.length > 0 ? (
-          <Stack gap={3} stretch>
-            <SectionTitle>
-              {waitingForMe.length > 0 ? 'Other requests' : 'All requests'}
-            </SectionTitle>
-            {others.map((requisition) => (
-              <RequisitionCard
-                key={requisition.id}
-                scope={scope}
-                requisition={requisition}
-                projects={projects}
-                onChanged={onChanged}
-                initiallyOpen={requisition.actions.canRevise}
-              />
-            ))}
-          </Stack>
-        ) : null}
-      </Stack>
-    </div>
+      {others.length > 0 ? (
+        <Section
+          title={waitingForMe.length > 0 ? 'Other requests' : 'All requests'}
+          count={others.length}
+        >
+          {others.map((requisition) => (
+            <RequisitionCard
+              key={requisition.id}
+              scope={scope}
+              requisition={requisition}
+              projects={projects}
+              onChanged={onChanged}
+              initiallyOpen={requisition.actions.canRevise}
+            />
+          ))}
+        </Section>
+      ) : null}
+    </Page>
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }): JSX.Element {
-  return (
-    <div
-      style={{
-        fontSize: typography.sizes.xs,
-        fontWeight: typography.weights.semibold,
-        letterSpacing: '0.06em',
-        textTransform: 'uppercase',
-        color: 'var(--nexora-textMuted)',
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** The Raised → CEO → Finance → HR progress strip. */
+/** The Raised → CEO → Finance → HR route. */
 export function ChainStrip({
   requisition,
 }: {
   requisition: Pick<Requisition, 'status' | 'history' | 'round' | 'recruiting'>;
 }): JSX.Element {
-  const color: Record<string, string> = {
-    done: 'var(--nexora-success)',
-    current: 'var(--nexora-primary)',
-    waiting: 'var(--nexora-border)',
-    skipped: 'var(--nexora-textMuted)',
-    returned: 'var(--nexora-danger)',
-  };
-  const note: Record<string, string> = {
-    done: 'Done',
-    current: 'In progress',
-    waiting: 'Not yet',
-    skipped: 'Not needed',
-    returned: 'Returned',
-  };
-  return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} data-testid="chain-strip">
-      {chainSteps(requisition).map((step) => (
-        <div
-          key={step.label}
-          style={{
-            flex: '1 1 120px',
-            borderTop: `3px solid ${color[step.state]}`,
-            paddingTop: 6,
-          }}
-        >
-          <div style={{ fontSize: typography.sizes.sm, fontWeight: typography.weights.medium }}>
-            {step.label}
-          </div>
-          <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
-            {note[step.state]}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  return <Route stops={chainSteps(requisition)} testId="chain-strip" />;
 }
 
 /** One request: summary, progress, details, history and the caller's actions. */
@@ -399,30 +344,36 @@ export function RequisitionCard({
     }
   };
 
+  const myTurn = requisition.actions.canDecide || requisition.actions.canRevise;
   return (
-    <Card padding={5} data-testid="requisition-card">
+    <Card padding={5} className={myTurn ? 'nexora-turn' : undefined}>
       <Stack gap={4} stretch>
-        <Stack direction="row" justify="space-between" align="flex-start" gap={3}>
+        <div className="nexora-page-head" style={{ alignItems: 'flex-start' }}>
           <Stack gap={1}>
-            <div style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.lg }}>
+            <h3 style={{ fontWeight: typography.weights.semibold, fontSize: typography.sizes.lg }}>
               {requisition.jobTitle}
-              <span style={{ color: 'var(--nexora-textMuted)', fontWeight: 400 }}>
-                {' '}
-                × {requisition.headcount}
-              </span>
-            </div>
+              {requisition.headcount > 1 ? (
+                <span style={{ color: 'var(--nexora-textMuted)', fontWeight: 400 }}>
+                  {' '}
+                  × {requisition.headcount}
+                </span>
+              ) : null}
+            </h3>
             <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
-              {requisition.department}
-              {projectName === undefined ? '' : ` · ${projectName}`} · requested by{' '}
+              For {requisition.department}
+              {projectName === undefined ? '' : `, ${projectName}`}. Raised by{' '}
               {requisition.requestedByName ?? 'a team member'}
-              {requisition.round > 1 ? ` · round ${requisition.round}` : ''}
+              {requisition.round > 1 ? `, round ${requisition.round}` : ''}.
             </div>
           </Stack>
-          <Stack direction="row" gap={2} align="center">
+          <div className="nexora-actions" style={{ gap: 8 }}>
+            {myTurn ? (
+              <TurnTag>{requisition.actions.canDecide ? 'Your decision' : 'Back with you'}</TurnTag>
+            ) : null}
             {requisition.urgency === 'high' ? <Badge tone="danger">Urgent</Badge> : null}
             <Badge tone={STATUS_TONE[requisition.status]}>{statusLabel(requisition.status)}</Badge>
-          </Stack>
-        </Stack>
+          </div>
+        </div>
 
         <ChainStrip requisition={requisition} />
         {recruitingProgress(requisition) === undefined ? null : (
@@ -439,14 +390,7 @@ export function RequisitionCard({
 
         {open ? (
           <Stack gap={4} stretch>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
-                gap: 12,
-                fontSize: typography.sizes.sm,
-              }}
-            >
+            <div className="nexora-facts">
               <Fact label="Employment">{EMPLOYMENT_LABEL[requisition.employmentType]}</Fact>
               <Fact label="Salary range (per person / year)">
                 {formatMoney(requisition.salaryMinMinorUnits, requisition.currency)} –{' '}
@@ -458,16 +402,21 @@ export function RequisitionCard({
             <Fact label="Why the team needs this hire">{requisition.justification}</Fact>
 
             <Stack gap={2} stretch>
-              <SectionTitle>History</SectionTitle>
+              <SubHeading>History</SubHeading>
               {requisition.history.map((entry, index) => (
                 <div
                   key={`${entry.at}-${index}`}
-                  style={{ fontSize: typography.sizes.sm, display: 'flex', gap: 8 }}
+                  style={{
+                    fontSize: typography.sizes.sm,
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '0 12px',
+                  }}
                 >
-                  <span style={{ color: 'var(--nexora-textMuted)', minWidth: 130 }}>
+                  <span style={{ color: 'var(--nexora-textMuted)', flex: '0 0 130px' }}>
                     {formatWhen(entry.at)}
                   </span>
-                  <span>
+                  <span style={{ flex: '1 1 220px', minWidth: 0 }}>
                     <strong>{entry.actorName ?? 'Someone'}</strong> {historyVerb(entry)}
                     {entry.comment === undefined ? '' : ` — “${entry.comment}”`}
                   </span>
@@ -481,16 +430,16 @@ export function RequisitionCard({
                   label="Comment"
                   hint="Optional when approving. Required when rejecting — say what should change."
                 >
-                  <Input
+                  <Textarea
+                    rows={2}
                     value={comment}
                     onChange={(event) => setComment(event.target.value)}
                     placeholder="e.g. Approved for the Q4 roadmap"
                     maxLength={1000}
                   />
                 </Field>
-                <Stack direction="row" gap={3}>
+                <div className="nexora-actions">
                   <Button
-                    size="sm"
                     loading={busy === 'approve'}
                     disabled={busy !== null}
                     onClick={() =>
@@ -502,7 +451,6 @@ export function RequisitionCard({
                     Approve
                   </Button>
                   <Button
-                    size="sm"
                     variant="secondary"
                     loading={busy === 'reject'}
                     disabled={busy !== null || comment.trim().length === 0}
@@ -514,7 +462,7 @@ export function RequisitionCard({
                   >
                     Reject and send back
                   </Button>
-                </Stack>
+                </div>
               </Stack>
             ) : requisition.actions.decideBlockedReason !== undefined ? (
               <Badge tone="neutral">{requisition.actions.decideBlockedReason}</Badge>
@@ -573,15 +521,6 @@ export function RequisitionCard({
         ) : null}
       </Stack>
     </Card>
-  );
-}
-
-function Fact({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
-  return (
-    <div>
-      <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>{label}</div>
-      <div style={{ fontSize: typography.sizes.sm }}>{children}</div>
-    </div>
   );
 }
 
@@ -717,13 +656,13 @@ function RequisitionForm({
     }
   };
 
-  const half = { flex: '1 1 200px' } as const;
+  const half = { minWidth: 0 } as const;
   return (
-    <Card padding={5} data-testid="requisition-form">
-      <form onSubmit={(event) => void handleSubmit(event)}>
+    <Card padding={5}>
+      <form onSubmit={(event) => void handleSubmit(event)} data-testid="requisition-form">
         <Stack gap={4} stretch>
-          <div style={{ fontWeight: typography.weights.semibold }}>{title}</div>
-          <Stack direction="row" gap={3} stretch style={{ flexWrap: 'wrap' }}>
+          <h2 className="nexora-section-title">{title}</h2>
+          <div className="nexora-fields">
             <div style={half}>
               <Field label="Job title" required error={issueFor('jobTitle')}>
                 <Input
@@ -745,8 +684,8 @@ function RequisitionForm({
                 />
               </Field>
             </div>
-          </Stack>
-          <Stack direction="row" gap={3} stretch style={{ flexWrap: 'wrap' }}>
+          </div>
+          <div className="nexora-fields">
             <div style={half}>
               <Field label="How many people" required error={issueFor('headcount')}>
                 <Input
@@ -786,8 +725,8 @@ function RequisitionForm({
                 </Select>
               </Field>
             </div>
-          </Stack>
-          <Stack direction="row" gap={3} stretch style={{ flexWrap: 'wrap' }}>
+          </div>
+          <div className="nexora-fields">
             <div style={half}>
               <Field
                 label={`Minimum salary (${DEFAULT_CURRENCY} / year)`}
@@ -822,8 +761,8 @@ function RequisitionForm({
                 />
               </Field>
             </div>
-          </Stack>
-          <Stack direction="row" gap={3} stretch style={{ flexWrap: 'wrap' }}>
+          </div>
+          <div className="nexora-fields">
             <div style={half}>
               <Field label="Urgency" required>
                 <Select
@@ -847,13 +786,14 @@ function RequisitionForm({
                 />
               </Field>
             </div>
-          </Stack>
+          </div>
           <Field
             label="Why does the team need this hire?"
             required
             error={issueFor('justification')}
           >
-            <Input
+            <Textarea
+              rows={3}
               value={justification}
               onChange={(event) => setJustification(event.target.value)}
               placeholder="The mobile banking rebuild needs two more backend engineers to hit the Q4 date."
@@ -869,20 +809,14 @@ function RequisitionForm({
               {submitError}
             </p>
           ) : null}
-          <Stack direction="row" gap={3}>
-            <Button type="submit" size="sm" loading={submitting} disabled={submitting}>
+          <div className="nexora-actions">
+            <Button type="submit" loading={submitting} disabled={submitting}>
               {submitLabel}
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={onCancel}
-              disabled={submitting}
-            >
+            <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
               Cancel
             </Button>
-          </Stack>
+          </div>
         </Stack>
       </form>
     </Card>

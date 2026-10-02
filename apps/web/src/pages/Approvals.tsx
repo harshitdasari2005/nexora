@@ -212,16 +212,7 @@ export function ApprovalsView({
         style={{ flexWrap: 'wrap' }}
       >
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Approvals
-          </h1>
+          <h1 className="nexora-page-title">Approvals</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName} · {workspaceName} — pending decisions and who may make them
           </p>

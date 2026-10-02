@@ -6,9 +6,12 @@
  * projects them onto CSS custom properties so themes (light/dark) can switch
  * at runtime without re-rendering inline styles.
  *
- * Visual direction: high-contrast, near-monochrome neutrals; hairline
- * borders carry the structure; shadows are barely-there; one refined accent
- * per surface. Reads like something Vercel or Apple shipped.
+ * Visual direction — "desk and ledger": the product is an office whose work
+ * moves between desks, so the look borrows from that world. A cool paper
+ * desk, white sheets, green-black ink, a viridian green for the action that
+ * moves work on, and one amber marker reserved for "it is your turn".
+ * Hairlines carry structure; shape follows hierarchy (round chips, softly
+ * squared controls, rounder sheets). The landing page keeps its own look.
  */
 
 /** The semantic color roles of the system. */
@@ -69,40 +72,77 @@ export interface ThemeColors {
   surfaceGlass: string;
 }
 
-/** The light theme (default) — true neutral, maximum contrast. */
+/**
+ * The light theme (default) — "desk and ledger".
+ *
+ * A cool paper desk, white sheets on it, green-black ink for text, and a
+ * viridian "ledger" green for the action that moves work forward. Amber (the
+ * `--nexora-marker*` variables in GlobalStyles) is kept out of this palette on
+ * purpose: it means exactly one thing — it is your turn.
+ */
 export const lightColors: ThemeColors = {
-  bg: '#fafafa',
+  bg: '#f3f5f1',
   surface: '#ffffff',
-  surfaceMuted: '#f4f4f5',
-  border: '#eaeaea',
-  borderStrong: '#d4d4d4',
-  text: '#0a0a0a',
-  textSecondary: '#4b4b4b',
-  textMuted: '#7d7d7d',
-  primary: '#0a0a0a',
-  primaryHover: '#2b2b2b',
+  surfaceMuted: '#eaeee8',
+  border: '#dce2dc',
+  borderStrong: '#bfc9c1',
+  text: '#14201c',
+  textSecondary: '#42524c',
+  textMuted: '#6c7b75',
+  primary: '#0e6b58',
+  primaryHover: '#0a5747',
   primaryForeground: '#ffffff',
-  primarySoft: '#f2f2f2',
-  link: '#0060df',
-  linkHover: '#0050bb',
-  ring: '#0a0a0a',
-  ai: '#7c3aed',
-  aiSoft: '#f4f1fe',
-  success: '#15803d',
-  successSoft: '#edfaf0',
-  warning: '#b45309',
-  warningSoft: '#fdf5e6',
-  danger: '#d43c3c',
-  dangerSoft: '#fdf0f0',
-  overlay: 'rgba(0, 0, 0, 0.40)',
-  surfaceGlass: 'rgba(255, 255, 255, 0.80)',
+  primarySoft: '#dff0ea',
+  link: '#0e6b58',
+  linkHover: '#0a5747',
+  ring: '#0e6b58',
+  ai: '#6b4ee6',
+  aiSoft: '#efebfd',
+  success: '#17764c',
+  successSoft: '#e0f3e8',
+  warning: '#96610a',
+  warningSoft: '#fbf0d6',
+  danger: '#b93a2b',
+  dangerSoft: '#fbe9e5',
+  overlay: 'rgba(12, 22, 18, 0.46)',
+  surfaceGlass: 'rgba(255, 255, 255, 0.82)',
+};
+
+/** The dark theme — the same desk at night: deep green-black, mint for action. */
+export const darkColors: ThemeColors = {
+  bg: '#0c1311',
+  surface: '#131c19',
+  surfaceMuted: '#1a2622',
+  border: '#24332e',
+  borderStrong: '#35483f',
+  text: '#e6eeea',
+  textSecondary: '#a4b5ad',
+  textMuted: '#74867e',
+  primary: '#4fd1ae',
+  primaryHover: '#74dfc1',
+  primaryForeground: '#06231c',
+  primarySoft: 'rgba(79, 209, 174, 0.14)',
+  link: '#5fd6b6',
+  linkHover: '#8ae4cb',
+  ring: '#4fd1ae',
+  ai: '#a594ff',
+  aiSoft: 'rgba(165, 148, 255, 0.16)',
+  success: '#4cc98a',
+  successSoft: 'rgba(76, 201, 138, 0.15)',
+  warning: '#e0b04a',
+  warningSoft: 'rgba(224, 176, 74, 0.15)',
+  danger: '#f0796a',
+  dangerSoft: 'rgba(240, 121, 106, 0.16)',
+  overlay: 'rgba(0, 0, 0, 0.66)',
+  surfaceGlass: 'rgba(19, 28, 25, 0.82)',
 };
 
 /**
- * The dark theme — true near-black (Vercel / Apple dark), not a cool navy.
- * Neutral base only; per-role accent colors sit on top unchanged.
+ * The previous neutral dark palette, kept ONLY for the landing page (which
+ * carries its own cinematic look and is deliberately not part of the app's
+ * visual language). Scoped by `.nexora-landing` in GlobalStyles.
  */
-export const darkColors: ThemeColors = {
+export const landingColors: ThemeColors = {
   bg: '#0a0a0a',
   surface: '#141414',
   surfaceMuted: '#1c1c1c',
@@ -150,18 +190,28 @@ export const spacing = {
   24: '6rem',
 } as const;
 
-/** Corner radii — tight and consistent. */
+/**
+ * Corner radii. Shape follows hierarchy: chips are fully round, controls are
+ * softly squared, sheets (cards) are the roundest thing on the page. The
+ * values resolve through CSS variables so the landing page can keep its own.
+ */
 export const radius = {
-  sm: '5px',
-  md: '8px',
-  lg: '12px',
-  xl: '16px',
+  sm: 'var(--nexora-radius-sm, 7px)',
+  md: 'var(--nexora-radius-md, 10px)',
+  lg: 'var(--nexora-radius-lg, 16px)',
+  xl: 'var(--nexora-radius-xl, 22px)',
   full: '9999px',
 } as const;
 
 /** Typography: families, the type scale, and tracking. */
 export const typography = {
+  /** Body and interface text. */
   fontSans:
+    "'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  /** Headings and figures. */
+  fontDisplay: "'Bricolage Grotesque', 'Instrument Sans', -apple-system, 'Segoe UI', sans-serif",
+  /** The landing page's own face (see `.nexora-landing`). */
+  fontLanding:
     "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   fontMono: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
   sizes: {
@@ -201,10 +251,10 @@ export const typography = {
 /** Elevation shadows — restrained; borders do most of the work. */
 export const elevation = {
   none: 'none',
-  sm: '0 1px 2px rgba(0, 0, 0, 0.04)',
-  md: '0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04)',
-  lg: '0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04)',
-  xl: '0 24px 48px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.06)',
+  sm: '0 1px 2px rgba(20, 32, 28, 0.05)',
+  md: '0 6px 16px -6px rgba(20, 32, 28, 0.12), 0 1px 2px rgba(20, 32, 28, 0.05)',
+  lg: '0 16px 32px -12px rgba(20, 32, 28, 0.16), 0 2px 6px rgba(20, 32, 28, 0.05)',
+  xl: '0 32px 64px -20px rgba(20, 32, 28, 0.24), 0 8px 16px rgba(20, 32, 28, 0.06)',
 } as const;
 
 /** Motion: durations and easings (DESIGN_SYSTEM.md §14). */
@@ -246,3 +296,6 @@ export const lightThemeCss = cssVariables(lightColors);
 
 /** The dark theme variable block. */
 export const darkThemeCss = cssVariables(darkColors);
+
+/** The landing page's variable block. */
+export const landingThemeCss = cssVariables(landingColors);

@@ -549,14 +549,7 @@ function GuidedDemoLoaded({ config, scopes, persona, personaKey }: LoadedProps):
             <Badge tone="ai" dot>
               Guided demo
             </Badge>
-            <h1
-              style={{
-                fontSize: typography.sizes['3xl'],
-                fontWeight: typography.weights.bold,
-                letterSpacing: '-0.03em',
-                lineHeight: 1.1,
-              }}
-            >
+            <h1 className="nexora-page-title">
               Request → Plan → Governance → Approval → Execution → Verification → Trace
             </h1>
             <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
@@ -654,8 +647,6 @@ function GuidedDemoLoaded({ config, scopes, persona, personaKey }: LoadedProps):
                       style={{
                         fontSize: typography.sizes.xs,
                         color: 'var(--nexora-textMuted)',
-                        letterSpacing: '0.06em',
-                        textTransform: 'uppercase',
                       }}
                     >
                       Stage {shown.index} of {stages.length}

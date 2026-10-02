@@ -57,8 +57,6 @@ export function CommandCenterWidget({
               ? {
                   fontSize: '11px',
                   fontWeight: typography.weights.semibold,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
                   color: 'var(--nexora-textMuted)',
                 }
               : {

@@ -248,6 +248,9 @@ export function Landing(): JSX.Element {
   return (
     <div
       data-theme="dark"
+      // Keeps the landing page on its own palette, typeface and shape — the
+      // app's "desk and ledger" language deliberately stops at this door.
+      className="nexora-landing"
       style={{
         minHeight: '100vh',
         display: 'flex',

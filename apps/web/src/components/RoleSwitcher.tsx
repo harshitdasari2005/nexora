@@ -25,7 +25,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Badge, elevation, Spinner, Stack, typography } from '@nexora/design-system';
+import { elevation, Spinner, Stack, typography } from '@nexora/design-system';
 
 import { api } from '../lib/api.js';
 import {
@@ -111,7 +111,6 @@ export function RoleSwitcher({
   }, [open]);
 
   const current = context?.current ?? null;
-  const currentTheme = themeForRole(current?.roleId);
   const currentPersona = resolvePersonaForRole(current?.roleId);
   const canSwitch = (context?.options.length ?? 0) > 1;
 
@@ -155,7 +154,7 @@ export function RoleSwitcher({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                background: currentTheme.accent,
+                background: 'var(--nexora-primary)',
                 flexShrink: 0,
               }}
             />
@@ -184,11 +183,17 @@ export function RoleSwitcher({
               {loading ? (
                 <Spinner size={12} />
               ) : current !== undefined && current !== null ? (
-                <Badge dotColor={currentTheme.accent} dot style={{ color: currentTheme.accent }}>
-                  {currentPersona !== undefined
-                    ? `${currentPersona.displayRole} · ${currentPersona.focusLabel}`
-                    : `${current.domainName} · ${current.roleName}`}
-                </Badge>
+                <div
+                  style={{
+                    fontSize: typography.sizes.xs,
+                    color: 'var(--nexora-textSecondary)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {currentPersona !== undefined ? currentPersona.displayRole : current.roleName}
+                </div>
               ) : null}
             </Stack>
           </Stack>
@@ -209,10 +214,11 @@ export function RoleSwitcher({
             top: '100%',
             left: 0,
             marginTop: 8,
-            width: 300,
+            width: 'min(300px, calc(100vw - 32px))',
             maxHeight: '60vh',
             overflowY: 'auto',
-            background: 'var(--nexora-shellCardElevated, var(--nexora-surface))',
+            background:
+              'var(--nexora-popoverBg, var(--nexora-shellCardElevated, var(--nexora-surface)))',
             border: '1px solid var(--nexora-border)',
             borderRadius: 12,
             boxShadow: elevation.lg,
@@ -226,11 +232,9 @@ export function RoleSwitcher({
               fontSize: typography.sizes.xs,
               color: 'var(--nexora-textMuted)',
               fontWeight: typography.weights.medium,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
             }}
           >
-            Switch business lens
+            Switch workspace
           </div>
           {personaOptions.length > 0
             ? personaOptions.map(({ persona, option }) => (
@@ -250,8 +254,6 @@ export function RoleSwitcher({
                       fontSize: typography.sizes.xs,
                       fontWeight: typography.weights.semibold,
                       color: 'var(--nexora-textMuted)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
                     }}
                   >
                     {group.domainName}

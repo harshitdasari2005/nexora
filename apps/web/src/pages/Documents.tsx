@@ -233,16 +233,7 @@ export function DocumentsView({
     <Stack gap={8} style={{ maxWidth: 880, margin: '0 auto' }}>
       <Stack direction="row" gap={4} align="center" justify="space-between">
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Documents
-          </h1>
+          <h1 className="nexora-page-title">Documents</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName}
           </p>

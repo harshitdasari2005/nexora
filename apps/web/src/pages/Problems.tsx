@@ -230,8 +230,6 @@ export function ProblemsView({
             fontSize: typography.sizes.xs,
             fontWeight: typography.weights.semibold,
             color: 'var(--nexora-textMuted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.08em',
           }}
         >
           Signals Nexora believes require attention
@@ -244,16 +242,7 @@ export function ProblemsView({
           style={{ flexWrap: 'wrap' }}
         >
           <Stack direction="row" gap={2} align="center" style={{ flexWrap: 'wrap' }}>
-            <h1
-              style={{
-                fontSize: typography.sizes['3xl'],
-                fontWeight: typography.weights.bold,
-                letterSpacing: '-0.03em',
-                lineHeight: 1.1,
-              }}
-            >
-              Problems
-            </h1>
+            <h1 className="nexora-page-title">Problems</h1>
             {problems.length > 0 ? (
               <Badge tone={highSeverity > 0 ? 'danger' : 'warning'} dot>
                 {problems.length}

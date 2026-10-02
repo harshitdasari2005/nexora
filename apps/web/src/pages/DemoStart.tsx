@@ -90,16 +90,7 @@ export function DemoStart(): JSX.Element {
         <Badge tone="ai" dot>
           Guided demo
         </Badge>
-        <h1
-          style={{
-            fontSize: typography.sizes['3xl'],
-            fontWeight: typography.weights.bold,
-            letterSpacing: '-0.03em',
-            lineHeight: 1.1,
-          }}
-        >
-          Governed AI, end to end.
-        </h1>
+        <h1 className="nexora-page-title">Governed AI, end to end.</h1>
         <p style={{ color: 'var(--nexora-textSecondary)', maxWidth: 640 }}>
           Sign in as anyone in the office — the CEO, the CTO, the Team Manager, the IT team, HR or
           Finance. Each person sees and can do only what their role allows. The guided story (a

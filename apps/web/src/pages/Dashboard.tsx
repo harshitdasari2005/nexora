@@ -118,15 +118,7 @@ export function WelcomeChoice({ demoAvailable }: { demoAvailable: boolean }): JS
     >
       <Stack gap={6} style={{ maxWidth: 760, width: '100%' }}>
         <Stack gap={2}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-            }}
-          >
-            Welcome to Nexora
-          </h1>
+          <h1 className="nexora-page-title">Welcome to Nexora</h1>
           <p style={{ color: 'var(--nexora-textSecondary)' }}>
             {demoAvailable
               ? 'How would you like to start?'
@@ -195,14 +187,7 @@ export function DashboardView({ data }: { data: DashboardResponse }): JSX.Elemen
     <Stack gap={8} style={{ maxWidth: 880, margin: '0 auto' }}>
       {/* Greeting */}
       <Stack gap={1}>
-        <h1
-          style={{
-            fontSize: typography.sizes['3xl'],
-            fontWeight: typography.weights.bold,
-            letterSpacing: '-0.03em',
-            lineHeight: 1.1,
-          }}
-        >
+        <h1 className="nexora-page-title">
           {greeting()}, {user.displayName.split(' ')[0]}
         </h1>
         <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>

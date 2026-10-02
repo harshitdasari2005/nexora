@@ -35,7 +35,17 @@ export type IconName =
   | 'check'
   | 'sparkles'
   | 'sun'
-  | 'moon';
+  | 'moon'
+  | 'menu'
+  | 'close'
+  | 'desk'
+  | 'hiring'
+  | 'recruiting'
+  | 'onboarding'
+  | 'runtime'
+  | 'policy'
+  | 'team'
+  | 'approvals';
 
 const PATHS: Record<IconName, JSX.Element> = {
   'command-center': (
@@ -174,6 +184,52 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   moon: <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />,
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  close: <path d="M6 6l12 12M18 6 6 18" />,
+  desk: (
+    <>
+      <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+      <path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1Z" />
+    </>
+  ),
+  hiring: (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20a6.5 6.5 0 0 1 13 0M19 8v6M22 11h-6" />
+    </>
+  ),
+  recruiting: (
+    <>
+      <rect x="3" y="7" width="18" height="13" rx="2" />
+      <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18" />
+    </>
+  ),
+  onboarding: (
+    <>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 4V3h6v1M9 13l2 2 4-4" />
+    </>
+  ),
+  runtime: <path d="M3 12h4l3-8 4 16 3-8h4" />,
+  policy: (
+    <>
+      <path d="M12 3 4.5 6v5.5c0 4.4 3 8.2 7.5 9.5 4.5-1.3 7.5-5.1 7.5-9.5V6L12 3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </>
+  ),
+  team: (
+    <>
+      <circle cx="8" cy="9" r="3" />
+      <circle cx="17" cy="10" r="2.5" />
+      <path d="M2 20a6 6 0 0 1 12 0M15 20a5 5 0 0 1 7-4.5" />
+    </>
+  ),
+  approvals: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12 2.5 2.5 4.5-5" />
+    </>
+  ),
 };
 
 /** Props of {@link NavIcon}. */

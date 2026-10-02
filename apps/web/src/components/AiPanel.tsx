@@ -30,8 +30,6 @@ import { NavIcon } from './NavIcon.js';
 const CARD_EYEBROW: CSSProperties = {
   fontSize: '11px',
   fontWeight: typography.weights.semibold,
-  textTransform: 'uppercase',
-  letterSpacing: typography.tracking.caps,
   color: 'var(--nexora-textMuted)',
 };
 
@@ -549,8 +547,6 @@ function MessageBubble({
             style={{
               fontSize: '11px',
               fontWeight: typography.weights.semibold,
-              textTransform: 'uppercase',
-              letterSpacing: typography.tracking.caps,
               color: 'var(--nexora-textMuted)',
             }}
           >

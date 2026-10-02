@@ -87,9 +87,9 @@ describe('RecruitingView', () => {
         ]}
       />,
     );
-    expect(out).toContain('Approved requests waiting for a position (1)');
-    expect(out).toContain('QA Engineer × 1');
-    expect(out).toContain('requested by Rohan Mehta');
+    expect(out).toContain('Approved and waiting for a position');
+    expect(out).toContain('QA Engineer');
+    expect(out).toContain('raised by Rohan Mehta');
     expect(out).toContain('Open position');
   });
 
@@ -104,7 +104,7 @@ describe('RecruitingView', () => {
       />,
     );
     expect(asHr).toContain('Senior Backend Developer');
-    expect(asHr).toContain('hiring manager Rohan Mehta');
+    expect(asHr).toContain('Hiring manager: Rohan Mehta');
     expect(asHr).toContain('0 of 2 hired · 1 offer out');
     expect(asHr).toContain('Put on hold');
     expect(asHr).toContain('Close position');
@@ -224,7 +224,7 @@ describe('CandidateCard — buttons follow the server', () => {
 
   it('a hired candidate says an employee record was created', () => {
     expect(card(candidate({ stage: 'hired', employeeId: 'emp_1' }))).toContain(
-      'an employee record was created',
+      'employee record created',
     );
   });
 });
