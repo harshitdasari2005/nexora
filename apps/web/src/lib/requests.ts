@@ -162,6 +162,23 @@ export async function draftRequest(
   return (await post<{ draft: RequestDraft }>('/requests/draft', scope, { type, sentence })).draft;
 }
 
+/** What the assistant makes of one sentence: the workflow it starts, filled in. */
+export interface RequestSuggestion {
+  type: string;
+  chosenBy: 'ai' | 'rules';
+  draft: RequestDraft;
+}
+
+/** "Tell the office what you need": nothing is raised, only suggested. */
+export async function suggestRequest(
+  scope: HiringScope,
+  sentence: string,
+): Promise<RequestSuggestion | null> {
+  return (
+    await post<{ suggestion: RequestSuggestion | null }>('/requests/suggest', scope, { sentence })
+  ).suggestion;
+}
+
 /** Asks the assistant to prepare the caller for the stage that is theirs. */
 export async function briefRequest(scope: HiringScope, id: string): Promise<RequestBrief> {
   return (await post<{ brief: RequestBrief }>(`/requests/${encodeURIComponent(id)}/brief`, scope))

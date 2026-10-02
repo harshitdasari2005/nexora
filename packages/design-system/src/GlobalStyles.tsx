@@ -289,6 +289,27 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 .nexora-story-outline > li[data-done='true']::before { content: '✓'; color: var(--nexora-primary); }
 .nexora-choice-option:disabled { opacity: 0.6; cursor: default; }
 
+/* "Tell the office what you need": one line to write in, examples to tap. */
+.nexora-ask-row { display: flex; gap: 10px; align-items: stretch; }
+.nexora-ask-row > :first-child { flex: 1 1 auto; min-width: 0; }
+.nexora-ask-row .nexora-input { height: var(--nexora-control-lg, 44px); font-size: 0.9375rem; }
+.nexora-ask-row .nexora-btn { height: var(--nexora-control-lg, 44px) !important; }
+@media (max-width: 520px) { .nexora-ask-row { flex-direction: column; } }
+.nexora-ask-examples { display: flex; flex-wrap: wrap; gap: 8px; }
+.nexora-ask-examples > button {
+  border: 1px solid var(--nexora-border);
+  background: var(--nexora-surfaceMuted);
+  color: var(--nexora-textSecondary);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+.nexora-ask-examples > button:not(:disabled):hover { border-color: var(--nexora-primary); color: var(--nexora-text); }
+.nexora-ask-examples > button:disabled { opacity: 0.6; cursor: default; }
+
 /* People & teams: one card per team, the people in it as a ruled list. */
 .nexora-people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 16px; align-items: start; }
 .nexora-people-list { list-style: none; margin: 0; padding: 0; }

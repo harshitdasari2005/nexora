@@ -50,6 +50,7 @@ import {
   writeForRequest,
   type OfficeRequest,
   type RequestBrief,
+  type RequestDraft,
   type RequestStatus,
   type Workflow,
   type WorkflowCatalog,
@@ -337,17 +338,22 @@ export function RequestForm({
   assistant,
   onSent,
   onCancel,
+  initial,
 }: {
   scope: HiringScope;
   workflow: Workflow;
   assistant: WorkflowCatalog['assistant'];
   onSent: () => void;
   onCancel: () => void;
+  /** What the assistant already read off the person's sentence, to check and send. */
+  initial?: { sentence: string; draft: RequestDraft };
 }): JSX.Element {
-  const [sentence, setSentence] = useState('');
-  const [form, setForm] = useState<Record<string, string>>({});
-  const [reason, setReason] = useState('');
-  const [drafted, setDrafted] = useState<'ai' | 'rules' | null>(null);
+  const [sentence, setSentence] = useState(initial?.sentence ?? '');
+  const [form, setForm] = useState<Record<string, string>>(() =>
+    initial === undefined ? {} : formFromValues(workflow, initial.draft.values),
+  );
+  const [reason, setReason] = useState(initial?.draft.reason ?? '');
+  const [drafted, setDrafted] = useState<'ai' | 'rules' | null>(initial?.draft.source ?? null);
   const [busy, setBusy] = useState<'draft' | 'send' | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 

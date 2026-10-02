@@ -8,11 +8,11 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { ChatRequest, ChatResponse } from '@nexora/ai-runtime';
-import { findWorkflow } from '@nexora/domain-hr';
+import { findWorkflow, WORKFLOW_CATALOG } from '@nexora/domain-hr';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { demoIds, type DemoIds, type DemoWorkspaceKey } from '../src/demo/world.js';
-import { OfficeAi, draftByRules, fitField } from '../src/office/office-ai.js';
+import { OfficeAi, chooseByRules, draftByRules, fitField } from '../src/office/office-ai.js';
 import { buildTestApp } from './helpers.js';
 
 /** A chat model that answers with whatever the test queued, and records what it was asked. */
@@ -140,6 +140,44 @@ describe('OfficeAi — values are checked, never trusted', () => {
     ]);
     expect(plain).toMatchObject({ recommendation: 'look_closer', source: 'rules' });
     expect(plain.summary).toContain('cost');
+  });
+});
+
+describe('OfficeAi — which workflow a sentence starts', () => {
+  it('with a model: uses a workflow from the list, and never one the model made up', async () => {
+    const model = fakeChat();
+    const ai = new OfficeAi({ chat: model.chat });
+    model.answer({ workflow: 'leave' });
+    expect((await ai.choose(WORKFLOW_CATALOG, 'I need Monday off'))?.definition.key).toBe('leave');
+    // The catalog is what the model is offered, and the sentence is marked as data.
+    expect(model.asked[0]).toContain('"purchase": Purchase');
+    expect(model.asked[0]).toContain('<data>I need Monday off</data>');
+
+    model.answer({ workflow: 'none' });
+    expect(await ai.choose(WORKFLOW_CATALOG, 'how many people work here?')).toBeUndefined();
+    model.answer({ workflow: 'delete_everything' });
+    expect(await ai.choose(WORKFLOW_CATALOG, 'please buy two phones')).toBeUndefined();
+  });
+
+  it('without a model, or when it is down: reads it off plain words, and says so', async () => {
+    const read = (sentence: string) => chooseByRules(WORKFLOW_CATALOG, sentence)?.key;
+    expect(read('I need next Monday to Wednesday off for a wedding')).toBe('leave');
+    expect(read('we need to buy two android test phones')).toBe('purchase');
+    expect(read('please reimburse the taxi I paid for')).toBe('expense_claim');
+    expect(read('login screen crashes when the otp is pasted')).toBe('bug');
+    expect(read('customer says she was charged twice')).toBe('ticket');
+    expect(read('the customer wants a refund')).toBe('refund');
+    expect(read('I need read access to the production logs')).toBe('access');
+    expect(read('what is the weather like')).toBeUndefined();
+
+    const down = fakeChat();
+    down.answer(new Error('connection refused'));
+    const chosen = await new OfficeAi({ chat: down.chat }).choose(
+      WORKFLOW_CATALOG,
+      'I am sick today, taking the day off',
+    );
+    expect(chosen).toMatchObject({ source: 'rules' });
+    expect(chosen?.definition.key).toBe('leave');
   });
 });
 
@@ -342,6 +380,61 @@ describe('the assistant through the API', () => {
     };
     expect(reply.written.source).toBe('rules');
     expect(reply.written.text).toContain('Dear Rekha Sharma,');
+  });
+
+  it('reads what a person needs, suggests the workflow and its values, and stores nothing', async () => {
+    const before = (await historyOf('dev_aarav', 'none')).length;
+    model.answer({ workflow: 'leave' });
+    model.answer({
+      kind: 'personal',
+      startDate: '2026-10-05',
+      endDate: '2026-10-07',
+      reason: 'A wedding.',
+    });
+    const response = await post('dev_aarav', '/api/requests/suggest', {
+      sentence: 'I need next Monday to Wednesday off for a wedding',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      suggestion: {
+        type: 'leave',
+        chosenBy: 'ai',
+        draft: {
+          values: { kind: 'personal', startDate: '2026-10-05', endDate: '2026-10-07' },
+          reason: 'A wedding.',
+          source: 'ai',
+        },
+      },
+    });
+    expect(before).toBe(0);
+
+    // A question is not a request: nothing is suggested.
+    model.answer({ workflow: 'none' });
+    const question = await post('dev_aarav', '/api/requests/suggest', {
+      sentence: 'who approves purchases here?',
+    });
+    expect(question.json()).toEqual({ suggestion: null });
+
+    // Nothing was raised by asking.
+    const list = await app.inject({
+      method: 'GET',
+      url: `/api/requests?organizationId=${ids.organizationId}&workspaceId=${ids.workspaceIds.eng}`,
+      headers: { cookie: await as('dev_aarav') },
+    });
+    const mine = (list.json() as { requests: { mine: boolean; summary: string }[] }).requests;
+    expect(mine.some((item) => item.summary.includes('2026-10-05'))).toBe(false);
+
+    const anonymous = await app.inject({
+      method: 'POST',
+      url: '/api/requests/suggest',
+      headers: { 'content-type': 'application/json' },
+      payload: {
+        organizationId: ids.organizationId,
+        workspaceId: ids.workspaceIds.eng,
+        sentence: 'two weeks off please',
+      },
+    });
+    expect(anonymous.statusCode).toBe(401);
   });
 
   it('an unknown workflow, a too-short sentence and a missing session are refused', async () => {

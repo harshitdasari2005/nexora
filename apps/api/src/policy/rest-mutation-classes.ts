@@ -401,6 +401,18 @@ export const REST_MUTATION_CLASSES: Readonly<Record<string, RestMutationEntry>> 
       'requests.create; the assistant turns the caller’s own sentence into SUGGESTED field values. Nothing is stored: the person reviews and submits through POST /api/requests, where every value is validated.',
     proof: [cap('requests.create')],
   },
+  'POST /api/requests/suggest': {
+    class: 'rbac',
+    justification:
+      'requests.create; the assistant reads which catalogued workflow the caller’s own sentence starts and SUGGESTS field values. A workflow key the model invents is never used. Nothing is stored: the person reviews and submits through POST /api/requests, where every value is validated.',
+    proof: [
+      cap('requests.create'),
+      {
+        in: 'apps/api/src/office/office-ai.ts',
+        contains: 'workflows.find((workflow) => workflow.key === key)',
+      },
+    ],
+  },
   'POST /api/requests/:requestId/brief': {
     class: 'rbac',
     justification:

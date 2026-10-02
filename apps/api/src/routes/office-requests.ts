@@ -127,6 +127,9 @@ const scopedBody = (
 
 const withdrawSchema: FastifySchema = { params: idParams, ...scopedBody() };
 const assistSchema: FastifySchema = { params: idParams, ...scopedBody() };
+const suggestSchema = scopedBody({ sentence: { type: 'string', minLength: 5, maxLength: 1000 } }, [
+  'sentence',
+]);
 const draftSchema = scopedBody(
   {
     type: { type: 'string', minLength: 1, maxLength: 32 },
@@ -706,6 +709,33 @@ export function registerOfficeRequestRoutes(
       });
     }
     return { draft: await dependencies.assistant.draft(definition, body.sentence) };
+  });
+
+  /**
+   * "Tell the office what you need": one sentence in; the workflow it starts
+   * and a filled-in request out. Nothing is stored: the person reviews it and
+   * sends it through POST /api/requests, where every value is validated.
+   */
+  app.post('/api/requests/suggest', { schema: suggestSchema }, async (request, reply) => {
+    const auth = requireAuth(request);
+    const body = request.body as OfficeScope & { sentence: string };
+    const denial = await officeScopeDenial(dependencies, auth.userId, body);
+    if (denial !== undefined) return denyScope(reply, request.id, denial);
+    const authz = await authorizePermission(
+      dependencies.permissions,
+      roleContextOf(auth.userId, body),
+      'requests.create',
+    );
+    if (!authz.ok) return sendForbidden(reply, request.id, 'raise a request');
+    const chosen = await dependencies.assistant.choose(WORKFLOW_CATALOG, body.sentence);
+    if (chosen === undefined) return { suggestion: null };
+    return {
+      suggestion: {
+        type: chosen.definition.key,
+        chosenBy: chosen.source,
+        draft: await dependencies.assistant.draft(chosen.definition, body.sentence),
+      },
+    };
   });
 
   /** Prepares the person whose turn it is: checked facts and a recommendation. */

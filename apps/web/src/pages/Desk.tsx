@@ -12,6 +12,7 @@ import { Link } from 'react-router-dom';
 import { Button, Card, EmptyState, typography } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
+import { AskOffice } from '../components/AskOffice.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { NavIcon, type IconName } from '../components/NavIcon.js';
@@ -19,6 +20,7 @@ import { Page, PageHeader, Section } from '../components/Page.js';
 import { ApiError, CHANGE_EVENT } from '../lib/api.js';
 import { loadDesk, type Desk, type DeskItem, type DeskScreen } from '../lib/desk.js';
 import type { HiringScope } from '../lib/hiring.js';
+import { fetchCatalog, type WorkflowCatalog } from '../lib/requests.js';
 import { useShellScope } from '../lib/useShellScope.js';
 
 const SCREEN: Record<DeskScreen, { label: string; icon: IconName }> = {
@@ -36,6 +38,23 @@ export function DeskPage(): JSX.Element {
   const workspaceId = dashboard?.workspace?.id;
   const [desk, setDesk] = useState<Desk | null>(null);
   const [deskError, setDeskError] = useState<string | null>(null);
+  // The workflows the caller may start; absent when their role starts none.
+  const [catalog, setCatalog] = useState<WorkflowCatalog | null>(null);
+  useEffect(() => {
+    if (organizationId === undefined || workspaceId === undefined) return;
+    let cancelled = false;
+    fetchCatalog({ organizationId, workspaceId }).then(
+      (loaded) => {
+        if (!cancelled) setCatalog(loaded);
+      },
+      () => {
+        if (!cancelled) setCatalog(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, workspaceId]);
 
   const load = useCallback(() => {
     if (organizationId === undefined || workspaceId === undefined) return;
@@ -77,6 +96,7 @@ export function DeskPage(): JSX.Element {
         desk={desk}
         error={deskError}
         onRetry={load}
+        catalog={catalog}
       />
     </AppShell>
   );
@@ -90,6 +110,8 @@ export interface DeskViewProps {
   desk: Desk | null;
   error?: string | null;
   onRetry?: () => void;
+  /** The workflows the caller may start: with it, the desk offers "tell the office what you need". */
+  catalog?: WorkflowCatalog | null;
 }
 
 /** The pure page content (exported for tests). */
@@ -99,6 +121,7 @@ export function DeskView({
   desk,
   error = null,
   onRetry,
+  catalog = null,
 }: DeskViewProps): JSX.Element {
   const href = (screen: DeskScreen): string =>
     `/app/${screen}?organizationId=${encodeURIComponent(scope.organizationId)}&workspaceId=${encodeURIComponent(scope.workspaceId)}`;
@@ -113,6 +136,8 @@ export function DeskView({
             : deskSummary(desk)
         }
       />
+
+      {catalog === null ? null : <AskOffice scope={scope} catalog={catalog} onSent={onRetry} />}
 
       {error !== null ? (
         <Card padding={5}>

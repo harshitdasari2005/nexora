@@ -222,6 +222,37 @@ export class OfficeAi {
     }
   }
 
+  /**
+   * Reads which workflow a sentence is about ("I need Monday off" is leave).
+   * The answer is one of the offered workflows or nothing: a key the model
+   * makes up is never used.
+   */
+  async choose(
+    workflows: readonly WorkflowDefinition[],
+    sentence: string,
+  ): Promise<{ definition: WorkflowDefinition; source: OfficeAiSource } | undefined> {
+    const answer = await this.#ask(
+      [
+        'An employee wrote what they need. Decide which ONE office workflow it starts.',
+        'Return {"workflow": "<key>"} with a key from the list, or {"workflow": "none"} when',
+        'it is a question, small talk, or fits none of them.',
+        ...workflows.map(
+          (workflow) => `- "${workflow.key}": ${workflow.name}. ${workflow.description}`,
+        ),
+        `<data>${sentence}</data>`,
+      ].join('\n'),
+      60,
+    );
+    if (answer !== undefined) {
+      const key = answer['workflow'];
+      const definition = workflows.find((workflow) => workflow.key === key);
+      // The model answered: its "none" is an answer too, not a reason to guess.
+      return definition === undefined ? undefined : { definition, source: 'ai' };
+    }
+    const byRules = chooseByRules(workflows, sentence);
+    return byRules === undefined ? undefined : { definition: byRules, source: 'rules' };
+  }
+
   /** Turns one sentence into a filled-in request for the person to check. */
   async draft(definition: WorkflowDefinition, sentence: string): Promise<DraftResult> {
     const answer = await this.#ask(
@@ -317,6 +348,58 @@ export class OfficeAi {
     if (text.length >= 10) return { text: text.slice(0, 3500), source: 'ai' };
     return { text: writeByRules(request, stage), source: 'rules' };
   }
+}
+
+/**
+ * The words that give a workflow away, most specific first. Used only when no
+ * model is connected (or it is down): a plain guess the person then checks.
+ */
+const WORKFLOW_WORDS: readonly (readonly [string, RegExp])[] = [
+  ['resignation', /\b(resign|resignation|notice period|leaving the company)\b/i],
+  ['security_incident', /\b(phishing|hacked|breach|malware|stolen laptop|security incident)\b/i],
+  ['incident', /\b(outage|incident|is down|are down|down for (all )?customers)\b/i],
+  ['refund', /\brefund/i],
+  ['escalation', /\bescalat/i],
+  ['ticket', /\b(ticket|customer (says|reports|complain|is unable|cannot|problem|issue))/i],
+  ['expense_claim', /\b(reimburse|reimbursement|expense claim|claim (for|my)|i (paid|spent))\b/i],
+  ['travel', /\b(travel|trip|flight|hotel|fly to|visit the client)\b/i],
+  [
+    'leave',
+    /\b(leave|vacation|holiday|sick|time off|(day|days|week|morning|afternoon|tomorrow|today|monday|tuesday|wednesday|thursday|friday) off)\b/i,
+  ],
+  ['equipment', /\b(laptop|monitor|keyboard|headset|equipment|new (phone|mouse|chair))\b/i],
+  ['access', /\b(access to|permission to|login for|account (on|for)|read access|write access)\b/i],
+  ['budget_request', /\b(budget)\b/i],
+  [
+    'purchase',
+    /\b(buy|purchase|order (some|a|an|two|three|\d)|we need (to buy|\d|two|three|new))\b/i,
+  ],
+  ['release', /\b(release|deploy|ship (it|the)|go live)\b/i],
+  ['bug', /\b(bug|crash|crashes|broken|error|does not work|doesn't work|fails)\b/i],
+  ['discount', /\b(discount|special price|special terms)\b/i],
+  ['legal_review', /\b(legal review|review (the|this) (agreement|nda|terms)|nda)\b/i],
+  ['contract', /\b(contract|agreement|sign with)\b/i],
+  ['campaign', /\b(campaign|launch (a|an|the) (ad|promotion))\b/i],
+  ['content', /\b(blog|newsletter|social post|press release|publish (a|an|the))\b/i],
+  ['performance_review', /\b(performance review|self review|appraisal)\b/i],
+  ['complaint', /\b(harass|complaint|concern about|unfair|bullying)\b/i],
+  ['policy', /\b(policy)\b/i],
+  ['project_proposal', /\b(propose|proposal|new project|project idea)\b/i],
+  ['decision', /\b(decision|decide|need (the ceo|a call))\b/i],
+];
+
+/** The plain-rules reading of which workflow a sentence is about. */
+export function chooseByRules(
+  workflows: readonly WorkflowDefinition[],
+  sentence: string,
+): WorkflowDefinition | undefined {
+  for (const [key, words] of WORKFLOW_WORDS) {
+    if (words.test(sentence)) {
+      const definition = workflows.find((workflow) => workflow.key === key);
+      if (definition !== undefined) return definition;
+    }
+  }
+  return undefined;
 }
 
 /** The plain-rules draft: what can be read off the sentence without a model. */
