@@ -16,7 +16,7 @@
 import type { DemoPersonaKey } from './world.js';
 
 /** The screen a step is done on. */
-export type StoryScreen = 'hiring' | 'recruiting' | 'onboarding';
+export type StoryScreen = 'hiring' | 'recruiting' | 'onboarding' | 'requests' | 'tasks';
 
 /** Where a step stands. */
 export type StoryStepState = 'done' | 'current' | 'waiting' | 'skipped' | 'returned';
@@ -34,9 +34,9 @@ export const STORY_STEP_KEYS = [
 ] as const;
 export type StoryStepKey = (typeof STORY_STEP_KEYS)[number];
 
-/** One step of the story. */
+/** One step of a story. */
 export interface StoryStep {
-  key: StoryStepKey;
+  key: string;
   /** What happens in this step, in plain words. */
   title: string;
   state: StoryStepState;
@@ -45,6 +45,8 @@ export interface StoryStep {
   /** Who acts now — set only on the current (or returned) step. */
   who: readonly DemoPersonaKey[];
   screen: StoryScreen;
+  /** Whose job this step is in an office (the seat, not the person). */
+  owner?: string;
 }
 
 /** The story as the guide shows it. */
@@ -54,13 +56,39 @@ export interface DemoStory {
   steps: readonly StoryStep[];
   /** The step someone has to act on next; absent when the story is finished. */
   next?: {
-    step: StoryStepKey;
+    step: string;
     who: readonly DemoPersonaKey[];
     action: string;
     screen: StoryScreen;
+    /** The workspace each of those people acts from, when it is not their own. */
+    at?: Readonly<Partial<Record<DemoPersonaKey, string>>>;
   };
   finished: boolean;
 }
+
+/** A story the guided demo can follow. */
+export interface StoryInfo {
+  key: string;
+  title: string;
+  department: string;
+  /** One sentence on what the story shows. */
+  about: string;
+}
+
+/** A story together with what it is. */
+export type NamedDemoStory = DemoStory & StoryInfo;
+
+/** Whose job each step of the hiring story is. */
+const HIRING_OWNER: Record<StoryStepKey, string> = {
+  raise: 'The team’s manager',
+  ceo: 'The CEO',
+  finance: 'Finance',
+  open: 'HR',
+  candidates: 'HR, with the hiring manager interviewing',
+  offer: 'HR',
+  onboard: 'HR, IT and the hiring manager',
+  assign: 'The hiring manager',
+};
 
 /** The facts the story is derived from (each read from the persisted records). */
 export interface StoryFacts {
@@ -280,7 +308,15 @@ export function deriveStory(facts: StoryFacts): DemoStory {
 
   const steps: StoryStep[] = STORY_STEP_KEYS.map((key) => {
     const { title, screen, draft } = drafts[key];
-    return { key, title, screen, state: draft.state, detail: draft.detail, who: draft.who };
+    return {
+      key,
+      title,
+      screen,
+      state: draft.state,
+      detail: draft.detail,
+      who: draft.who,
+      owner: HIRING_OWNER[key],
+    };
   });
   const nextKey = STORY_STEP_KEYS.find((key) => drafts[key].draft.action !== undefined);
   const finished = steps.every((step) => step.state === 'done' || step.state === 'skipped');

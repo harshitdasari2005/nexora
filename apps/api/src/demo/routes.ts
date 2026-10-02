@@ -24,7 +24,7 @@ import type { SessionDomainService } from '@nexora/domain-identity';
 import type { ApiConfig } from '../config.js';
 import { requireAuth } from '../plugins/auth.js';
 import { DemoError, type DemoService } from './demo-service.js';
-import { deriveStory, type StoryFacts } from './story.js';
+import type { StoriesReader } from './stories.js';
 import {
   DEMO_HIRE_REQUEST,
   DEMO_PERSONA_KEYS,
@@ -40,8 +40,8 @@ export interface DemoRoutesDependencies {
   demo: DemoService;
   sessions: SessionDomainService;
   endSession: EndSessionHandler;
-  /** Reads the Guided Demo story's facts for the demo organization. */
-  readStoryFacts: (organizationId: string) => Promise<StoryFacts>;
+  /** Reads and derives the Guided Demo's story lines for the demo organization. */
+  stories: Pick<StoriesReader, 'read' | 'list'>;
 }
 
 const STATUS_BY_DEMO_ERROR: Record<DemoError['code'], number> = {
@@ -155,18 +155,35 @@ export function registerDemoRoutes(
   // Where the story stands and whose turn it is. The guide is for the people
   // of the demo office only, it always describes the fixed demo organization
   // (the caller names nothing), and it carries no pay.
+  const notDemoUser = (reply: FastifyReply, requestId: string) =>
+    reply.code(403).send({
+      error: {
+        code: 'DEMO_NOT_DEMO_USER',
+        message: 'Only a demo persona session can read the demo story',
+        requestId,
+      },
+    });
+
   app.get('/api/demo/story', async (request, reply) => {
     const auth = requireAuth(request);
-    if (demo.personaOfUser(auth.userId) === undefined) {
-      return reply.code(403).send({
-        error: {
-          code: 'DEMO_NOT_DEMO_USER',
-          message: 'Only a demo persona session can read the demo story',
-          requestId: request.id,
-        },
+    if (demo.personaOfUser(auth.userId) === undefined) return notDemoUser(reply, request.id);
+    // The story line to follow; the hiring story when none is named.
+    const query = request.query as { story?: unknown };
+    const key = typeof query.story === 'string' ? query.story.slice(0, 64) : 'hiring';
+    const story = await dependencies.stories.read(key);
+    if (story === undefined) {
+      return reply.code(404).send({
+        error: { code: 'NOT_FOUND', message: 'No such story', requestId: request.id },
       });
     }
-    return deriveStory(await dependencies.readStoryFacts(demo.ids.organizationId));
+    return story;
+  });
+
+  // Every story line with where it stands, for choosing one.
+  app.get('/api/demo/stories', async (request, reply) => {
+    const auth = requireAuth(request);
+    if (demo.personaOfUser(auth.userId) === undefined) return notDemoUser(reply, request.id);
+    return { stories: await dependencies.stories.list() };
   });
 
   app.post('/api/demo/reset', async (request, reply) => {
@@ -213,6 +230,7 @@ export function registerDemoDisabledRoutes(app: FastifyInstance): void {
   app.post('/api/demo/login', { config: { public: true } }, notFound);
   app.post('/api/demo/reset', { config: { public: true } }, notFound);
   app.get('/api/demo/story', { config: { public: true } }, notFound);
+  app.get('/api/demo/stories', { config: { public: true } }, notFound);
 }
 
 function sendDemoError(reply: FastifyReply, requestId: string, error: unknown): FastifyReply {

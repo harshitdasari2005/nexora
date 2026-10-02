@@ -13,9 +13,14 @@ import { DemoPanel } from '../src/components/DemoPanel.js';
 import { DemoContext, type DemoState } from '../src/demo/demo-state.js';
 import { DemoStart } from '../src/pages/DemoStart.js';
 import { ProjectRow, ProjectTeam } from '../src/pages/Projects.js';
-import { GuidedDemoView } from '../src/pages/GuidedDemo.js';
+import { GuidedDemoView, storyStatusLabel } from '../src/pages/GuidedDemo.js';
 import { StoryBarView } from '../src/components/StoryBar.js';
-import { demoHomePath, type DemoConfig, type DemoStory } from '../src/lib/demo.js';
+import {
+  demoHomePath,
+  type DemoConfig,
+  type DemoStory,
+  type StorySummary,
+} from '../src/lib/demo.js';
 
 const CONFIG: DemoConfig = {
   enabled: true,
@@ -159,9 +164,14 @@ function storyAt(done: number, who: DemoStory['steps'][number]['who'], action: s
           : ('waiting' as const),
     detail: index === done ? 'The request is waiting for Finance.' : `Detail of ${key}.`,
     who: index === done ? who : [],
+    ...(key === 'onboard' ? { owner: 'HR, IT and the hiring manager' } : {}),
   }));
   const current = steps[done];
   return {
+    key: 'hiring',
+    title: 'Hiring a new colleague',
+    department: 'People',
+    about: 'The team asks, the CEO and Finance decide, HR recruits.',
     subject: 'Senior Backend Developer',
     steps,
     ...(current === undefined
@@ -175,13 +185,13 @@ describe('the guided story', () => {
   const personas = CONFIG.personas;
   const cfo = personas.find((persona) => persona.key === 'cfo')!;
   const manager = personas.find((persona) => persona.key === 'manager')!;
-  const bar = (story: DemoStory, persona = manager, currentScreen?: 'hiring') =>
+  const bar = (story: DemoStory, persona = manager, onStepPage = false) =>
     render(
       <StoryBarView
         story={story}
         persona={persona}
         personas={personas}
-        {...(currentScreen === undefined ? {} : { currentScreen })}
+        onStepPage={onStepPage}
         hrefFor={(screen) => `/app/${screen}?scope`}
         storyHref="/app/demo?scope"
         onContinueAs={() => undefined}
@@ -192,6 +202,7 @@ describe('the guided story', () => {
   it('names who the story is waiting for and offers to continue as them', () => {
     const html = bar(storyAt(2, ['cfo'], 'Approve the cost'));
     expect(html).toContain('data-tone="waiting"');
+    expect(html).toContain('Story: Hiring a new colleague');
     expect(html).toContain('Step 3 of 8: Finance decides');
     expect(html).toContain('Waiting for Karan Malhotra, Chief Financial Officer.');
     expect(html).toContain('Continue as Karan');
@@ -209,7 +220,7 @@ describe('the guided story', () => {
   });
 
   it('does not send someone to the page they are already on', () => {
-    const html = bar(storyAt(2, ['cfo'], 'Approve the cost'), cfo, 'hiring');
+    const html = bar(storyAt(2, ['cfo'], 'Approve the cost'), cfo, true);
     expect(html).toContain('It is on this page.');
     expect(html).not.toContain('Open Hiring');
   });
@@ -217,23 +228,60 @@ describe('the guided story', () => {
   it('says so when the story is complete', () => {
     const html = bar(storyAt(8, [], ''));
     expect(html).toContain('data-tone="done"');
-    expect(html).toContain('The hiring story is complete');
+    expect(html).toContain('This story is complete');
     expect(html).not.toContain('Continue as');
   });
 
-  it('the guided demo page lists the eight steps with their state and owner', () => {
-    const html = render(
+  const SUMMARIES: StorySummary[] = [
+    {
+      key: 'hiring',
+      title: 'Hiring a new colleague',
+      department: 'People',
+      about: 'The team asks, the CEO and Finance decide, HR recruits.',
+      status: 'in_progress',
+      stepCount: 8,
+      stepsDone: 2,
+      waitingFor: ['cfo'],
+    },
+    {
+      key: 'project',
+      title: 'A project, from proposal to release',
+      department: 'Engineering',
+      about: 'Proposed, approved, assigned, tracked, released.',
+      status: 'not_started',
+      stepCount: 7,
+      stepsDone: 0,
+      waitingFor: ['cto'],
+    },
+    {
+      key: 'flow.campaign',
+      title: 'Marketing campaign',
+      department: 'Marketing',
+      about: 'Plan a campaign, get sign-off, launch it.',
+      status: 'finished',
+      stepCount: 6,
+      stepsDone: 6,
+      waitingFor: [],
+    },
+  ];
+  const page = (story: DemoStory | null, stories: StorySummary[] | null) =>
+    render(
       <GuidedDemoView
-        story={storyAt(2, ['cfo'], 'Approve the cost')}
+        story={story}
+        stories={stories}
         persona={manager}
         personas={personas}
         hrefFor={(screen) => `/app/${screen}`}
         onContinueAs={() => undefined}
+        onPick={() => undefined}
         onReset={() => undefined}
       />,
       state({}),
     );
-    expect(html).toContain('Hiring a Senior Backend Developer');
+
+  it('the guided demo page lists the steps of the story being followed, with state and owner', () => {
+    const html = page(storyAt(2, ['cfo'], 'Approve the cost'), SUMMARIES);
+    expect(html).toContain('Hiring a new colleague: Senior Backend Developer');
     for (const [, title] of STEP_TITLES) expect(html).toContain(title);
     expect(html.match(/class="nexora-step" data-state="done"/g)).toHaveLength(2);
     expect(html.match(/class="nexora-step" data-state="current"/g)).toHaveLength(1);
@@ -242,20 +290,23 @@ describe('the guided story', () => {
     expect(html).toContain('Reset demo');
   });
 
+  it('offers every story line, marks the one being followed, and says where each stands', () => {
+    const html = page(storyAt(2, ['cfo'], 'Approve the cost'), SUMMARIES);
+    expect(html).toContain('Choose a story to follow');
+    expect(html).toContain('A project, from proposal to release');
+    expect(html).toContain('Marketing campaign');
+    expect(html.match(/aria-checked="true"/g)).toHaveLength(1);
+    expect(storyStatusLabel(SUMMARIES[0]!, personas)).toBe('2 of 8 steps done, Karan’s turn');
+    expect(storyStatusLabel(SUMMARIES[1]!, personas)).toBe('Not started');
+    expect(storyStatusLabel(SUMMARIES[2]!, personas)).toBe('Complete');
+    expect(html).toContain('2 of 8 steps done, Karan’s turn');
+  });
+
   it('shows a reading state instead of inventing steps', () => {
-    const html = render(
-      <GuidedDemoView
-        story={null}
-        persona={manager}
-        personas={personas}
-        hrefFor={() => '/'}
-        onContinueAs={() => undefined}
-        onReset={() => undefined}
-      />,
-      state({}),
-    );
+    const html = page(null, null);
     expect(html).toContain('Reading the story');
     expect(html).not.toContain('nexora-step');
+    expect(html).not.toContain('Choose a story to follow');
   });
 });
 

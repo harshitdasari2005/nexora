@@ -104,10 +104,10 @@ export async function demoReset(): Promise<{ resetAt: string }> {
   return api<{ resetAt: string }>('/demo/reset', { method: 'POST' });
 }
 
-/** The screen a step of the guided story is done on. */
-export type StoryScreen = 'hiring' | 'recruiting' | 'onboarding';
+/** The screen a step of a guided story is done on. */
+export type StoryScreen = 'hiring' | 'recruiting' | 'onboarding' | 'requests' | 'tasks';
 
-/** One step of the guided story, as derived by the backend from the hiring records. */
+/** One step of a guided story, as derived by the backend from the real records. */
 export interface StoryStep {
   key: string;
   title: string;
@@ -116,19 +116,74 @@ export interface StoryStep {
   /** Who acts now (set on the current step only). */
   who: readonly DemoPersonaKey[];
   screen: StoryScreen;
+  /** Whose job this step is in an office. */
+  owner?: string;
 }
 
-/** `GET /api/demo/story`: where the hiring story stands and whose turn it is. */
-export interface DemoStory {
+/** A story line the guided demo can follow. */
+export interface StoryInfo {
+  key: string;
+  title: string;
+  department: string;
+  about: string;
+}
+
+/** `GET /api/demo/story`: where a story stands and whose turn it is. */
+export interface DemoStory extends StoryInfo {
   subject?: string;
   steps: readonly StoryStep[];
-  next?: { step: string; who: readonly DemoPersonaKey[]; action: string; screen: StoryScreen };
+  next?: {
+    step: string;
+    who: readonly DemoPersonaKey[];
+    action: string;
+    screen: StoryScreen;
+    /** The workspace each of those people acts from, when it is not their own. */
+    at?: Readonly<Partial<Record<DemoPersonaKey, string>>>;
+  };
   finished: boolean;
 }
 
-/** Reads the guided story (derived on the server; the browser decides nothing). */
-export function fetchDemoStory(): Promise<DemoStory> {
-  return api<DemoStory>('/demo/story');
+/** One entry of `GET /api/demo/stories`. */
+export interface StorySummary extends StoryInfo {
+  status: 'not_started' | 'in_progress' | 'finished';
+  stepCount: number;
+  stepsDone: number;
+  waitingFor: readonly DemoPersonaKey[];
+}
+
+/** The story the demo opens with. */
+export const DEFAULT_STORY = 'hiring';
+const STORY_STORAGE_KEY = 'nexora.demo.story';
+/** Fired in this browser when the viewer picks another story to follow. */
+export const STORY_EVENT = 'nexora:story';
+
+/** The story this viewer chose to follow (a per-browser convenience, nothing more). */
+export function selectedStoryKey(): string {
+  try {
+    return window.localStorage.getItem(STORY_STORAGE_KEY) ?? DEFAULT_STORY;
+  } catch {
+    return DEFAULT_STORY;
+  }
+}
+
+/** Follows another story from now on. */
+export function selectStory(key: string): void {
+  try {
+    window.localStorage.setItem(STORY_STORAGE_KEY, key);
+  } catch {
+    // Storage is unavailable (private window): the choice lasts for this page only.
+  }
+  window.dispatchEvent(new CustomEvent(STORY_EVENT, { detail: key }));
+}
+
+/** Reads a guided story (derived on the server; the browser decides nothing). */
+export function fetchDemoStory(key: string = DEFAULT_STORY): Promise<DemoStory> {
+  return api<DemoStory>(`/demo/story?story=${encodeURIComponent(key)}`);
+}
+
+/** Reads every story line with where it stands. */
+export async function fetchDemoStories(): Promise<StorySummary[]> {
+  return (await api<{ stories: StorySummary[] }>('/demo/stories')).stories;
 }
 
 /** The approval as read back from `GET /api/approvals/:id` (persisted state). */

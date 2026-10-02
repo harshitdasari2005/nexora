@@ -120,7 +120,9 @@ import { approvalRefusalReasonCode, createApprovalLifecycle } from './ai/approva
 import { registerAiRoutes } from './routes/ai.js';
 import { DemoService } from './demo/demo-service.js';
 import { registerDemoDisabledRoutes, registerDemoRoutes } from './demo/routes.js';
+import { StoriesReader } from './demo/stories.js';
 import { readStoryFacts } from './demo/story-reader.js';
+import { createRequestAuthority } from './office/request-authority.js';
 import { registerOriginGuard } from './plugins/origin-guard.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
@@ -137,6 +139,7 @@ import { registerFinanceRoutes } from './routes/finance.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerHiringRoutes } from './routes/hiring.js';
+import { OfficeRequest } from '@nexora/domain-hr';
 import { OfficeAi } from './office/office-ai.js';
 import { registerOfficeRequestRoutes } from './routes/office-requests.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
@@ -304,18 +307,27 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       demo,
       sessions: container.sessionsService,
       endSession: container.endSession,
-      readStoryFacts: (organizationId) =>
-        readStoryFacts(
-          {
-            requisitions: container.hiringRequisitions,
-            recruiting: container.recruiting,
-            onboarding: container.onboarding,
-            projects: repositories.projects,
-            resourceAssignments: repositories.resourceAssignments,
-            personaOfUser: (userId) => demo.personaOfUser(userId),
-          },
-          organizationId,
-        ),
+      stories: new StoriesReader({
+        ids: demo.ids,
+        requests: repositories.officeRequests,
+        tasks: repositories.projectTasks,
+        projects: repositories.projects,
+        authority: createRequestAuthority(rbac),
+        permissions: rbac,
+        personaOfUser: (userId) => demo.personaOfUser(userId),
+        readHiringFacts: (organizationId) =>
+          readStoryFacts(
+            {
+              requisitions: container.hiringRequisitions,
+              recruiting: container.recruiting,
+              onboarding: container.onboarding,
+              projects: repositories.projects,
+              resourceAssignments: repositories.resourceAssignments,
+              personaOfUser: (userId) => demo.personaOfUser(userId),
+            },
+            organizationId,
+          ),
+      }),
     });
     // Idempotent: seeds the deterministic demo organization when it is absent
     // or drifted, and never touches any other organization.
@@ -416,6 +428,26 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
     resolveUserName: hiringDisplayName,
+    // An approved project proposal opens the project it proposed, so the team
+    // can be given tasks on it. A project of that name already existing is fine.
+    onCompleted: async (completed, actorId, correlationId) => {
+      if (completed.type !== 'project_proposal') return;
+      const details = OfficeRequest.snapshot(completed).details;
+      const name = details['name'];
+      if (typeof name !== 'string') return;
+      const existing = await repositories.projects.listByOrganization(completed.organizationId);
+      if (existing.some((project) => project.name.value.toLowerCase() === name.toLowerCase())) {
+        return;
+      }
+      const problem = details['problem'];
+      await container.createProject.handle({
+        organizationId: completed.organizationId,
+        name: name.slice(0, 80),
+        ...(typeof problem === 'string' ? { description: problem.slice(0, 500) } : {}),
+        actorId: actorId as never,
+        correlationId,
+      });
+    },
   });
   registerTaskRoutes(app, {
     tasks: repositories.projectTasks,

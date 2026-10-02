@@ -369,7 +369,7 @@ export const REST_MUTATION_CLASSES: Readonly<Record<string, RestMutationEntry>> 
     proof: [
       { in: 'route', contains: 'requests.approve_manager' },
       {
-        in: 'apps/api/src/routes/office-requests.ts',
+        in: 'apps/api/src/office/request-authority.ts',
         contains: "seat !== 'manager' || scope.workspaceId === request.workspaceId",
       },
       {

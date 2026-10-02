@@ -31,8 +31,6 @@ import {
   type OfficeRequestDetails,
   type OfficeRequestRepository,
   type WorkflowDefinition,
-  type WorkflowSeat,
-  type WorkflowStageDefinition,
 } from '@nexora/domain-hr';
 
 import { requireAuth } from '../plugins/auth.js';
@@ -46,6 +44,12 @@ import {
 import { toHttpError } from '../http/errors.js';
 import type { BriefFact, OfficeAi, RequestForAi } from '../office/office-ai.js';
 import {
+  EXECUTIVE_CAPABILITY,
+  EXECUTIVE_ROLE_ID,
+  SEAT_CAPABILITY,
+  createRequestAuthority,
+} from '../office/request-authority.js';
+import {
   denyScope,
   officeScopeDenial,
   officeScopeProperties,
@@ -54,24 +58,6 @@ import {
   type OfficeScope,
 } from './office-scope.js';
 import { sendForbidden } from './permission-response.js';
-
-/** The capability that grants each seat (the requester's own seat needs none). */
-const SEAT_CAPABILITY: Record<Exclude<WorkflowSeat, 'requester'>, string> = {
-  manager: 'requests.approve_manager',
-  executive: 'requests.approve_executive',
-  hr: 'requests.approve_hr',
-  finance: 'requests.approve_finance',
-  it: 'requests.approve_it',
-  engineering: 'requests.approve_engineering',
-  marketing: 'requests.approve_marketing',
-  sales: 'requests.approve_sales',
-  support: 'requests.approve_support',
-  legal: 'requests.approve_legal',
-};
-
-/** The role with nobody above it: its requests need no manager decision. */
-const EXECUTIVE_ROLE_ID = 'executive.ceo';
-const EXECUTIVE_CAPABILITY = SEAT_CAPABILITY.executive;
 
 const idParams = {
   type: 'object',
@@ -160,6 +146,11 @@ export interface OfficeRequestRoutesDependencies {
   resolveUserName?: (userId: string) => Promise<string | undefined>;
   /** The assistant inside the workflows (suggests; never decides). */
   assistant: OfficeAi;
+  /**
+   * What a finished workflow sets in motion elsewhere (an approved project
+   * proposal opens the project). Called once, after the last stage was saved.
+   */
+  onCompleted?: (request: OfficeRequest, actorId: string, correlationId: string) => Promise<void>;
 }
 
 type SubmitBody = OfficeScope & {
@@ -226,60 +217,9 @@ export function registerOfficeRequestRoutes(
     return reply.code(http.statusCode).send(http.body);
   };
 
-  /** Whether a role holds a seat's authority for THIS request, from where they act. */
-  const holdsSeat = (
-    request: OfficeRequest,
-    seat: WorkflowSeat,
-    scope: OfficeScope,
-    effective: EffectivePermissions | undefined,
-    userId: string,
-  ): boolean => {
-    if (seat === 'requester') return request.requestedBy === userId;
-    return (
-      hasPermission(effective, SEAT_CAPABILITY[seat]) &&
-      // The manager seat belongs to a manager of the team the request came from.
-      (seat !== 'manager' || scope.workspaceId === request.workspaceId)
-    );
-  };
-
-  /**
-   * A decision that would fall to the requester themselves (the only decision
-   * left on the request of a department's own head) goes up to the executive.
-   */
-  async function escalatesToExecutive(
-    request: OfficeRequest,
-    stage: WorkflowStageDefinition,
-    effective: EffectivePermissions | undefined,
-    userId: string,
-  ): Promise<boolean> {
-    if (stage.kind !== 'decide' || stage.seat === 'requester') return false;
-    if (!hasPermission(effective, EXECUTIVE_CAPABILITY) || request.requestedBy === userId) {
-      return false;
-    }
-    const requesters = await resolveEffectivePermissions(
-      dependencies.permissions,
-      roleContextOf(request.requestedBy, {
-        organizationId: request.organizationId,
-        workspaceId: request.workspaceId,
-      }),
-    );
-    return hasPermission(requesters, SEAT_CAPABILITY[stage.seat]);
-  }
-
-  /** Whether the caller may take the stage the request is waiting at. */
-  async function mayTakePending(
-    request: OfficeRequest,
-    scope: OfficeScope,
-    effective: EffectivePermissions | undefined,
-    userId: string,
-  ): Promise<boolean> {
-    const stage = request.pendingStageDefinition;
-    if (stage === undefined) return false;
-    return (
-      holdsSeat(request, stage.seat, scope, effective, userId) ||
-      (await escalatesToExecutive(request, stage, effective, userId))
-    );
-  }
+  const { holdsSeat, escalatesToExecutive, mayTakePending } = createRequestAuthority(
+    dependencies.permissions,
+  );
 
   /** Whether the caller may see this request: their own, one they take part in, or all. */
   const visible = (
@@ -325,21 +265,8 @@ export function registerOfficeRequestRoutes(
     const pending = request.pendingStageDefinition;
     const mine = pending !== undefined && (await mayTakePending(request, scope, effective, userId));
     const blocker = mine ? request.decisionBlocker(userId) : undefined;
-    const stages = snapshot.stages.map((key, index) => {
+    const stages = request.stageStates().map(({ key, state }) => {
       const stage = definition === undefined ? undefined : findWorkflowStage(definition, key);
-      const entry = snapshot.history.find(
-        (item) => item.stage === key && item.action !== 'assisted',
-      );
-      const state =
-        entry?.action === 'approved'
-          ? 'done'
-          : entry?.action === 'not_required'
-            ? 'skipped'
-            : entry?.action === 'rejected'
-              ? 'returned'
-              : snapshot.status === 'pending' && index === snapshot.stageIndex
-                ? 'current'
-                : 'waiting';
       return { key, label: stage?.label ?? key, kind: stage?.kind ?? 'decide', state };
     });
     return {
@@ -708,6 +635,9 @@ export function registerOfficeRequestRoutes(
         return fail(reply, request.id, error);
       }
       if (!(await dependencies.requests.update(found, loaded))) return conflict(reply, request.id);
+      if (found.status === 'approved') {
+        await dependencies.onCompleted?.(found, auth.userId, request.id);
+      }
       return { request: await view(found, auth.userId, body, effective) };
     },
   );

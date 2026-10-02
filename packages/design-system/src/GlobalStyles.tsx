@@ -77,6 +77,7 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 .nexora-story-pips > span[data-state='current'],
 .nexora-story-pips > span[data-state='returned'] { background: var(--nexora-marker); }
 .nexora-story-body { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 18px; }
+.nexora-story-name { font-size: 0.75rem; font-weight: 600; color: var(--nexora-textMuted); margin-bottom: 2px; }
 .nexora-story-title {
   display: flex;
   flex-wrap: wrap;

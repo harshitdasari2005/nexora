@@ -1,17 +1,18 @@
 /**
  * @nexora/app-web — the Guided Demo.
  *
- * One hire, the way an office runs it: the team's manager asks, the CEO
- * decides, Finance decides, HR recruits and makes the offer, HR, IT and the
- * manager onboard the new colleague, and the manager puts them on the project.
+ * The demo office can be walked through along several story lines: hiring a
+ * colleague, a project from its proposal to its release, and one story per
+ * office workflow of every department.
  *
- * The page performs none of it. Every step is done on the real screens
- * (Hiring, Recruiting, Onboarding) by the person whose job it is; this page
- * only shows where the story stands — derived on the server from the hiring
- * records — and whose turn it is.
+ * The page performs none of it. Every step is done on the real screens by the
+ * person whose job it is; this page lets the viewer pick a story, and shows
+ * where it stands — derived on the server from the real records — and whose
+ * turn it is.
  */
 
-import { Link, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, Card, typography } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
@@ -19,28 +20,19 @@ import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { NavIcon } from '../components/NavIcon.js';
 import { Page, PageHeader, Section } from '../components/Page.js';
-import { StoryBarView, useDemoStory } from '../components/StoryBar.js';
+import { StoryBarView, useDemoStory, useStoryNavigation } from '../components/StoryBar.js';
 import { useDemo } from '../demo/demo-state.js';
+import { CHANGE_EVENT } from '../lib/api.js';
 import {
-  demoScopeQuery,
+  fetchDemoStories,
+  selectStory,
   type DemoPersona,
   type DemoStory,
   type StoryScreen,
   type StoryStep,
+  type StorySummary,
 } from '../lib/demo.js';
 import { useShellScope } from '../lib/useShellScope.js';
-
-/** Whose job each step is in an office (the titles, not the people). */
-const STEP_OWNER: Record<string, string> = {
-  raise: 'The team’s manager',
-  ceo: 'The CEO',
-  finance: 'Finance',
-  open: 'HR',
-  candidates: 'HR, with the hiring manager interviewing',
-  offer: 'HR',
-  onboard: 'HR, IT and the hiring manager',
-  assign: 'The hiring manager',
-};
 
 const STATE_LABEL: Record<StoryStep['state'], string> = {
   done: 'Done',
@@ -54,8 +46,25 @@ const STATE_LABEL: Record<StoryStep['state'], string> = {
 export function GuidedDemo(): JSX.Element {
   const demo = useDemo();
   const story = useDemoStory();
-  const navigate = useNavigate();
   const { dashboard, loading, error, reload } = useShellScope();
+  const [stories, setStories] = useState<StorySummary[] | null>(null);
+  const personaKey = demo.persona?.key;
+  const navigation = useStoryNavigation(story, {
+    ...(dashboard?.organization?.id === undefined
+      ? {}
+      : { organizationId: dashboard.organization.id }),
+    ...(dashboard?.workspace?.id === undefined ? {} : { workspaceId: dashboard.workspace.id }),
+  });
+
+  const loadStories = useCallback(() => {
+    if (personaKey === undefined) return;
+    fetchDemoStories().then(setStories, () => setStories([]));
+  }, [personaKey]);
+  useEffect(() => {
+    loadStories();
+    window.addEventListener(CHANGE_EVENT, loadStories);
+    return () => window.removeEventListener(CHANGE_EVENT, loadStories);
+  }, [loadStories]);
 
   if (demo.status === 'loading' || (loading && dashboard === null)) return <LoadingScreen />;
   if (demo.status === 'disabled' || demo.config === null) {
@@ -68,7 +77,7 @@ export function GuidedDemo(): JSX.Element {
     );
   }
   if (error !== null) return <ErrorState message={error.message} onRetry={reload} />;
-  if (demo.persona === null) {
+  if (demo.persona === null || navigation === null) {
     return (
       <Standalone
         title="Pick someone from the demo office"
@@ -81,8 +90,6 @@ export function GuidedDemo(): JSX.Element {
   if (dashboard.organization === null || dashboard.workspace === null) {
     return <ErrorState message="The demo organization is not ready yet." onRetry={reload} />;
   }
-  const { config, persona } = demo;
-  const ownScope = `organizationId=${encodeURIComponent(dashboard.organization.id)}&workspaceId=${encodeURIComponent(dashboard.workspace.id)}`;
 
   return (
     <AppShell
@@ -94,17 +101,13 @@ export function GuidedDemo(): JSX.Element {
     >
       <GuidedDemoView
         story={story}
-        persona={persona}
-        personas={config.personas}
-        hrefFor={(screen) => `/app/${screen}?${ownScope}`}
+        stories={stories}
+        persona={demo.persona}
+        personas={demo.config.personas}
+        hrefFor={navigation.hrefFor}
         busy={demo.busy}
-        onContinueAs={(target, screen) => {
-          void demo
-            .switchPersona(target.key)
-            .then(() =>
-              navigate(`/app/${screen}?${demoScopeQuery(config.organizationId, target)}`),
-            );
-        }}
+        onContinueAs={navigation.onContinueAs}
+        onPick={selectStory}
         onReset={() => {
           if (window.confirm('Reset the demo organization to its seed? Demo history is cleared.')) {
             void demo.reset();
@@ -117,31 +120,49 @@ export function GuidedDemo(): JSX.Element {
 
 /** Props of {@link GuidedDemoView}. */
 export interface GuidedDemoViewProps {
-  /** `null` while the story is being read. */
+  /** The story being followed; `null` while it is being read. */
   story: DemoStory | null;
+  /** Every story line; `null` while they are being read. */
+  stories: readonly StorySummary[] | null;
   persona: DemoPersona;
   personas: readonly DemoPersona[];
   hrefFor: (screen: StoryScreen) => string;
   onContinueAs: (persona: DemoPersona, screen: StoryScreen) => void;
+  onPick: (key: string) => void;
   onReset: () => void;
   busy?: boolean;
+}
+
+/** Where a story stands, in a few words. */
+export function storyStatusLabel(summary: StorySummary, personas: readonly DemoPersona[]): string {
+  if (summary.status === 'finished') return 'Complete';
+  const first = personas.find((person) => person.key === summary.waitingFor[0]);
+  const who = first === undefined ? '' : `, ${first.displayName.split(' ')[0]}’s turn`;
+  return summary.status === 'not_started'
+    ? `Not started${who}`
+    : `${summary.stepsDone} of ${summary.stepCount} steps done${who}`;
 }
 
 /** The pure page content (exported for tests). */
 export function GuidedDemoView({
   story,
+  stories,
   persona,
   personas,
   hrefFor,
   onContinueAs,
+  onPick,
   onReset,
   busy = false,
 }: GuidedDemoViewProps): JSX.Element {
+  const departments = [...new Set((stories ?? []).map((entry) => entry.department))];
+  // The two stories that span several screens come first, on their own.
+  const featured = (stories ?? []).filter((entry) => !entry.key.startsWith('flow.'));
   return (
     <Page>
       <PageHeader
-        title="The hiring story"
-        lede="One hire, the way an office runs it. Each step is done on the real screens by the person whose job it is. This page only shows where the story stands."
+        title="Guided demo"
+        lede="Follow a piece of work through the office. Each step is done on the real screens by the person whose job it is; this page shows where the story stands."
         actions={
           <Button variant="ghost" disabled={busy} onClick={onReset}>
             Reset demo
@@ -164,7 +185,7 @@ export function GuidedDemoView({
             busy={busy}
           />
           <Section
-            title={story.subject === undefined ? 'The eight steps' : `Hiring a ${story.subject}`}
+            title={story.subject === undefined ? story.title : `${story.title}: ${story.subject}`}
           >
             <ol className="nexora-steps">
               {story.steps.map((step, index) => (
@@ -184,11 +205,13 @@ export function GuidedDemoView({
                       <h3 className="nexora-step-title">{step.title}</h3>
                       <span className="nexora-step-state">{STATE_LABEL[step.state]}</span>
                     </div>
-                    <div
-                      style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textMuted)' }}
-                    >
-                      {STEP_OWNER[step.key] ?? ''}
-                    </div>
+                    {step.owner === undefined ? null : (
+                      <div
+                        style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textMuted)' }}
+                      >
+                        {step.owner}
+                      </div>
+                    )}
                     <p className="nexora-step-detail">{step.detail}</p>
                   </div>
                 </li>
@@ -197,7 +220,89 @@ export function GuidedDemoView({
           </Section>
         </>
       )}
+
+      {stories === null ? null : (
+        <Section title="Choose a story to follow" count={stories.length}>
+          <StoryChoices
+            stories={featured}
+            selected={story?.key}
+            personas={personas}
+            onPick={onPick}
+          />
+          {departments.map((department) => {
+            const inDepartment = stories.filter(
+              (entry) => entry.department === department && entry.key.startsWith('flow.'),
+            );
+            return inDepartment.length === 0 ? null : (
+              <div key={department} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div
+                  style={{
+                    fontSize: typography.sizes.sm,
+                    fontWeight: typography.weights.semibold,
+                    color: 'var(--nexora-textSecondary)',
+                    marginTop: 8,
+                  }}
+                >
+                  {department}
+                </div>
+                <StoryChoices
+                  stories={inDepartment}
+                  selected={story?.key}
+                  personas={personas}
+                  onPick={onPick}
+                />
+              </div>
+            );
+          })}
+        </Section>
+      )}
     </Page>
+  );
+}
+
+function StoryChoices({
+  stories,
+  selected,
+  personas,
+  onPick,
+}: {
+  stories: readonly StorySummary[];
+  selected: string | undefined;
+  personas: readonly DemoPersona[];
+  onPick: (key: string) => void;
+}): JSX.Element {
+  return (
+    <div className="nexora-choice" role="radiogroup" aria-label="Story">
+      {stories.map((entry) => (
+        <button
+          key={entry.key}
+          type="button"
+          role="radio"
+          aria-checked={entry.key === selected}
+          className="nexora-choice-option"
+          onClick={() => onPick(entry.key)}
+        >
+          <span style={{ fontWeight: typography.weights.semibold }}>{entry.title}</span>
+          <span style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+            {entry.about}
+          </span>
+          <span
+            style={{
+              fontSize: typography.sizes.xs,
+              fontWeight: typography.weights.semibold,
+              color:
+                entry.status === 'finished'
+                  ? 'var(--nexora-success)'
+                  : entry.status === 'in_progress'
+                    ? 'var(--nexora-warning)'
+                    : 'var(--nexora-textMuted)',
+            }}
+          >
+            {storyStatusLabel(entry, personas)}
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }
 

@@ -1,13 +1,13 @@
 /**
  * @nexora/app-web — the guided story bar.
  *
- * In the demo office, every page carries one line about the hiring story:
- * which step it is at, and whose turn it is. When it is the turn of the
- * person signed in, the bar is the amber marker and points at the page where
- * the work is done; otherwise it names who the story is waiting for and
+ * In the demo office, every page carries one line about the story the viewer
+ * is following: which step it is at, and whose turn it is. When it is the turn
+ * of the person signed in, the bar is the amber marker and points at the page
+ * where the work is done; otherwise it names who the story is waiting for and
  * offers to continue as them.
  *
- * The bar decides nothing. The story is derived on the server from the hiring
+ * The bar decides nothing. Every story is derived on the server from the real
  * records (`GET /api/demo/story`) and read again after every change.
  */
 
@@ -18,8 +18,10 @@ import { Button, typography } from '@nexora/design-system';
 import { useDemo } from '../demo/demo-state.js';
 import { CHANGE_EVENT } from '../lib/api.js';
 import {
-  demoScopeQuery,
+  DEFAULT_STORY,
   fetchDemoStory,
+  selectedStoryKey,
+  STORY_EVENT,
   type DemoPersona,
   type DemoStory,
   type StoryScreen,
@@ -29,9 +31,12 @@ const SCREEN_LABEL: Record<StoryScreen, string> = {
   hiring: 'Hiring',
   recruiting: 'Recruiting',
   onboarding: 'Onboarding',
+  requests: 'Office workflows',
+  tasks: 'Tasks',
 };
+const SCREENS = Object.keys(SCREEN_LABEL) as StoryScreen[];
 
-/** Reads the guided story for the current demo session, and again after every change. */
+/** Reads the story the viewer follows, and again after every change. */
 export function useDemoStory(): DemoStory | null {
   const demo = useDemo();
   const personaKey = demo.persona?.key;
@@ -43,13 +48,20 @@ export function useDemoStory(): DemoStory | null {
       setStory(null);
       return;
     }
-    fetchDemoStory().then(setStory, () => setStory(null));
+    fetchDemoStory(selectedStoryKey()).then(setStory, () => {
+      // A story that no longer exists: fall back to the first one.
+      fetchDemoStory(DEFAULT_STORY).then(setStory, () => setStory(null));
+    });
   }, [enabled]);
 
   useEffect(() => {
     load();
     window.addEventListener(CHANGE_EVENT, load);
-    return () => window.removeEventListener(CHANGE_EVENT, load);
+    window.addEventListener(STORY_EVENT, load);
+    return () => {
+      window.removeEventListener(CHANGE_EVENT, load);
+      window.removeEventListener(STORY_EVENT, load);
+    };
     // The persona is part of the key: a different person may see a different turn.
   }, [load, personaKey]);
 
@@ -60,7 +72,7 @@ export function useDemoStory(): DemoStory | null {
 export function describePeople(people: readonly DemoPersona[]): string {
   const named = people.map((person) => `${person.displayName}, ${person.title}`);
   if (named.length <= 1) return named[0] ?? 'someone in the office';
-  return `${named.slice(0, -1).join('; ')} and ${named[named.length - 1]}`;
+  return `${named.slice(0, -1).join('; ')} or ${named[named.length - 1]}`;
 }
 
 /** Props of {@link StoryBarView}. */
@@ -69,8 +81,8 @@ export interface StoryBarViewProps {
   /** The persona of the current session. */
   persona: DemoPersona;
   personas: readonly DemoPersona[];
-  /** The screen the user is on, when it is one of the story's screens. */
-  currentScreen?: StoryScreen;
+  /** The step's page is the one on screen, in the workspace the step needs. */
+  onStepPage?: boolean;
   /** Where "open the page" goes for the current persona. */
   hrefFor: (screen: StoryScreen) => string;
   /** The page listing every step (omitted on that page itself). */
@@ -85,7 +97,7 @@ export function StoryBarView({
   story,
   persona,
   personas,
-  currentScreen,
+  onStepPage = false,
   hrefFor,
   storyHref,
   onContinueAs,
@@ -114,11 +126,13 @@ export function StoryBarView({
       </div>
       <div className="nexora-story-body">
         <div style={{ minWidth: 0, flex: '1 1 320px' }}>
+          <div className="nexora-story-name">Story: {story.title}</div>
           {story.finished ? (
             <>
-              <div className="nexora-story-title">The hiring story is complete</div>
+              <div className="nexora-story-title">This story is complete</div>
               <div className="nexora-story-text">
-                {story.steps[story.steps.length - 1]?.detail} Reset the demo to run it again.
+                {story.steps[story.steps.length - 1]?.detail} Pick another story, or reset the demo
+                to run this one again.
               </div>
             </>
           ) : next === undefined || step === undefined ? (
@@ -143,18 +157,18 @@ export function StoryBarView({
           )}
         </div>
         <div className="nexora-actions">
-          {next !== undefined && myTurn && currentScreen !== next.screen ? (
+          {next !== undefined && myTurn && !onStepPage ? (
             <Link to={hrefFor(next.screen)} style={{ textDecoration: 'none' }}>
               <Button>Open {SCREEN_LABEL[next.screen]}</Button>
             </Link>
           ) : null}
-          {next !== undefined && myTurn && currentScreen === next.screen ? (
+          {next !== undefined && myTurn && onStepPage ? (
             <span style={{ fontSize: typography.sizes.sm, fontWeight: 600 }}>
               It is on this page.
             </span>
           ) : null}
           {next !== undefined && !myTurn
-            ? waitingFor.slice(0, 3).map((person) => (
+            ? waitingFor.slice(0, 2).map((person) => (
                 <Button
                   key={person.key}
                   variant="secondary"
@@ -167,13 +181,55 @@ export function StoryBarView({
             : null}
           {storyHref === undefined ? null : (
             <Link to={storyHref} className="nexora-story-link">
-              All steps
+              All stories
             </Link>
           )}
         </div>
       </div>
     </aside>
   );
+}
+
+const scopeQuery = (organizationId: string, workspaceId: string): string =>
+  `organizationId=${encodeURIComponent(organizationId)}&workspaceId=${encodeURIComponent(workspaceId)}`;
+
+/** The navigation a story needs: where each person does the pending step. */
+export function useStoryNavigation(
+  story: DemoStory | null,
+  current: { organizationId?: string; workspaceId?: string },
+): {
+  hrefFor: (screen: StoryScreen) => string;
+  onContinueAs: (target: DemoPersona, screen: StoryScreen) => void;
+  ownScope: string;
+  onStepPage: boolean;
+} | null {
+  const demo = useDemo();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  if (demo.config === null || demo.persona === null) return null;
+  const { config, persona } = demo;
+  const at = story?.next?.at ?? {};
+  // Where THIS person does the step: the team the guide names, else where they are.
+  const myWorkspace = at[persona.key] ?? current.workspaceId ?? persona.workspaceId;
+  const organizationId = current.organizationId ?? config.organizationId;
+  const screen = SCREENS.find((entry) => pathname.startsWith(`/app/${entry}`));
+  return {
+    hrefFor: (target) => `/app/${target}?${scopeQuery(organizationId, myWorkspace)}`,
+    ownScope: scopeQuery(organizationId, current.workspaceId ?? persona.workspaceId),
+    onStepPage:
+      story?.next !== undefined &&
+      screen === story.next.screen &&
+      (current.workspaceId === undefined || current.workspaceId === myWorkspace),
+    onContinueAs: (target, targetScreen) => {
+      void demo
+        .switchPersona(target.key)
+        .then(() =>
+          navigate(
+            `/app/${targetScreen}?${scopeQuery(config.organizationId, at[target.key] ?? target.workspaceId)}`,
+          ),
+        );
+    },
+  };
 }
 
 /** The bar for the current demo session (renders nothing outside the demo office). */
@@ -186,35 +242,27 @@ export function StoryBar({
 }): JSX.Element | null {
   const demo = useDemo();
   const story = useDemoStory();
-  const navigate = useNavigate();
   const { pathname } = useLocation();
-  if (demo.config === null || demo.persona === null || story === null) return null;
+  const navigation = useStoryNavigation(story, {
+    ...(organizationId === undefined ? {} : { organizationId }),
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+  });
+  if (demo.config === null || demo.persona === null || story === null || navigation === null) {
+    return null;
+  }
   // The guided demo page IS the story; it does not need a summary of itself.
   if (pathname.startsWith('/app/demo')) return null;
-  const { config, persona } = demo;
-
-  const ownScope =
-    organizationId !== undefined && workspaceId !== undefined
-      ? `organizationId=${encodeURIComponent(organizationId)}&workspaceId=${encodeURIComponent(workspaceId)}`
-      : demoScopeQuery(config.organizationId, persona);
-  const currentScreen = (['hiring', 'recruiting', 'onboarding'] as const).find((screen) =>
-    pathname.startsWith(`/app/${screen}`),
-  );
 
   return (
     <StoryBarView
       story={story}
-      persona={persona}
-      personas={config.personas}
-      {...(currentScreen === undefined ? {} : { currentScreen })}
-      hrefFor={(screen) => `/app/${screen}?${ownScope}`}
-      storyHref={`/app/demo?${ownScope}`}
+      persona={demo.persona}
+      personas={demo.config.personas}
+      onStepPage={navigation.onStepPage}
+      hrefFor={navigation.hrefFor}
+      storyHref={`/app/demo?${navigation.ownScope}`}
       busy={demo.busy}
-      onContinueAs={(target, screen) => {
-        void demo
-          .switchPersona(target.key)
-          .then(() => navigate(`/app/${screen}?${demoScopeQuery(config.organizationId, target)}`));
-      }}
+      onContinueAs={navigation.onContinueAs}
     />
   );
 }

@@ -292,6 +292,26 @@ export class OfficeRequest {
       : findWorkflowStage(workflow, key);
   }
 
+  /** Where every stage of the chain stands, in order. */
+  stageStates(): { key: string; state: 'done' | 'current' | 'waiting' | 'skipped' | 'returned' }[] {
+    return this.#state.stages.map((key, index) => {
+      const entry = this.#state.history.find(
+        (item) => item.stage === key && item.action !== 'assisted',
+      );
+      const state =
+        entry?.action === 'approved'
+          ? ('done' as const)
+          : entry?.action === 'not_required'
+            ? ('skipped' as const)
+            : entry?.action === 'rejected'
+              ? ('returned' as const)
+              : this.#state.status === 'pending' && index === this.#state.stageIndex
+                ? ('current' as const)
+                : ('waiting' as const);
+      return { key, state };
+    });
+  }
+
   /** Why this person cannot take the pending stage right now (undefined when they can). */
   decisionBlocker(actorId: string): string | undefined {
     const stage = this.pendingStageDefinition;
