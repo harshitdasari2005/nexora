@@ -184,4 +184,47 @@ describe('demo office roles', () => {
     ).toBe(200);
     expect((await get(developer, `/api/projects?${org}`)).statusCode).toBe(200);
   });
+
+  it('HR works with employee records from the HR workspace; nobody borrows that seat', async () => {
+    const org = `organizationId=${ids.organizationId}`;
+    const hr = await signIn(app, 'hr');
+    const developer = await signIn(app, 'dev_aarav');
+    const cfo = await signIn(app, 'cfo');
+    const fromHr = `/api/employees?${org}&workspaceId=${ids.workspaceIds.hr}`;
+
+    // HR reads the employee list from the HR workspace, and keeps records there.
+    const listed = await get(hr, fromHr);
+    expect(listed.statusCode, listed.body).toBe(200);
+    expect((listed.json() as { employees: unknown[] }).employees.length).toBeGreaterThan(0);
+    const created = await post(hr, '/api/employees', {
+      organizationId: ids.organizationId,
+      workspaceId: ids.workspaceIds.hr,
+      name: 'Nisha Verma',
+    });
+    expect(created.statusCode, created.body).toBe(201);
+
+    // Naming the HR workspace does not help someone who is not a member of it…
+    for (const cookie of [developer, cfo]) {
+      expect((await get(cookie, fromHr)).statusCode).toBe(403);
+      const attempt = await post(cookie, '/api/employees', {
+        organizationId: ids.organizationId,
+        workspaceId: ids.workspaceIds.hr,
+        name: 'Should Not Exist',
+      });
+      expect(attempt.statusCode).toBe(403);
+    }
+    // …and their own seats do not carry the permission.
+    expect(
+      (await get(developer, `/api/employees?${org}&workspaceId=${ids.workspaceIds.eng}`))
+        .statusCode,
+    ).toBe(403);
+    expect(
+      (await get(cfo, `/api/employees?${org}&workspaceId=${ids.workspaceIds.fin}`)).statusCode,
+    ).toBe(403);
+    const names = (
+      (await get(hr, fromHr)).json() as { employees: { name: string }[] }
+    ).employees.map((employee) => employee.name);
+    expect(names).toContain('Nisha Verma');
+    expect(names).not.toContain('Should Not Exist');
+  });
 });

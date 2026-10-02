@@ -80,7 +80,7 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     displayName: 'Anika Rao',
     title: 'Chief Executive Officer',
     responsibility:
-      'Sees every department and can raise any request. Cannot approve their own request.',
+      'Decides on every hiring request first. Sees every department and can raise any request.',
     workspace: 'eng',
     expectedRoleId: 'executive.ceo',
   },
@@ -89,7 +89,8 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     email: 'vikram.shah@lumen-capital.example',
     displayName: 'Vikram Shah',
     title: 'Chief Technology Officer',
-    responsibility: 'Leads technology: projects, engineering problems and integrations.',
+    responsibility:
+      'Leads technology. Can ask for hires, interviews candidates and helps set new colleagues up.',
     workspace: 'tech',
     expectedRoleId: 'technology.cto',
   },
@@ -98,7 +99,8 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     email: 'rohan.mehta@lumen-capital.example',
     displayName: 'Rohan Mehta',
     title: 'Team Manager',
-    responsibility: 'Runs the delivery team: approves the hire and sees the team on the project.',
+    responsibility:
+      'Asks for hires for the team, interviews candidates and puts new colleagues on the project.',
     workspace: 'eng',
     expectedRoleId: 'delivery.manager',
   },
@@ -107,7 +109,8 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     email: 'aarav.kulkarni@lumen-capital.example',
     displayName: 'Aarav Kulkarni',
     title: 'Software Developer',
-    responsibility: 'IT team member: works on the projects they are assigned to.',
+    responsibility:
+      'IT: sets up accounts and equipment for new colleagues, and works on assigned projects.',
     workspace: 'eng',
     expectedRoleId: 'technology.developer',
   },
@@ -116,7 +119,8 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     email: 'meghna.iyer@lumen-capital.example',
     displayName: 'Meghna Iyer',
     title: 'Software Developer',
-    responsibility: 'IT team member: works on the projects they are assigned to.',
+    responsibility:
+      'IT: sets up accounts and equipment for new colleagues, and works on assigned projects.',
     workspace: 'eng',
     expectedRoleId: 'technology.developer',
   },
@@ -125,7 +129,8 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     email: 'priya.menon@lumen-capital.example',
     displayName: 'Priya Menon',
     title: 'HR Manager',
-    responsibility: 'Owns people operations: employee records and hiring.',
+    responsibility:
+      'Runs recruiting: opens positions, handles candidates and offers, and starts onboarding.',
     workspace: 'hr',
     expectedRoleId: 'people.hr',
   },
@@ -134,7 +139,7 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     email: 'karan.malhotra@lumen-capital.example',
     displayName: 'Karan Malhotra',
     title: 'Chief Financial Officer',
-    responsibility: 'Approves the expense as the required approver.',
+    responsibility: 'Decides on the cost of a hire after the CEO. Approves expenses.',
     workspace: 'fin',
     expectedRoleId: 'finance.cfo',
   },
@@ -143,7 +148,7 @@ export const DEMO_PERSONAS: readonly DemoPersonaDefinition[] = [
     email: 'divya.nair@lumen-capital.example',
     displayName: 'Divya Nair',
     title: 'Finance Controller',
-    responsibility: 'Submits an expense against the demo budget.',
+    responsibility: 'Keeps the books: submits expenses against the budgets.',
     workspace: 'fin',
     expectedRoleId: 'finance.cfo',
   },
@@ -163,6 +168,27 @@ export const DEMO_APPROVAL_AUTHORITY_RULES = [
 /** The story's canonical hiring request (the planner accepts a name only). */
 export const DEMO_HIRE_REQUEST =
   'Hire Sarah Thomas and assign her to the Mobile Banking Platform project.';
+
+/**
+ * What the Guided Demo suggests for the hiring story (the manager may change
+ * any of it — these only pre-fill the forms; nothing is created from them).
+ */
+export const DEMO_HIRING_SUGGESTION = {
+  jobTitle: 'Senior Backend Developer',
+  department: 'Engineering Delivery',
+  headcount: 1,
+  employmentType: 'full_time',
+  salaryMinMinorUnits: 180_000_000,
+  salaryMaxMinorUnits: 240_000_000,
+  currency: 'INR',
+  urgency: 'high',
+  justification:
+    'The Mobile Banking Platform rebuild needs one more backend engineer to hit the Q4 date.',
+  jobPosting:
+    'Build and run the backend services of the Mobile Banking Platform with the delivery team.',
+  candidateName: 'Sarah Thomas',
+  candidateEmail: 'sarah.thomas@example.com',
+} as const;
 
 /** The demo project the hire is assigned to. */
 export const DEMO_PROJECT_NAME = 'Mobile Banking Platform';

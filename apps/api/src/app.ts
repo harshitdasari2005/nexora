@@ -116,6 +116,7 @@ import { approvalRefusalReasonCode, createApprovalLifecycle } from './ai/approva
 import { registerAiRoutes } from './routes/ai.js';
 import { DemoService } from './demo/demo-service.js';
 import { registerDemoDisabledRoutes, registerDemoRoutes } from './demo/routes.js';
+import { readStoryFacts } from './demo/story-reader.js';
 import { registerOriginGuard } from './plugins/origin-guard.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
@@ -291,6 +292,18 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       demo,
       sessions: container.sessionsService,
       endSession: container.endSession,
+      readStoryFacts: (organizationId) =>
+        readStoryFacts(
+          {
+            requisitions: container.hiringRequisitions,
+            recruiting: container.recruiting,
+            onboarding: container.onboarding,
+            projects: repositories.projects,
+            resourceAssignments: repositories.resourceAssignments,
+            personaOfUser: (userId) => demo.personaOfUser(userId),
+          },
+          organizationId,
+        ),
     });
     // Idempotent: seeds the deterministic demo organization when it is absent
     // or drifted, and never touches any other organization.
@@ -327,6 +340,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     createEmployee: container.createEmployee,
     listEmployees: container.listEmployees,
     listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
   });
   // Display names only — never an email fallback (same rule as the governance read models).

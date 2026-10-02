@@ -9,10 +9,11 @@
  */
 
 import type { FastifyInstance, FastifySchema } from 'fastify';
-import type { TenantId } from '@nexora/contracts/common';
+import type { TenantId, UserId } from '@nexora/contracts/common';
 import { toEmployeeDto } from '@nexora/application-hr';
 import type { CreateEmployeeHandler, ListEmployeesHandler } from '@nexora/application-hr';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
+import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
 
 import { requireAuth } from '../plugins/auth.js';
 import {
@@ -30,6 +31,7 @@ const createEmployeeSchema: FastifySchema = {
     additionalProperties: false,
     properties: {
       organizationId: { type: 'string', minLength: 1 },
+      workspaceId: { type: 'string', minLength: 1 },
       name: { type: 'string', minLength: 1, maxLength: 120 },
     },
   },
@@ -40,6 +42,8 @@ export interface EmployeeRoutesDependencies {
   createEmployee: CreateEmployeeHandler;
   listEmployees: ListEmployeesHandler;
   listOrganizations: ListOrganizationsHandler;
+  /** Confirms a named workspace is one the caller is a member of. */
+  listMyWorkspaces: ListMyWorkspacesHandler;
   /** RBAC: the SAME trusted role resolver + catalog every surface uses. */
   permissions: PermissionResolverDependencies;
 }
@@ -49,10 +53,34 @@ export function registerEmployeeRoutes(
   app: FastifyInstance,
   dependencies: EmployeeRoutesDependencies,
 ): void {
+  /**
+   * The context the caller's business role is resolved in. People work from a
+   * workspace (HR from the HR workspace, a manager from their team's), and the
+   * role comes from that seat — so a caller may name the workspace they are
+   * acting from. It is honoured only when the caller is really a member of it;
+   * otherwise the request is refused, never silently widened.
+   */
+  async function roleContext(
+    userId: string,
+    organizationId: string,
+    workspaceId: string | undefined,
+  ): Promise<{ userId: string; tenantId: string; workspaceId?: string } | undefined> {
+    if (workspaceId === undefined) return { userId, tenantId: organizationId };
+    const workspaces = await dependencies.listMyWorkspaces.handle({
+      userId: userId as UserId,
+      organizationId: organizationId as TenantId,
+    });
+    if (!workspaces.ok || !workspaces.value.some((workspace) => workspace.id === workspaceId)) {
+      return undefined;
+    }
+    return { userId, tenantId: organizationId, workspaceId };
+  }
+
   app.post('/api/employees', { schema: createEmployeeSchema }, async (request, reply) => {
     const auth = requireAuth(request);
     const body = request.body as {
       organizationId: string;
+      workspaceId?: string;
       name: string;
     };
 
@@ -68,11 +96,11 @@ export function registerEmployeeRoutes(
         },
       });
     }
-    const authz = await authorizePermission(
-      dependencies.permissions,
-      { userId: auth.userId, tenantId: body.organizationId },
-      'employees.manage',
-    );
+    const createContext = await roleContext(auth.userId, body.organizationId, body.workspaceId);
+    const authz =
+      createContext === undefined
+        ? { ok: false as const }
+        : await authorizePermission(dependencies.permissions, createContext, 'employees.manage');
     if (!authz.ok) {
       return sendForbidden(reply, request.id, 'create an employee record');
     }
@@ -92,7 +120,7 @@ export function registerEmployeeRoutes(
 
   app.get('/api/employees', async (request, reply) => {
     const auth = requireAuth(request);
-    const query = request.query as { organizationId?: string };
+    const query = request.query as { organizationId?: string; workspaceId?: string };
     const organizationId = query.organizationId;
     if (organizationId === undefined) {
       return reply.code(400).send({
@@ -115,11 +143,11 @@ export function registerEmployeeRoutes(
         },
       });
     }
-    const authz = await authorizePermission(
-      dependencies.permissions,
-      { userId: auth.userId, tenantId: organizationId },
-      'employees.read',
-    );
+    const readContext = await roleContext(auth.userId, organizationId, query.workspaceId);
+    const authz =
+      readContext === undefined
+        ? { ok: false as const }
+        : await authorizePermission(dependencies.permissions, readContext, 'employees.read');
     if (!authz.ok) {
       return sendForbidden(reply, request.id, 'view employees');
     }

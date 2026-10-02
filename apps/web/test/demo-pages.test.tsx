@@ -13,9 +13,9 @@ import { DemoPanel } from '../src/components/DemoPanel.js';
 import { DemoContext, type DemoState } from '../src/demo/demo-state.js';
 import { DemoStart } from '../src/pages/DemoStart.js';
 import { ProjectRow, ProjectTeam } from '../src/pages/Projects.js';
-import { StatusBadge } from '../src/pages/GuidedDemo.js';
-import { demoHomePath, type DemoConfig } from '../src/lib/demo.js';
-import { isStoryPersona } from '../src/demo/journey.js';
+import { GuidedDemoView } from '../src/pages/GuidedDemo.js';
+import { StoryBarView } from '../src/components/StoryBar.js';
+import { demoHomePath, type DemoConfig, type DemoStory } from '../src/lib/demo.js';
 
 const CONFIG: DemoConfig = {
   enabled: true,
@@ -116,9 +116,12 @@ describe('DemoStart', () => {
     expect(html).toContain('href="/api/auth/login"');
   });
 
-  it('offers every persona and recommends the CEO in demo mode', () => {
+  it('offers every persona and starts the story with the Team Manager', () => {
     const html = render(<DemoStart />, state({}));
-    expect(html).toContain('Start as the CEO');
+    expect(html).toContain('Start the story as the Team Manager');
+    expect(html).toContain('Manager asks');
+    expect(html).toContain('CEO decides');
+    expect(html).toContain('Finance decides');
     expect(html).toContain('Enter as Team Manager');
     expect(html).toContain('Enter as Finance Controller');
     expect(html).toContain('Enter as Chief Financial Officer');
@@ -131,15 +134,128 @@ describe('DemoStart', () => {
   });
 });
 
-describe('Guided demo status badge', () => {
-  it('names the four honest states', () => {
-    const labels = (['pending', 'active', 'done', 'failed'] as const).map((status) =>
-      renderToString(<StatusBadge status={status} />),
+const STEP_TITLES = [
+  ['raise', 'The team asks for a hire', 'hiring'],
+  ['ceo', 'The CEO decides', 'hiring'],
+  ['finance', 'Finance decides', 'hiring'],
+  ['open', 'HR opens the position', 'recruiting'],
+  ['candidates', 'Candidates and interviews', 'recruiting'],
+  ['offer', 'Offer and answer', 'recruiting'],
+  ['onboard', 'Onboarding', 'onboarding'],
+  ['assign', 'On to the project', 'onboarding'],
+] as const;
+
+/** A story as the backend would derive it, with the first `done` steps finished. */
+function storyAt(done: number, who: DemoStory['steps'][number]['who'], action: string): DemoStory {
+  const steps = STEP_TITLES.map(([key, title, screen], index) => ({
+    key,
+    title,
+    screen,
+    state:
+      index < done
+        ? ('done' as const)
+        : index === done
+          ? ('current' as const)
+          : ('waiting' as const),
+    detail: index === done ? 'The request is waiting for Finance.' : `Detail of ${key}.`,
+    who: index === done ? who : [],
+  }));
+  const current = steps[done];
+  return {
+    subject: 'Senior Backend Developer',
+    steps,
+    ...(current === undefined
+      ? {}
+      : { next: { step: current.key, who, action, screen: current.screen } }),
+    finished: current === undefined,
+  };
+}
+
+describe('the guided story', () => {
+  const personas = CONFIG.personas;
+  const cfo = personas.find((persona) => persona.key === 'cfo')!;
+  const manager = personas.find((persona) => persona.key === 'manager')!;
+  const bar = (story: DemoStory, persona = manager, currentScreen?: 'hiring') =>
+    render(
+      <StoryBarView
+        story={story}
+        persona={persona}
+        personas={personas}
+        {...(currentScreen === undefined ? {} : { currentScreen })}
+        hrefFor={(screen) => `/app/${screen}?scope`}
+        storyHref="/app/demo?scope"
+        onContinueAs={() => undefined}
+      />,
+      state({}),
     );
-    expect(labels[0]).toContain('Pending');
-    expect(labels[1]).toContain('In progress');
-    expect(labels[2]).toContain('Done');
-    expect(labels[3]).toContain('Did not complete');
+
+  it('names who the story is waiting for and offers to continue as them', () => {
+    const html = bar(storyAt(2, ['cfo'], 'Approve the cost'));
+    expect(html).toContain('data-tone="waiting"');
+    expect(html).toContain('Step 3 of 8: Finance decides');
+    expect(html).toContain('Waiting for Karan Malhotra, Chief Financial Officer.');
+    expect(html).toContain('Continue as Karan');
+    expect(html).not.toContain('Your turn');
+    expect(html).not.toContain('Open Hiring');
+  });
+
+  it('marks the turn of the person signed in and points at the page', () => {
+    const html = bar(storyAt(2, ['cfo'], 'Approve the cost'), cfo);
+    expect(html).toContain('data-tone="turn"');
+    expect(html).toContain('Your turn');
+    expect(html).toContain('Approve the cost.');
+    expect(html).toContain('href="/app/hiring?scope"');
+    expect(html).not.toContain('Continue as');
+  });
+
+  it('does not send someone to the page they are already on', () => {
+    const html = bar(storyAt(2, ['cfo'], 'Approve the cost'), cfo, 'hiring');
+    expect(html).toContain('It is on this page.');
+    expect(html).not.toContain('Open Hiring');
+  });
+
+  it('says so when the story is complete', () => {
+    const html = bar(storyAt(8, [], ''));
+    expect(html).toContain('data-tone="done"');
+    expect(html).toContain('The hiring story is complete');
+    expect(html).not.toContain('Continue as');
+  });
+
+  it('the guided demo page lists the eight steps with their state and owner', () => {
+    const html = render(
+      <GuidedDemoView
+        story={storyAt(2, ['cfo'], 'Approve the cost')}
+        persona={manager}
+        personas={personas}
+        hrefFor={(screen) => `/app/${screen}`}
+        onContinueAs={() => undefined}
+        onReset={() => undefined}
+      />,
+      state({}),
+    );
+    expect(html).toContain('Hiring a Senior Backend Developer');
+    for (const [, title] of STEP_TITLES) expect(html).toContain(title);
+    expect(html.match(/class="nexora-step" data-state="done"/g)).toHaveLength(2);
+    expect(html.match(/class="nexora-step" data-state="current"/g)).toHaveLength(1);
+    expect(html.match(/class="nexora-step" data-state="waiting"/g)).toHaveLength(5);
+    expect(html).toContain('HR, IT and the hiring manager');
+    expect(html).toContain('Reset demo');
+  });
+
+  it('shows a reading state instead of inventing steps', () => {
+    const html = render(
+      <GuidedDemoView
+        story={null}
+        persona={manager}
+        personas={personas}
+        hrefFor={() => '/'}
+        onContinueAs={() => undefined}
+        onReset={() => undefined}
+      />,
+      state({}),
+    );
+    expect(html).toContain('Reading the story');
+    expect(html).not.toContain('nexora-step');
   });
 });
 
@@ -230,18 +346,16 @@ describe('the whole office can sign in', () => {
     expect(html.match(/role="menuitemradio"/g)).toHaveLength(OFFICE.personas.length);
   });
 
-  it('story people land in the guided story; everyone else lands in their own workspace', () => {
+  it('everyone lands on their own desk, in their own workspace', () => {
     const find = (key: string) => OFFICE.personas.find((persona) => persona.key === key)!;
     expect(demoHomePath('org_demo', find('ceo'))).toBe(
-      '/app/demo?organizationId=org_demo&workspaceId=wsp_eng',
+      '/app/desk?organizationId=org_demo&workspaceId=wsp_eng',
     );
     expect(demoHomePath('org_demo', find('hr'))).toBe(
-      '/app?organizationId=org_demo&workspaceId=wsp_hr',
+      '/app/desk?organizationId=org_demo&workspaceId=wsp_hr',
     );
     expect(demoHomePath('org_demo', find('cto'))).toBe(
-      '/app?organizationId=org_demo&workspaceId=wsp_tech',
+      '/app/desk?organizationId=org_demo&workspaceId=wsp_tech',
     );
-    expect(isStoryPersona('dev_aarav')).toBe(false);
-    expect(isStoryPersona('manager')).toBe(true);
   });
 });

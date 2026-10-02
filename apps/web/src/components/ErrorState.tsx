@@ -7,6 +7,8 @@
 
 import { Button, EmptyState, Stack, typography } from '@nexora/design-system';
 
+import { NavIcon } from './NavIcon.js';
+
 /** Props of {@link ErrorState}. */
 export interface ErrorStateProps {
   /** The error title. */
@@ -26,7 +28,7 @@ export function ErrorState({
   return (
     <Stack gap={3} align="center" style={{ padding: 48 }}>
       <EmptyState
-        icon="⚠️"
+        icon={<NavIcon name="problems" size={18} />}
         title={title}
         description={message ?? 'An unexpected error occurred. Please try again in a moment.'}
       />

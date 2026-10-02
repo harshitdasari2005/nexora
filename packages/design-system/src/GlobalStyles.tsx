@@ -58,6 +58,105 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 /* Two-up fields that fall to one column when there is no room. */
 .nexora-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 14px 16px; }
 .nexora-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 14px 20px; }
+/* The guided story bar: one line about where the story is and whose turn it is. */
+.nexora-story {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto 24px;
+  border: 1px solid var(--nexora-border);
+  border-radius: var(--nexora-radius-lg, 16px);
+  background: var(--nexora-surface);
+  overflow: hidden;
+}
+.nexora-story[data-tone='turn'] { border-color: var(--nexora-marker); background: var(--nexora-markerSoft); }
+.nexora-story[data-tone='done'] { border-color: transparent; background: var(--nexora-primarySoft); }
+.nexora-story-pips { display: flex; gap: 3px; }
+.nexora-story-pips > span { flex: 1; height: 4px; background: var(--nexora-border); }
+.nexora-story-pips > span[data-state='done'],
+.nexora-story-pips > span[data-state='skipped'] { background: var(--nexora-primary); }
+.nexora-story-pips > span[data-state='current'],
+.nexora-story-pips > span[data-state='returned'] { background: var(--nexora-marker); }
+.nexora-story-body { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 14px 18px; }
+.nexora-story-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-family: ${typography.fontDisplay};
+  font-size: 1.0625rem;
+  font-weight: 620;
+  letter-spacing: -0.015em;
+}
+.nexora-story-text { margin-top: 2px; color: var(--nexora-textSecondary); max-width: 70ch; }
+.nexora-story[data-tone='turn'] .nexora-story-text { color: var(--nexora-text); }
+.nexora-story-link { font-size: 0.8125rem; font-weight: 600; white-space: nowrap; }
+
+/* The story's steps: a numbered column with a line running through the marks. */
+.nexora-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.nexora-step { position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 0 16px; padding-bottom: 22px; }
+.nexora-step:last-child { padding-bottom: 0; }
+.nexora-step::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 40px;
+  bottom: 0;
+  width: 2px;
+  background: var(--nexora-border);
+}
+.nexora-step:last-child::before { display: none; }
+.nexora-step[data-state='done']::before, .nexora-step[data-state='skipped']::before { background: var(--nexora-primary); }
+.nexora-step-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ${typography.fontDisplay};
+  font-size: 1.0625rem;
+  font-weight: 650;
+  background: var(--nexora-surface);
+  border: 2px solid var(--nexora-borderStrong);
+  color: var(--nexora-textMuted);
+}
+.nexora-step[data-state='done'] .nexora-step-mark { background: var(--nexora-primary); border-color: var(--nexora-primary); color: var(--nexora-primaryForeground); }
+.nexora-step[data-state='current'] .nexora-step-mark,
+.nexora-step[data-state='returned'] .nexora-step-mark {
+  background: var(--nexora-marker);
+  border-color: var(--nexora-marker);
+  color: var(--nexora-markerInk);
+  box-shadow: 0 0 0 5px var(--nexora-markerSoft);
+}
+.nexora-step[data-state='skipped'] .nexora-step-mark { border-style: dashed; }
+.nexora-step-title { font-size: 1.125rem; font-weight: 620; letter-spacing: -0.015em; line-height: 1.3; padding-top: 6px; }
+.nexora-step[data-state='waiting'] .nexora-step-title { color: var(--nexora-textSecondary); }
+.nexora-step-state { font-size: 0.75rem; font-weight: 600; color: var(--nexora-textMuted); }
+.nexora-step[data-state='current'] .nexora-step-state, .nexora-step[data-state='returned'] .nexora-step-state {
+  background: var(--nexora-marker);
+  color: var(--nexora-markerInk);
+  border-radius: 999px;
+  padding: 1px 9px;
+}
+.nexora-step[data-state='done'] .nexora-step-state { color: var(--nexora-success); }
+.nexora-step-detail { margin-top: 6px; color: var(--nexora-textSecondary); max-width: 66ch; }
+.nexora-step[data-state='current'] .nexora-step-detail, .nexora-step[data-state='returned'] .nexora-step-detail { color: var(--nexora-text); }
+
+/* A row on the desk: what it is, and the page it is done on. */
+.nexora-desk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 16px 20px; }
+.nexora-desk-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nexora-surfaceMuted);
+  color: var(--nexora-textSecondary);
+}
+.nexora-desk-icon[data-mine='true'] { background: var(--nexora-marker); color: var(--nexora-markerInk); }
+
 /* A checklist mark: empty ring, amber ring when it is yours, filled when done. */
 .nexora-check {
   flex: 0 0 auto;
@@ -87,6 +186,7 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
   line-height: 1.08;
   font-weight: 650;
   letter-spacing: -0.03em;
+  text-wrap: balance;
 }
 .nexora-page-lede { color: var(--nexora-textSecondary); max-width: 64ch; }
 .nexora-section-title {

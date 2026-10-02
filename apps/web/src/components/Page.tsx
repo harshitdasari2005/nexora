@@ -175,15 +175,18 @@ export function Route({
           >
             {stop.label}
           </div>
-          <div
-            style={{
-              fontSize: typography.sizes.xs,
-              color: stop.state === 'returned' ? 'var(--nexora-danger)' : 'var(--nexora-textMuted)',
-              paddingRight: 8,
-            }}
-          >
-            {stop.note ?? ROUTE_NOTE[stop.state]}
-          </div>
+          {stop.note === '' ? null : (
+            <div
+              style={{
+                fontSize: typography.sizes.xs,
+                color:
+                  stop.state === 'returned' ? 'var(--nexora-danger)' : 'var(--nexora-textMuted)',
+                paddingRight: 8,
+              }}
+            >
+              {stop.note ?? ROUTE_NOTE[stop.state]}
+            </div>
+          )}
         </li>
       ))}
     </ol>

@@ -24,16 +24,34 @@ export interface DemoPersona {
   workspaceId: string;
 }
 
-/** The people who act in the guided story; everyone else lands in their own workspace. */
-const GUIDED_STORY_KEYS: readonly DemoPersonaKey[] = ['ceo', 'manager', 'controller', 'cfo'];
-
 /**
- * Where a person lands after signing in: the guided story for the people who
- * act in it, their own workspace's Command Center for the rest of the office.
+ * Where a person lands after signing in: their desk in their own workspace —
+ * what is waiting for them, with the guided story's next step on top.
  */
 export function demoHomePath(organizationId: string, persona: DemoPersona): string {
-  const scope = `organizationId=${encodeURIComponent(organizationId)}&workspaceId=${encodeURIComponent(persona.workspaceId)}`;
-  return GUIDED_STORY_KEYS.includes(persona.key) ? `/app/demo?${scope}` : `/app?${scope}`;
+  return `/app/desk?${demoScopeQuery(organizationId, persona)}`;
+}
+
+/** The trusted scope query of a persona's own workspace. */
+export function demoScopeQuery(organizationId: string, persona: DemoPersona): string {
+  return `organizationId=${encodeURIComponent(organizationId)}&workspaceId=${encodeURIComponent(persona.workspaceId)}`;
+}
+
+/** What the guided story suggests typing into the forms (the user may change any of it). */
+export interface DemoHiringSuggestion {
+  jobTitle: string;
+  department: string;
+  projectId: string;
+  headcount: number;
+  employmentType: 'full_time' | 'part_time' | 'contract' | 'intern';
+  salaryMinMinorUnits: number;
+  salaryMaxMinorUnits: number;
+  currency: string;
+  urgency: 'low' | 'normal' | 'high';
+  justification: string;
+  jobPosting: string;
+  candidateName: string;
+  candidateEmail: string;
 }
 
 /** `GET /api/demo/config` when demo mode is enabled. */
@@ -47,6 +65,8 @@ export interface DemoConfig {
     projectName: string;
     budgetName: string;
     expense: { description: string; amountMinorUnits: number; currency: string };
+    /** Absent on an older backend. */
+    hiring?: DemoHiringSuggestion;
   };
 }
 
@@ -71,6 +91,33 @@ export async function demoLogin(persona: DemoPersona['key']): Promise<void> {
 /** Resets the demo world (server-fixed target) and re-establishes the same persona's session. */
 export async function demoReset(): Promise<{ resetAt: string }> {
   return api<{ resetAt: string }>('/demo/reset', { method: 'POST' });
+}
+
+/** The screen a step of the guided story is done on. */
+export type StoryScreen = 'hiring' | 'recruiting' | 'onboarding';
+
+/** One step of the guided story, as derived by the backend from the hiring records. */
+export interface StoryStep {
+  key: string;
+  title: string;
+  state: 'done' | 'current' | 'waiting' | 'skipped' | 'returned';
+  detail: string;
+  /** Who acts now (set on the current step only). */
+  who: readonly DemoPersonaKey[];
+  screen: StoryScreen;
+}
+
+/** `GET /api/demo/story`: where the hiring story stands and whose turn it is. */
+export interface DemoStory {
+  subject?: string;
+  steps: readonly StoryStep[];
+  next?: { step: string; who: readonly DemoPersonaKey[]; action: string; screen: StoryScreen };
+  finished: boolean;
+}
+
+/** Reads the guided story (derived on the server; the browser decides nothing). */
+export function fetchDemoStory(): Promise<DemoStory> {
+  return api<DemoStory>('/demo/story');
 }
 
 /** The approval as read back from `GET /api/approvals/:id` (persisted state). */

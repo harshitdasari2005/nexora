@@ -46,6 +46,7 @@ import { CommandPalette } from './CommandPalette.js';
 import { NotificationCenter } from './NotificationCenter.js';
 import { RoleSwitcher } from './RoleSwitcher.js';
 import { DemoPanel } from './DemoPanel.js';
+import { StoryBar } from './StoryBar.js';
 import { useDemo } from '../demo/demo-state.js';
 
 /** Props of {@link AppShell}. */
@@ -82,6 +83,7 @@ interface NavItem {
 // entirely: it duplicated Command Center's own greeting while showing far
 // less, so `Dashboard` sends an onboarded user straight to Command Center.
 const BASE_NAV_ITEMS: readonly NavItem[] = [
+  { label: 'My desk', icon: 'desk', to: '/app/desk' },
   { label: 'Command Center', icon: 'command-center', to: '/app/command-center' },
   { label: 'Agent', icon: 'agent', to: '/app/agent' },
   { label: 'Agents', icon: 'team', to: '/app/agents' },
@@ -115,7 +117,7 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
  * with nothing visible in it is simply not rendered.
  */
 const NAV_SECTIONS: readonly { title: string | null; labels: readonly string[] }[] = [
-  { title: null, labels: ['Command Center'] },
+  { title: null, labels: ['My desk', 'Command Center'] },
   { title: 'People', labels: ['Hiring', 'Recruiting', 'Onboarding', 'Employees'] },
   {
     title: 'Work',
@@ -447,7 +449,11 @@ function AppShellChrome({
     current?.permissions ?? [],
     persona,
   );
-  const navGroups = groupNavItems([...primaryNavItems, ...secondaryNavItems]);
+  // The desk is everyone's home: a persona's curated module list never hides it.
+  const navGroups = groupNavItems([
+    ...BASE_NAV_ITEMS.filter((item) => item.label === 'My desk'),
+    ...[...primaryNavItems, ...secondaryNavItems].filter((item) => item.label !== 'My desk'),
+  ]);
   const roleLabel =
     persona !== undefined
       ? persona.displayRole
@@ -823,6 +829,7 @@ function AppShellChrome({
             padding: 'clamp(16px, 3vw, 40px)',
           }}
         >
+          <StoryBar organizationId={organizationId} workspaceId={workspaceId} />
           {children}
         </main>
       </div>

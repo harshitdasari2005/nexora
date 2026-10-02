@@ -18,7 +18,6 @@ import {
 } from '../lib/demo.js';
 import { ApiError } from '../lib/api.js';
 import { useSession } from '../session.js';
-import { clearGuidedRun } from './guided-store.js';
 import { DemoContext, type DemoState } from './demo-state.js';
 
 /** Provides demo mode to the application tree (inside the SessionProvider). */
@@ -73,8 +72,6 @@ export function DemoProvider({ children }: { children: ReactNode }): JSX.Element
     () =>
       run(async () => {
         await demoReset();
-        // The browser's pointers to the old run are meaningless after a reset.
-        clearGuidedRun();
       }),
     [run],
   );

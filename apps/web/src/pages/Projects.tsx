@@ -23,6 +23,7 @@ import {
 } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
+import { NavIcon } from '../components/NavIcon.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
@@ -111,7 +112,7 @@ export function Projects(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="🚀"
+            icon={<NavIcon name="projects" size={18} />}
             title="Create your organization first"
             description="Projects live inside an organization. Set one up to get started."
             action={

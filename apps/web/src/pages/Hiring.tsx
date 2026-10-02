@@ -31,6 +31,7 @@ import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { NavIcon } from '../components/NavIcon.js';
 import { Fact, Page, PageHeader, Route, Section, SubHeading, TurnTag } from '../components/Page.js';
+import { useDemo } from '../demo/demo-state.js';
 import { api, ApiError } from '../lib/api.js';
 import {
   chainSteps,
@@ -620,6 +621,23 @@ function RequisitionForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const issueFor = (field: string): string | undefined =>
     issues.find((issue) => issue.field === field)?.message;
+  // In the demo office the guide suggests a request; the person still sends it.
+  const example = useDemo().config?.story.hiring;
+  const fillExample = (): void => {
+    if (example === undefined) return;
+    setJobTitle(example.jobTitle);
+    setDepartment(example.department);
+    setProjectId(
+      projects.some((project) => project.id === example.projectId) ? example.projectId : '',
+    );
+    setHeadcount(String(example.headcount));
+    setEmploymentType(example.employmentType);
+    setSalaryMin(String(example.salaryMinMinorUnits / 100));
+    setSalaryMax(String(example.salaryMaxMinorUnits / 100));
+    setUrgency(example.urgency);
+    setJustification(example.justification);
+    setIssues([]);
+  };
 
   const handleSubmit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
@@ -661,7 +679,14 @@ function RequisitionForm({
     <Card padding={5}>
       <form onSubmit={(event) => void handleSubmit(event)} data-testid="requisition-form">
         <Stack gap={4} stretch>
-          <h2 className="nexora-section-title">{title}</h2>
+          <div className="nexora-page-head" style={{ alignItems: 'center' }}>
+            <h2 className="nexora-section-title">{title}</h2>
+            {example !== undefined && initial === undefined ? (
+              <Button type="button" size="sm" variant="secondary" onClick={fillExample}>
+                Fill in the demo example
+              </Button>
+            ) : null}
+          </div>
           <div className="nexora-fields">
             <div style={half}>
               <Field label="Job title" required error={issueFor('jobTitle')}>

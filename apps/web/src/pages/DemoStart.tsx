@@ -9,9 +9,10 @@
 
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Badge, Button, Card, Stack, typography } from '@nexora/design-system';
+import { Avatar, Badge, Button, Card, Stack, typography } from '@nexora/design-system';
 
 import { LoadingScreen } from '../components/LoadingScreen.js';
+import { Page, Route, Section } from '../components/Page.js';
 import { useDemo } from '../demo/demo-state.js';
 import { demoHomePath, type DemoPersona } from '../lib/demo.js';
 
@@ -26,6 +27,16 @@ const ORDER: DemoPersona['key'][] = [
   'controller',
 ];
 
+/** The stations of the story, shown before anyone has started it. */
+const STORY_ROUTE = [
+  'Manager asks',
+  'CEO decides',
+  'Finance decides',
+  'HR recruits',
+  'Onboarding',
+  'On the project',
+].map((label) => ({ label, state: 'waiting' as const, note: '' }));
+
 /** The Start Demo page. */
 export function DemoStart(): JSX.Element {
   const demo = useDemo();
@@ -34,42 +45,29 @@ export function DemoStart(): JSX.Element {
 
   if (demo.status === 'loading') return <LoadingScreen />;
 
-  const shell = (children: JSX.Element): JSX.Element => (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-        background: 'var(--nexora-bg)',
-      }}
-    >
-      <div style={{ width: '100%', maxWidth: 920 }}>{children}</div>
-    </div>
-  );
-
   if (demo.status === 'disabled' || demo.config === null) {
-    return shell(
-      <Card padding={10} elevationLevel="md">
-        <Stack gap={4}>
-          <h1 style={{ fontSize: typography.sizes['2xl'], fontWeight: typography.weights.bold }}>
-            Demo mode is not enabled
-          </h1>
-          <p style={{ color: 'var(--nexora-textSecondary)' }}>
-            Start the API with <code>NEXORA_DEMO_MODE=true</code> to enable the guided demo. Normal
-            sign-in is unaffected.
-          </p>
-          <Stack direction="row" gap={3}>
-            <a href="/api/auth/login" style={{ textDecoration: 'none' }}>
-              <Button>Sign in</Button>
-            </a>
-            <Link to="/" style={{ textDecoration: 'none' }}>
-              <Button variant="ghost">Back</Button>
-            </Link>
-          </Stack>
-        </Stack>
-      </Card>,
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
+        <Page standalone>
+          <Card padding={8}>
+            <Stack gap={4} style={{ maxWidth: 560 }}>
+              <h1 className="nexora-page-title">Demo mode is not enabled</h1>
+              <p className="nexora-page-lede">
+                Start the API with <code>NEXORA_DEMO_MODE=true</code> to open the demo office.
+                Normal sign-in is unaffected.
+              </p>
+              <div className="nexora-actions">
+                <a href="/api/auth/login" style={{ textDecoration: 'none' }}>
+                  <Button>Sign in</Button>
+                </a>
+                <Link to="/" style={{ textDecoration: 'none' }}>
+                  <Button variant="ghost">Back</Button>
+                </Link>
+              </div>
+            </Stack>
+          </Card>
+        </Page>
+      </div>
     );
   }
 
@@ -83,74 +81,106 @@ export function DemoStart(): JSX.Element {
       navigate(demoHomePath(config.organizationId, persona));
     }
   };
+  const people = ORDER.map((key) => config.personas.find((p) => p.key === key)).filter(
+    (p): p is DemoPersona => p !== undefined,
+  );
+  const manager = people.find((person) => person.key === 'manager');
 
-  return shell(
-    <Stack gap={6}>
-      <Stack gap={2}>
-        <Badge tone="ai" dot>
-          Guided demo
-        </Badge>
-        <h1 className="nexora-page-title">Governed AI, end to end.</h1>
-        <p style={{ color: 'var(--nexora-textSecondary)', maxWidth: 640 }}>
-          Sign in as anyone in the office — the CEO, the CTO, the Team Manager, the IT team, HR or
-          Finance. Each person sees and can do only what their role allows. The guided story (a
-          governed hire and a governed expense) begins with the CEO.
+  return (
+    <Page standalone>
+      <header style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <h1
+          className="nexora-page-title"
+          style={{ fontSize: 'clamp(2rem, 1.2rem + 3.4vw, 3.4rem)', maxWidth: '18ch' }}
+        >
+          See one hire through, the way an office does it.
+        </h1>
+        <p className="nexora-page-lede" style={{ fontSize: typography.sizes.md }}>
+          Lumen Capital is a demo office with eight people in it. Take any seat: each person sees
+          and can do only what their job allows. The story starts when the Team Manager asks for a
+          new developer.
         </p>
         {!config.seeded ? (
-          <Badge tone="warning">The demo organization is not seeded yet — restart the API.</Badge>
+          <Badge tone="warning" style={{ alignSelf: 'flex-start' }}>
+            The demo organization is not seeded yet. Restart the API.
+          </Badge>
         ) : null}
-      </Stack>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: 12,
-        }}
-      >
-        {ORDER.map((key) => config.personas.find((p) => p.key === key))
-          .filter((p): p is DemoPersona => p !== undefined)
-          .map((persona) => (
-            <Card key={persona.key} interactive padding={5}>
-              <Stack gap={3} style={{ height: '100%' }}>
-                <Stack gap={1}>
-                  <div style={{ fontWeight: typography.weights.semibold }}>
+      </header>
+
+      <Card padding={6}>
+        <Stack gap={5} stretch>
+          <Route stops={STORY_ROUTE} />
+          {manager === undefined ? null : (
+            <div className="nexora-actions">
+              <Button
+                size="lg"
+                disabled={demo.busy || !config.seeded}
+                loading={starting === manager.key}
+                onClick={() => void start(manager.key)}
+              >
+                Start the story as the {manager.title}
+              </Button>
+              <span style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+                You can change seats at any time from the top bar.
+              </span>
+            </div>
+          )}
+        </Stack>
+      </Card>
+
+      <Section title="Or take any seat" count={people.length}>
+        <Card padding={0} style={{ overflow: 'hidden' }}>
+          <div className="nexora-rows">
+            {people.map((persona) => (
+              <div key={persona.key} className="nexora-desk-row">
+                <Avatar name={persona.displayName} size={40} />
+                <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: typography.sizes.md,
+                      fontWeight: typography.weights.semibold,
+                    }}
+                  >
                     {persona.displayName}
+                    <span
+                      style={{
+                        fontWeight: typography.weights.regular,
+                        color: 'var(--nexora-textSecondary)',
+                      }}
+                    >
+                      , {persona.title}
+                    </span>
                   </div>
-                  <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
-                    {persona.title}
+                  <div
+                    style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}
+                  >
+                    {persona.responsibility}
                   </div>
-                </Stack>
-                <p
-                  style={{
-                    fontSize: typography.sizes.sm,
-                    color: 'var(--nexora-textSecondary)',
-                    flex: 1,
-                  }}
-                >
-                  {persona.responsibility}
-                </p>
+                </div>
                 <Button
-                  size="sm"
-                  variant={persona.key === 'ceo' ? 'primary' : 'secondary'}
+                  variant="secondary"
                   disabled={demo.busy || !config.seeded}
                   loading={starting === persona.key}
                   onClick={() => void start(persona.key)}
+                  aria-label={`Enter as ${persona.title}, ${persona.displayName}`}
                 >
-                  {persona.key === 'ceo' ? 'Start as the CEO' : `Enter as ${persona.title}`}
+                  Enter as {persona.title}
                 </Button>
-              </Stack>
-            </Card>
-          ))}
-      </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </Section>
+
       {demo.error !== null ? (
         <p role="alert" style={{ color: 'var(--nexora-danger)', fontSize: typography.sizes.sm }}>
           {demo.error}
         </p>
       ) : null}
-      <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
-        Every persona is a real seeded account with a real session. What each one may do is decided
+      <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textMuted)' }}>
+        Every person is a real seeded account with a real session. What each one may do is decided
         by Nexora’s authorization pipeline, not by this page.
-      </div>
-    </Stack>,
+      </p>
+    </Page>
   );
 }

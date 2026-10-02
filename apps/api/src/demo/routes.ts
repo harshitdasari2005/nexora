@@ -10,6 +10,8 @@
  *   email or user id (the schema rejects any other property). The backend maps
  *   persona → deterministic seeded user → a REAL session; every request the
  *   browser then makes runs the normal authorization pipeline.
+ * - `GET /api/demo/story` reports where the hiring story of the fixed demo
+ *   organization stands (no pay, no target), to demo persona sessions only.
  * - `POST /api/demo/reset` takes NO target: it resets the fixed demo
  *   organization only, and only for a caller whose session belongs to a demo
  *   persona.
@@ -22,12 +24,14 @@ import type { SessionDomainService } from '@nexora/domain-identity';
 import type { ApiConfig } from '../config.js';
 import { requireAuth } from '../plugins/auth.js';
 import { DemoError, type DemoService } from './demo-service.js';
+import { deriveStory, type StoryFacts } from './story.js';
 import {
   DEMO_HIRE_REQUEST,
   DEMO_PERSONA_KEYS,
   DEMO_PROJECT_NAME,
   DEMO_BUDGET_NAME,
   DEMO_EXPENSE,
+  DEMO_HIRING_SUGGESTION,
 } from './world.js';
 
 /** Dependencies of the demo routes. */
@@ -36,6 +40,8 @@ export interface DemoRoutesDependencies {
   demo: DemoService;
   sessions: SessionDomainService;
   endSession: EndSessionHandler;
+  /** Reads the Guided Demo story's facts for the demo organization. */
+  readStoryFacts: (organizationId: string) => Promise<StoryFacts>;
 }
 
 const STATUS_BY_DEMO_ERROR: Record<DemoError['code'], number> = {
@@ -109,6 +115,7 @@ export function registerDemoRoutes(
       projectName: DEMO_PROJECT_NAME,
       budgetName: DEMO_BUDGET_NAME,
       expense: DEMO_EXPENSE,
+      hiring: { ...DEMO_HIRING_SUGGESTION, projectId: demo.ids.projectId },
     },
   }));
 
@@ -143,6 +150,23 @@ export function registerDemoRoutes(
     } catch (error) {
       return sendDemoError(reply, request.id, error);
     }
+  });
+
+  // Where the story stands and whose turn it is. The guide is for the people
+  // of the demo office only, it always describes the fixed demo organization
+  // (the caller names nothing), and it carries no pay.
+  app.get('/api/demo/story', async (request, reply) => {
+    const auth = requireAuth(request);
+    if (demo.personaOfUser(auth.userId) === undefined) {
+      return reply.code(403).send({
+        error: {
+          code: 'DEMO_NOT_DEMO_USER',
+          message: 'Only a demo persona session can read the demo story',
+          requestId: request.id,
+        },
+      });
+    }
+    return deriveStory(await dependencies.readStoryFacts(demo.ids.organizationId));
   });
 
   app.post('/api/demo/reset', async (request, reply) => {
@@ -188,6 +212,7 @@ export function registerDemoDisabledRoutes(app: FastifyInstance): void {
   app.get('/api/demo/config', { config: { public: true } }, notFound);
   app.post('/api/demo/login', { config: { public: true } }, notFound);
   app.post('/api/demo/reset', { config: { public: true } }, notFound);
+  app.get('/api/demo/story', { config: { public: true } }, notFound);
 }
 
 function sendDemoError(reply: FastifyReply, requestId: string, error: unknown): FastifyReply {

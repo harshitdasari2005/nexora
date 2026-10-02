@@ -15,6 +15,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, Input, Stack, typography } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
+import { NavIcon } from '../components/NavIcon.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
@@ -100,7 +101,7 @@ export function Knowledge(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="📚"
+            icon={<NavIcon name="knowledge" size={18} />}
             title="Create a workspace first"
             description="The Knowledge Base lives inside a workspace. Set one up to get started."
             action={
@@ -270,7 +271,7 @@ export function KnowledgeView({
           {visibleArticles.length === 0 ? (
             <Card>
               <EmptyState
-                icon="📚"
+                icon={<NavIcon name="knowledge" size={18} />}
                 title={
                   query.trim().length > 0 || selectedCategory !== null
                     ? 'No articles match'

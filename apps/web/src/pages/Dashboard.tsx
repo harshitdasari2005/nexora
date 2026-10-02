@@ -32,6 +32,7 @@ import { useDemo } from '../demo/demo-state.js';
 import { api, ApiError } from '../lib/api.js';
 import type { DashboardResponse } from '../lib/types.js';
 import { useSession } from '../session.js';
+import { NavIcon } from '../components/NavIcon.js';
 
 /** The dashboard page (fetches the read model). */
 export function Dashboard(): JSX.Element {
@@ -85,11 +86,9 @@ export function Dashboard(): JSX.Element {
   }
 
   if (data.organization !== null) {
-    // Already onboarded — Command Center is the real home; this page's own
-    // job is only the pre-onboarding welcome screen below.
-    return (
-      <Navigate to={{ pathname: '/app/command-center', search: searchParams.toString() }} replace />
-    );
+    // Already onboarded — the desk (what is waiting for you) is home; this
+    // page's own job is only the pre-onboarding welcome screen below.
+    return <Navigate to={{ pathname: '/app/desk', search: searchParams.toString() }} replace />;
   }
 
   // The user has not onboarded yet: choose how to start.
@@ -129,10 +128,7 @@ export function WelcomeChoice({ demoAvailable }: { demoAvailable: boolean }): JS
           <div style={option}>
             <Card padding={8} elevationLevel="md" style={{ width: '100%' }}>
               <Stack gap={4} style={{ height: '100%' }}>
-                <div style={{ fontSize: 28 }}>🚀</div>
-                <div style={{ fontWeight: typography.weights.semibold }}>
-                  Create your organization
-                </div>
+                <h2 className="nexora-section-title">Create your organization</h2>
                 <p
                   style={{
                     color: 'var(--nexora-textSecondary)',
@@ -153,8 +149,7 @@ export function WelcomeChoice({ demoAvailable }: { demoAvailable: boolean }): JS
             <div style={option}>
               <Card padding={8} elevationLevel="md" style={{ width: '100%' }}>
                 <Stack gap={4} style={{ height: '100%' }}>
-                  <div style={{ fontSize: 28 }}>🏢</div>
-                  <div style={{ fontWeight: typography.weights.semibold }}>Go to the demo</div>
+                  <h2 className="nexora-section-title">Go to the demo</h2>
                   <p
                     style={{
                       color: 'var(--nexora-textSecondary)',
@@ -162,8 +157,8 @@ export function WelcomeChoice({ demoAvailable }: { demoAvailable: boolean }): JS
                       flex: 1,
                     }}
                   >
-                    Look around a ready-made office first. Sign in as the CEO, a manager, HR,
-                    Finance or a developer and see how work moves between them.
+                    Look around a ready-made office first. Take the seat of the CEO, a manager, HR,
+                    Finance or a developer and follow one hire from request to first project.
                   </p>
                   <Link to="/demo">
                     <Button size="lg" variant="secondary">
@@ -329,7 +324,7 @@ export function DashboardView({ data }: { data: DashboardResponse }): JSX.Elemen
         </h2>
         <Card>
           <EmptyState
-            icon="🧩"
+            icon={<NavIcon name="apps" size={18} />}
             title="No apps installed yet"
             description="The marketplace arrives in Phase 2 — install HR, Projects, CRM, Finance, and more without changing the platform."
             action={

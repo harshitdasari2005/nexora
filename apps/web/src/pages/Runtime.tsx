@@ -25,6 +25,7 @@ import {
 } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
+import { NavIcon } from '../components/NavIcon.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
@@ -160,7 +161,7 @@ export function Runtime(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="🛡"
+            icon={<NavIcon name="runtime" size={18} />}
             title="Create a workspace first"
             description="Runtime telemetry is scoped to a workspace. Set one up to get started."
             action={
@@ -380,7 +381,7 @@ export function RuntimeView({
               ) : runs.length === 0 ? (
                 <Card>
                   <EmptyState
-                    icon="🛡"
+                    icon={<NavIcon name="runtime" size={18} />}
                     title="No runtime runs"
                     description="Nothing matches the current filters yet."
                   />
@@ -448,7 +449,7 @@ export function RuntimeView({
               {selectedId === null ? (
                 <Card>
                   <EmptyState
-                    icon="🛡"
+                    icon={<NavIcon name="runtime" size={18} />}
                     title="Select a run"
                     description="Choose a row to see its timeline."
                   />

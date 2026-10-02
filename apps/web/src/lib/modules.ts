@@ -27,6 +27,7 @@ export interface ModuleDefinition {
 
 /** The nav → permission mapping (S34). */
 export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
+  { navLabel: 'My desk' },
   { navLabel: 'Command Center' },
   { navLabel: 'Agent', requiredPermission: 'agent.use' },
   { navLabel: 'Agents', requiredPermission: 'agent.use' },

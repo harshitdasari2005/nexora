@@ -30,6 +30,7 @@ import {
 } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
+import { NavIcon } from '../components/NavIcon.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
@@ -216,7 +217,7 @@ export function Policy(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="🛡"
+            icon={<NavIcon name="policy" size={18} />}
             title="Create a workspace first"
             description="Policies are scoped to a workspace. Set one up to get started."
             action={
@@ -342,7 +343,7 @@ export function PolicyView({
       ) : policies.length === 0 ? (
         <Card>
           <EmptyState
-            icon="🛡"
+            icon={<NavIcon name="policy" size={18} />}
             title="No policies"
             description="No policies are registered for this organization."
           />
@@ -417,7 +418,7 @@ export function PolicyView({
             {selected === null ? (
               <Card>
                 <EmptyState
-                  icon="🛡"
+                  icon={<NavIcon name="policy" size={18} />}
                   title="Select a policy"
                   description="Choose a policy to see its rules and version history."
                 />

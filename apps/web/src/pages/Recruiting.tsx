@@ -31,6 +31,7 @@ import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { NavIcon } from '../components/NavIcon.js';
 import { Page, PageHeader, Route, Section, SubHeading, TurnTag } from '../components/Page.js';
+import { useDemo } from '../demo/demo-state.js';
 import { api, ApiError } from '../lib/api.js';
 import type { HiringScope } from '../lib/hiring.js';
 import {
@@ -266,6 +267,7 @@ function ReadyCard({
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const example = useDemo().config?.story.hiring;
 
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
@@ -325,6 +327,16 @@ function ReadyCard({
                 <Button type="button" size="sm" variant="ghost" onClick={() => setOpening(false)}>
                   Cancel
                 </Button>
+                {example === undefined ? null : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setDescription(example.jobPosting)}
+                  >
+                    Fill in the demo example
+                  </Button>
+                )}
               </div>
             </Stack>
           </form>
@@ -496,6 +508,7 @@ function AddCandidateForm({
   const [resumeNotes, setResumeNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const example = useDemo().config?.story.hiring;
 
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
@@ -588,6 +601,19 @@ function AddCandidateForm({
             <Button type="button" size="sm" variant="ghost" onClick={onCancel} disabled={busy}>
               Cancel
             </Button>
+            {example === undefined ? null : (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setName(example.candidateName);
+                  setEmail(example.candidateEmail);
+                }}
+              >
+                Fill in the demo example
+              </Button>
+            )}
           </div>
         </Stack>
       </form>

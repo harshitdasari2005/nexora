@@ -30,6 +30,7 @@ import type {
   WorkflowHealthMetricDto,
 } from '../lib/types.js';
 import { useSession } from '../session.js';
+import { NavIcon } from '../components/NavIcon.js';
 
 /** Formats a duration in milliseconds as a human-readable string. */
 function formatDuration(ms: number | null): string {
@@ -329,7 +330,7 @@ function OnboardingCard({
           Onboarding
         </h2>
         <EmptyState
-          icon="🚀"
+          icon={<NavIcon name="insights" size={18} />}
           title="No users yet"
           description="Onboarding progress appears when users join the organization."
         />
