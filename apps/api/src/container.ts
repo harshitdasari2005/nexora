@@ -11,12 +11,17 @@ import type { AgentDelegationRepository, AgentIdentityRepository } from '@nexora
 import type { EventPublisher } from '@nexora/shared/events';
 import type { MembershipRepository, OrganizationRepository } from '@nexora/domain-organizations';
 import type { RoleRepository, SessionRepository, UserRepository } from '@nexora/domain-identity';
-import type { ProjectRepository, ResourceAssignmentRepository } from '@nexora/domain-projects';
+import type {
+  ProjectRepository,
+  ProjectTaskRepository,
+  ResourceAssignmentRepository,
+} from '@nexora/domain-projects';
 import type {
   CandidateRepository,
   EmployeeRepository,
   HiringRequisitionRepository,
   JobOpeningRepository,
+  OfficeRequestRepository,
   OnboardingRepository,
 } from '@nexora/domain-hr';
 import type {
@@ -207,6 +212,8 @@ export interface RepositorySet {
   jobOpenings: JobOpeningRepository;
   candidates: CandidateRepository;
   onboardings: OnboardingRepository;
+  officeRequests: OfficeRequestRepository;
+  projectTasks: ProjectTaskRepository;
   /**
    * Makes a multi-record business step all-or-nothing (one PostgreSQL
    * transaction across the people repositories). Absent for in-memory fakes.

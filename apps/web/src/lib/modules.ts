@@ -28,6 +28,20 @@ export interface ModuleDefinition {
 /** The nav → permission mapping (S34). */
 export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   { navLabel: 'My desk' },
+  // Anyone who can raise an office request, or decide one at some stage.
+  {
+    navLabel: 'Requests',
+    anyOfPermissions: [
+      'requests.create',
+      'requests.read',
+      'requests.approve_manager',
+      'requests.approve_hr',
+      'requests.approve_finance',
+      'requests.approve_it',
+    ],
+  },
+  // Managers see the board; everyone who does project work sees their own tasks.
+  { navLabel: 'Tasks', anyOfPermissions: ['tasks.manage', 'tasks.work'] },
   { navLabel: 'Command Center' },
   { navLabel: 'Agent', requiredPermission: 'agent.use' },
   { navLabel: 'Agents', requiredPermission: 'agent.use' },

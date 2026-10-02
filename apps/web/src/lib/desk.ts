@@ -1,8 +1,8 @@
 /**
  * @nexora/app-web — the desk: what is waiting for the person signed in.
  *
- * The desk asks the backend the same questions the hiring, recruiting and
- * onboarding pages ask — with the caller's own session — and keeps the items
+ * The desk asks the backend the same questions the hiring, recruiting,
+ * onboarding, requests and tasks pages ask — with the caller's own session — and keeps the items
  * the server says THIS person may act on right now (`actions.canDecide`,
  * `canComplete`, …). It decides nothing itself: an item is on your desk only
  * because the server said the next move is yours.
@@ -11,6 +11,14 @@
 import { ApiError } from './api.js';
 import { listRequisitions, statusLabel, type HiringScope, type Requisition } from './hiring.js';
 import { listOnboardings, type OnboardingRecord, type ReadyHire } from './onboarding.js';
+import {
+  listRequests,
+  requestStatusLabel,
+  requestSummary,
+  TYPE_LABEL,
+  type OfficeRequest,
+} from './requests.js';
+import { listTasks, TASK_STATUS_LABEL, type ProjectTask } from './tasks.js';
 import {
   getOpening,
   listOpenings,
@@ -21,7 +29,7 @@ import {
 } from './recruiting.js';
 
 /** The page an item is handled on. */
-export type DeskScreen = 'hiring' | 'recruiting' | 'onboarding';
+export type DeskScreen = 'hiring' | 'recruiting' | 'onboarding' | 'requests' | 'tasks';
 
 /** One thing on the desk. */
 export interface DeskItem {
@@ -44,6 +52,12 @@ export interface DeskSources {
   readyHires: readonly ReadyHire[];
   canStartOnboarding: boolean;
   onboardings: readonly OnboardingRecord[];
+  /** Office requests the caller takes part in (leave, purchase, IT access). */
+  officeRequests: readonly OfficeRequest[];
+  canRaiseOfficeRequest: boolean;
+  /** Project tasks the caller can see. */
+  tasks: readonly ProjectTask[];
+  canManageTasks: boolean;
 }
 
 /** The desk: what is yours to do, and what is moving without you. */
@@ -205,16 +219,84 @@ export function buildDesk(sources: DeskSources): Desk {
     }
   }
 
-  const starts: DeskItem[] = sources.canRaiseRequest
-    ? [
-        {
-          id: 'raise',
-          screen: 'hiring',
-          title: 'Ask for a new hire',
-          detail: 'Raise a hiring request. It goes to the CEO, then to Finance, then to HR.',
-        },
-      ]
-    : [];
+  for (const request of sources.officeRequests) {
+    const what = `${TYPE_LABEL[request.type].toLowerCase()} request`;
+    const summary = requestSummary(request.details);
+    if (request.actions.canDecide) {
+      mine.push({
+        id: `request-${request.id}`,
+        screen: 'requests',
+        title: `Decide on ${request.requestedByName ?? 'a colleague'}'s ${what}`,
+        detail: `${summary}.`,
+      });
+    } else if (request.mine && request.status === 'pending') {
+      watching.push({
+        id: `request-${request.id}`,
+        screen: 'requests',
+        title: `Your ${what}`,
+        detail: `${summary}. ${requestStatusLabel(request)}.`,
+      });
+    }
+  }
+
+  for (const task of sources.tasks) {
+    const project = task.projectName ?? 'the project';
+    if (task.actions.canReview) {
+      mine.push({
+        id: `review-${task.id}`,
+        screen: 'tasks',
+        title: `Review “${task.title}”`,
+        detail: `Handed in by ${task.assigneeName ?? 'the assignee'} on ${project}.`,
+      });
+    } else if (task.actions.canStart) {
+      mine.push({
+        id: `start-${task.id}`,
+        screen: 'tasks',
+        title: `Start “${task.title}”`,
+        detail: `Given to you by ${task.createdByName ?? 'your manager'} on ${project}.`,
+      });
+    } else if (task.actions.canSubmit) {
+      mine.push({
+        id: `finish-${task.id}`,
+        screen: 'tasks',
+        title: `Finish “${task.title}” and hand it in`,
+        detail: `In progress on ${project}.`,
+      });
+    } else if (task.status !== 'done') {
+      watching.push({
+        id: `task-${task.id}`,
+        screen: 'tasks',
+        title: `“${task.title}”`,
+        detail: `${TASK_STATUS_LABEL[task.status]}, with ${task.mine ? 'you' : (task.assigneeName ?? 'someone')}.`,
+      });
+    }
+  }
+
+  const starts: DeskItem[] = [];
+  if (sources.canRaiseOfficeRequest) {
+    starts.push({
+      id: 'request',
+      screen: 'requests',
+      title: 'Ask for leave, a purchase or IT access',
+      detail: 'It goes to your manager first, then to HR, Finance or IT.',
+    });
+  }
+  if (sources.canManageTasks) {
+    starts.push({
+      id: 'task',
+      screen: 'tasks',
+      title: 'Give someone a task',
+      detail: 'Create a task on a project and choose who does it.',
+    });
+  }
+  if (sources.canRaiseRequest) {
+    starts.push({
+      id: 'raise',
+      screen: 'hiring',
+      title: 'Ask for a new hire',
+      detail: 'Raise a hiring request. It goes to the CEO, then to Finance, then to HR.',
+    });
+  }
   return { mine, watching, starts };
 }
 
@@ -232,10 +314,12 @@ async function allowed<T>(work: Promise<T>, fallback: T): Promise<T> {
 
 /** Reads everything the desk is built from, with the caller's own session. */
 export async function loadDesk(scope: HiringScope): Promise<Desk> {
-  const [hiring, recruiting, onboarding] = await Promise.all([
+  const [hiring, recruiting, onboarding, requests, tasks] = await Promise.all([
     allowed(listRequisitions(scope), { requisitions: [], canCreate: false }),
     allowed(listOpenings(scope), { openings: [], readyRequisitions: [], canManage: false }),
     allowed(listOnboardings(scope), { onboardings: [], readyToStart: [], canStart: false }),
+    allowed(listRequests(scope), { requests: [], canCreate: false }),
+    allowed(listTasks(scope), { tasks: [], canManage: false, assignees: [], projects: [] }),
   ]);
   const openings = await Promise.all(
     recruiting.openings.map(async (opening) => ({
@@ -255,5 +339,9 @@ export async function loadDesk(scope: HiringScope): Promise<Desk> {
     readyHires: onboarding.readyToStart,
     canStartOnboarding: onboarding.canStart,
     onboardings: onboarding.onboardings,
+    officeRequests: requests.requests,
+    canRaiseOfficeRequest: requests.canCreate,
+    tasks: tasks.tasks,
+    canManageTasks: tasks.canManage,
   });
 }

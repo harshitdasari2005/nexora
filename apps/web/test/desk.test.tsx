@@ -134,6 +134,10 @@ const sources = (overrides: Partial<DeskSources> = {}): DeskSources => ({
   readyHires: [],
   canStartOnboarding: false,
   onboardings: [],
+  officeRequests: [],
+  canRaiseOfficeRequest: false,
+  tasks: [],
+  canManageTasks: false,
   ...overrides,
 });
 

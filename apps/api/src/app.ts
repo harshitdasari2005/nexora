@@ -26,6 +26,8 @@ import {
   PgEmailOutboxRepository,
   PgInboundMessageRepository,
   PgEmployeeRepository,
+  PgOfficeRequestRepository,
+  PgProjectTaskRepository,
   createTransactionalDatabase,
   PgCandidateRepository,
   PgHiringRequisitionRepository,
@@ -134,7 +136,9 @@ import { registerFinanceRoutes } from './routes/finance.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerHiringRoutes } from './routes/hiring.js';
+import { registerOfficeRequestRoutes } from './routes/office-requests.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
+import { registerTaskRoutes } from './routes/tasks.js';
 import { registerRecruitingRoutes } from './routes/recruiting.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
@@ -365,6 +369,22 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     projects: repositories.projects,
     resourceAssignments: repositories.resourceAssignments,
     assignEmployeeToProject: container.assignEmployeeToProject,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
+  });
+  registerOfficeRequestRoutes(app, {
+    requests: repositories.officeRequests,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
+  });
+  registerTaskRoutes(app, {
+    tasks: repositories.projectTasks,
+    projects: repositories.projects,
+    workspaceMemberships: repositories.workspaceMemberships,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
@@ -1134,6 +1154,8 @@ export function buildPgRepositories(
     candidates: new PgCandidateRepository(people.database),
     onboardings: new PgOnboardingRepository(people.database),
     atomically: people.transaction,
+    officeRequests: new PgOfficeRequestRepository(database),
+    projectTasks: new PgProjectTaskRepository(database),
     documents: new PgDocumentRepository(database),
     documentVersions: new PgDocumentVersionRepository(database),
     documentTemplates: new PgDocumentTemplateRepository(database),

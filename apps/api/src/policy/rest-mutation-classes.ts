@@ -355,6 +355,97 @@ export const REST_MUTATION_CLASSES: Readonly<Record<string, RestMutationEntry>> 
       },
     ],
   },
+  // --- Office requests (leave, purchase, IT access) ----------------------------------------------------
+  'POST /api/requests': {
+    class: 'rbac',
+    justification:
+      'requests.create; raises an everyday office request from the caller’s own team. A stage the requester would have to decide themselves is recorded as not required, never self-approved.',
+    proof: [cap('requests.create')],
+  },
+  'POST /api/requests/:requestId/decision': {
+    class: 'domain_governed',
+    justification:
+      'The authority of the stage the request is waiting at (manager of the request’s own team, HR, Finance or IT), derived server-side. The aggregate enforces the order of the stages and separation of duties: nobody decides their own request, and a rejection needs a reason.',
+    proof: [
+      { in: 'route', contains: 'requests.approve_manager' },
+      {
+        in: 'apps/api/src/routes/office-requests.ts',
+        contains: "stage !== 'manager' || scope.workspaceId === request.workspaceId",
+      },
+      {
+        in: 'domains/hr/src/entities/office-request.ts',
+        contains: 'You cannot decide your own request',
+      },
+      {
+        in: 'domains/hr/src/entities/office-request.ts',
+        contains: 'This request is waiting at a different stage',
+      },
+    ],
+  },
+  'POST /api/requests/:requestId/withdraw': {
+    class: 'domain_governed',
+    justification:
+      'requests.create; the aggregate lets only the requester withdraw, and only while the request is pending.',
+    proof: [
+      cap('requests.create'),
+      {
+        in: 'domains/hr/src/entities/office-request.ts',
+        contains: 'Only the requester can withdraw a request',
+      },
+    ],
+  },
+
+  // --- Project tasks -------------------------------------------------------------------------------------
+  'POST /api/tasks': {
+    class: 'rbac',
+    justification:
+      'tasks.manage; creates a task on a project of the organization for a member of the caller’s team whose role works on tasks.',
+    proof: [
+      cap('tasks.manage'),
+      { in: 'apps/api/src/routes/tasks.ts', contains: 'That person is not a member of this team' },
+    ],
+  },
+  'POST /api/tasks/:taskId/start': {
+    class: 'domain_governed',
+    justification: 'tasks.work; the aggregate lets only the assignee start their task.',
+    proof: [
+      cap('tasks.work'),
+      {
+        in: 'domains/projects/src/entities/project-task.ts',
+        contains: 'Only the person the task is assigned to can do this',
+      },
+    ],
+  },
+  'POST /api/tasks/:taskId/submit': {
+    class: 'domain_governed',
+    justification: 'tasks.work; the aggregate lets only the assignee hand their task in.',
+    proof: [
+      cap('tasks.work'),
+      {
+        in: 'domains/projects/src/entities/project-task.ts',
+        contains: 'Only the person the task is assigned to can do this',
+      },
+    ],
+  },
+  'POST /api/tasks/:taskId/review': {
+    class: 'domain_governed',
+    justification:
+      'tasks.manage; separation of duties in the aggregate: nobody reviews their own work, and sending work back needs a reason.',
+    proof: [
+      cap('tasks.manage'),
+      {
+        in: 'domains/projects/src/entities/project-task.ts',
+        contains: 'You cannot review your own work',
+      },
+    ],
+  },
+  'POST /api/tasks/:taskId/reassign': {
+    class: 'rbac',
+    justification:
+      'tasks.manage; gives an unfinished task to another member of the caller’s team whose role works on tasks.',
+    proof: [cap('tasks.manage')],
+  },
+
   // --- Recruiting (HR's side of hiring) ----------------------------------------------------------------
   'POST /api/recruiting/openings': {
     class: 'domain_governed',

@@ -84,6 +84,8 @@ interface NavItem {
 // less, so `Dashboard` sends an onboarded user straight to Command Center.
 const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'My desk', icon: 'desk', to: '/app/desk' },
+  { label: 'Requests', icon: 'requests', to: '/app/requests' },
+  { label: 'Tasks', icon: 'tasks', to: '/app/tasks' },
   { label: 'Command Center', icon: 'command-center', to: '/app/command-center' },
   { label: 'Agent', icon: 'agent', to: '/app/agent' },
   { label: 'Agents', icon: 'team', to: '/app/agents' },
@@ -110,6 +112,9 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'Settings', icon: 'settings', to: '/app/settings' },
 ];
 
+/** The modules of everyday office work (never curated away by a persona). */
+const EVERYDAY_MODULES: readonly string[] = ['My desk', 'Requests', 'Tasks'];
+
 /**
  * Where each destination lives in the rail. The groups are fixed for every
  * role, so a module is always found in the same place; what a role may SEE
@@ -117,11 +122,11 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
  * with nothing visible in it is simply not rendered.
  */
 const NAV_SECTIONS: readonly { title: string | null; labels: readonly string[] }[] = [
-  { title: null, labels: ['My desk', 'Command Center'] },
+  { title: null, labels: ['My desk', 'Requests', 'Command Center'] },
   { title: 'People', labels: ['Hiring', 'Recruiting', 'Onboarding', 'Employees'] },
   {
     title: 'Work',
-    labels: ['Projects', 'Problems', 'Workflows', 'Calendar', 'Documents', 'Knowledge'],
+    labels: ['Tasks', 'Projects', 'Problems', 'Workflows', 'Calendar', 'Documents', 'Knowledge'],
   },
   { title: 'Money', labels: ['Finance', 'Approval Queue'] },
   { title: 'Assistants', labels: ['AI Assistant', 'Agent', 'Agents'] },
@@ -450,10 +455,17 @@ function AppShellChrome({
     current?.permissions ?? [],
     persona,
   );
-  // The desk is everyone's home: a persona's curated module list never hides it.
+  // Everyday office work is for everyone: a persona's curated module list never
+  // hides it (the caller's permissions still decide, as for every module).
   const navGroups = groupNavItems([
-    ...BASE_NAV_ITEMS.filter((item) => item.label === 'My desk'),
-    ...[...primaryNavItems, ...secondaryNavItems].filter((item) => item.label !== 'My desk'),
+    ...BASE_NAV_ITEMS.filter(
+      (item) =>
+        EVERYDAY_MODULES.includes(item.label) &&
+        isModuleVisible(item.label, current?.permissions ?? []),
+    ),
+    ...[...primaryNavItems, ...secondaryNavItems].filter(
+      (item) => !EVERYDAY_MODULES.includes(item.label),
+    ),
   ]);
   const roleLabel =
     persona !== undefined

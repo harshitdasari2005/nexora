@@ -38,6 +38,8 @@ import { Approvals } from './pages/Approvals.js';
 import { DemoStart } from './pages/DemoStart.js';
 import { DeskPage } from './pages/Desk.js';
 import { GuidedDemo } from './pages/GuidedDemo.js';
+import { RequestsPage } from './pages/Requests.js';
+import { TasksPage } from './pages/Tasks.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { DemoProvider } from './demo/DemoProvider.js';
 import { RequireAuth, SessionProvider } from './session.js';
@@ -65,6 +67,22 @@ export function App(): JSX.Element {
                 element={
                   <RequireAuth>
                     <DeskPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/requests"
+                element={
+                  <RequireAuth>
+                    <RequestsPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/tasks"
+                element={
+                  <RequireAuth>
+                    <TasksPage />
                   </RequireAuth>
                 }
               />

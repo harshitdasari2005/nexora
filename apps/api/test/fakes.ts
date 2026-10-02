@@ -116,6 +116,16 @@ import {
   type OidcIdentity,
   type PkceParameters,
 } from '../src/oidc/gateway.js';
+import {
+  OfficeRequest,
+  type OfficeRequestRepository,
+  type OfficeRequestSnapshot,
+} from '@nexora/domain-hr';
+import {
+  ProjectTask,
+  type ProjectTaskRepository,
+  type ProjectTaskSnapshot,
+} from '@nexora/domain-projects';
 
 /** An in-memory {@link UserRepository}. */
 export class FakeUserRepository implements UserRepository {
@@ -1474,5 +1484,61 @@ export class FakeMeasurementRepository implements MeasurementRepository {
   /** Seeds a fixed snapshot for a tenant (test setup convenience). */
   seed(tenantId: TenantId, snapshot: TenantMeasurementsSnapshot): void {
     this.snapshots.set(tenantId, snapshot);
+  }
+}
+
+/** An in-memory {@link OfficeRequestRepository} (optimistic updates, like Postgres). */
+export class FakeOfficeRequestRepository implements OfficeRequestRepository {
+  readonly rows = new Map<string, OfficeRequestSnapshot>();
+
+  async findById(id: OfficeRequest['id']): Promise<OfficeRequest | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : OfficeRequest.hydrate(structuredClone(row));
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly OfficeRequest[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => OfficeRequest.hydrate(structuredClone(row)));
+  }
+
+  async insert(request: OfficeRequest): Promise<void> {
+    this.rows.set(request.id, structuredClone(OfficeRequest.snapshot(request)));
+  }
+
+  async update(request: OfficeRequest, expectedVersion: number): Promise<boolean> {
+    const stored = this.rows.get(request.id);
+    if (stored === undefined || stored.version !== expectedVersion) return false;
+    this.rows.set(request.id, structuredClone(OfficeRequest.snapshot(request)));
+    return true;
+  }
+}
+
+/** An in-memory {@link ProjectTaskRepository} (optimistic updates, like Postgres). */
+export class FakeProjectTaskRepository implements ProjectTaskRepository {
+  readonly rows = new Map<string, ProjectTaskSnapshot>();
+
+  async findById(id: ProjectTask['id']): Promise<ProjectTask | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : ProjectTask.hydrate(structuredClone(row));
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly ProjectTask[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => ProjectTask.hydrate(structuredClone(row)));
+  }
+
+  async insert(task: ProjectTask): Promise<void> {
+    this.rows.set(task.id, structuredClone(ProjectTask.snapshot(task)));
+  }
+
+  async update(task: ProjectTask, expectedVersion: number): Promise<boolean> {
+    const stored = this.rows.get(task.id);
+    if (stored === undefined || stored.version !== expectedVersion) return false;
+    this.rows.set(task.id, structuredClone(ProjectTask.snapshot(task)));
+    return true;
   }
 }

@@ -45,7 +45,9 @@ export type IconName =
   | 'runtime'
   | 'policy'
   | 'team'
-  | 'approvals';
+  | 'approvals'
+  | 'requests'
+  | 'tasks';
 
 const PATHS: Record<IconName, JSX.Element> = {
   'command-center': (
@@ -222,6 +224,18 @@ const PATHS: Record<IconName, JSX.Element> = {
       <circle cx="8" cy="9" r="3" />
       <circle cx="17" cy="10" r="2.5" />
       <path d="M2 20a6 6 0 0 1 12 0M15 20a5 5 0 0 1 7-4.5" />
+    </>
+  ),
+  requests: (
+    <>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3v5h5M12 12v5M9.5 14.5h5" />
+    </>
+  ),
+  tasks: (
+    <>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="3" />
+      <path d="m8 12 2.5 2.5L16 9" />
     </>
   ),
   approvals: (

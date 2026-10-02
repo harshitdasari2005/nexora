@@ -188,6 +188,10 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'recruiting.interview',
       'onboarding.read',
       'onboarding.manager',
+      'requests.create',
+      'requests.read',
+      'requests.approve_manager',
+      'tasks.manage',
     ],
   },
   {
@@ -233,6 +237,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'policy.read',
       'requisitions.read',
       'requisitions.approve_finance',
+      'requests.create',
+      'requests.approve_finance',
     ],
   },
   {
@@ -255,6 +261,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'recruiting.interview',
       'onboarding.hr',
       'onboarding.read',
+      'requests.create',
+      'requests.approve_hr',
     ],
   },
   {
@@ -287,6 +295,11 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'recruiting.interview',
       'onboarding.manager',
       'onboarding.it',
+      'requests.create',
+      'requests.approve_manager',
+      'requests.approve_it',
+      'tasks.manage',
+      'tasks.work',
     ],
   },
   {
@@ -316,6 +329,11 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'recruiting.interview',
       'onboarding.manager',
       'onboarding.it',
+      'requests.create',
+      'requests.approve_manager',
+      'requests.approve_it',
+      'tasks.manage',
+      'tasks.work',
     ],
   },
   {
@@ -348,6 +366,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'github.issues.read',
       'github.issues.create',
       'onboarding.it',
+      'requests.create',
+      'tasks.work',
     ],
   },
   {
@@ -468,6 +488,10 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'requisitions.create',
       'recruiting.interview',
       'onboarding.manager',
+      'requests.create',
+      'requests.approve_manager',
+      'tasks.manage',
+      'tasks.work',
     ],
   },
   {
@@ -701,6 +725,49 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     id: 'onboarding.read',
     name: 'Read Onboarding',
     description: 'See every onboarding of the organization',
+  },
+  {
+    id: 'requests.create',
+    name: 'Raise Office Requests',
+    description:
+      'Raise an everyday office request (leave, purchase, IT access), see one’s own requests and withdraw them (surface: the office request routes)',
+  },
+  {
+    id: 'requests.read',
+    name: 'Read Office Requests',
+    description: 'See every office request of the organization, not only one’s own',
+  },
+  {
+    id: 'requests.approve_manager',
+    name: 'Decide Office Requests (Manager)',
+    description:
+      'Take the manager decision on a request raised from one’s own team — the first stage of every chain; never one’s own request',
+  },
+  {
+    id: 'requests.approve_hr',
+    name: 'Decide Office Requests (HR)',
+    description: 'Take the HR decision on a leave request, after the manager',
+  },
+  {
+    id: 'requests.approve_finance',
+    name: 'Decide Office Requests (Finance)',
+    description: 'Take the finance decision on a purchase request, after the manager',
+  },
+  {
+    id: 'requests.approve_it',
+    name: 'Decide Office Requests (IT)',
+    description: 'Take the IT decision on an access or equipment request, after the manager',
+  },
+  {
+    id: 'tasks.manage',
+    name: 'Manage Project Tasks',
+    description:
+      'Create tasks on a project, give them to people, see every task and review handed-in work — never one’s own',
+  },
+  {
+    id: 'tasks.work',
+    name: 'Work On Tasks',
+    description: 'See the tasks assigned to oneself, start them and hand them in for review',
   },
   {
     id: 'workflows.read',

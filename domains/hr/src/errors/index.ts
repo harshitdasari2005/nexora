@@ -109,6 +109,27 @@ export class RequisitionConflictError extends HrDomainError {
   }
 }
 
+/** The office request does not exist (or is not visible to the caller). */
+export class OfficeRequestNotFoundError extends HrDomainError {
+  constructor(details?: unknown) {
+    super('Request not found', 'NOT_FOUND', details);
+  }
+}
+
+/** A step was attempted that the request's current state forbids. */
+export class OfficeRequestStateError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'BUSINESS_RULE_VIOLATION', details);
+  }
+}
+
+/** The actor may not take this step of the request (their own request, not the requester, …). */
+export class OfficeRequestNotPermittedError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'AUTHORIZATION_ERROR', details);
+  }
+}
+
 /** The job opening does not exist (or is not visible to the caller). */
 export class JobOpeningNotFoundError extends HrDomainError {
   constructor(details?: unknown) {

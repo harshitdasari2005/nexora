@@ -39,3 +39,7 @@ export const CandidateId = idFactory<'candidate'>('cand', 'candidate');
 /** A branded onboarding id (`onb_…`). */
 export type OnboardingId = EntityId<'onboarding'>;
 export const OnboardingId = idFactory<'onboarding'>('onb', 'onboarding');
+
+/** A branded office-request id (`ofr_…`). */
+export type OfficeRequestId = EntityId<'office_request'>;
+export const OfficeRequestId = idFactory<'office_request'>('ofr', 'request');

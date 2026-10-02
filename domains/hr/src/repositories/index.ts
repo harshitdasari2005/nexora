@@ -13,9 +13,15 @@ import type { Employee } from '../entities/employee.js';
 import type { Candidate } from '../entities/candidate.js';
 import type { HiringRequisition } from '../entities/hiring-requisition.js';
 import type { JobOpening } from '../entities/job-opening.js';
+import type { OfficeRequest } from '../entities/office-request.js';
 import type { Onboarding } from '../entities/onboarding.js';
 import type { EmployeeId } from '../value-objects/employee-id.js';
-import type { CandidateId, JobOpeningId, OnboardingId } from '../value-objects/recruiting-ids.js';
+import type {
+  CandidateId,
+  JobOpeningId,
+  OfficeRequestId,
+  OnboardingId,
+} from '../value-objects/recruiting-ids.js';
 import type { RequisitionId } from '../value-objects/requisition-id.js';
 
 /**
@@ -107,4 +113,14 @@ export interface OnboardingRepository {
   insert(onboarding: Onboarding): Promise<boolean>;
   /** Persists a change only while the row is still at `expectedVersion`. */
   update(onboarding: Onboarding, expectedVersion: number): Promise<boolean>;
+}
+
+/** The persistence port of the {@link OfficeRequest} aggregate. */
+export interface OfficeRequestRepository {
+  findById(id: OfficeRequestId): Promise<OfficeRequest | undefined>;
+  /** Lists the organization's requests, newest first (tenant-scoped read). */
+  listByOrganization(organizationId: TenantId): Promise<readonly OfficeRequest[]>;
+  insert(request: OfficeRequest): Promise<void>;
+  /** Persists a change only while the row is still at `expectedVersion`. */
+  update(request: OfficeRequest, expectedVersion: number): Promise<boolean>;
 }

@@ -142,6 +142,41 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 .nexora-step-detail { margin-top: 6px; color: var(--nexora-textSecondary); max-width: 66ch; }
 .nexora-step[data-state='current'] .nexora-step-detail, .nexora-step[data-state='returned'] .nexora-step-detail { color: var(--nexora-text); }
 
+/* A choice between a few kinds of thing, each with a line of explanation. */
+.nexora-choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 10px; }
+.nexora-choice-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--nexora-radius-md, 10px);
+  border: 1px solid var(--nexora-borderStrong);
+  background: var(--nexora-surface);
+  color: var(--nexora-text);
+  cursor: pointer;
+}
+.nexora-choice-option:hover { border-color: var(--nexora-primary); }
+.nexora-choice-option[aria-checked='true'] {
+  border-color: var(--nexora-primary);
+  background: var(--nexora-primarySoft);
+  box-shadow: inset 0 0 0 1px var(--nexora-primary);
+}
+
+/* A board: one column per state, side by side when there is room. */
+.nexora-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 20px 16px; align-items: start; }
+.nexora-board-column { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.nexora-board-empty {
+  border: 1px dashed var(--nexora-borderStrong);
+  border-radius: var(--nexora-radius-md, 10px);
+  padding: 14px;
+  font-size: 0.8125rem;
+  color: var(--nexora-textMuted);
+}
+/* A thin progress meter. */
+.nexora-meter { height: 6px; border-radius: 999px; background: var(--nexora-surfaceMuted); margin: 10px 0 6px; overflow: hidden; }
+.nexora-meter > span { display: block; height: 100%; border-radius: 999px; background: var(--nexora-primary); }
+
 /* A row on the desk: what it is, and the page it is done on. */
 .nexora-desk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 16px 20px; }
 .nexora-desk-icon {

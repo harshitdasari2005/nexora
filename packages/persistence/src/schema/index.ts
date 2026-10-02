@@ -1465,3 +1465,63 @@ export const runtimeRuns = pgTable(
     index('runtime_runs_tenant_request_idx').on(table.tenantId, table.requestId),
   ],
 );
+
+/**
+ * office_requests — the {@link @nexora/domain-hr!OfficeRequest} aggregate: an
+ * everyday office request (leave, purchase, IT access) and the chain of people
+ * it passes through. `details` and `history` are validated by the aggregate;
+ * `version` backs optimistic updates.
+ */
+export const officeRequests = pgTable(
+  'office_requests',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    requestedBy: varchar('requested_by', { length: 64 }).notNull(),
+    type: varchar('type', { length: 32 }).notNull(),
+    details: jsonb('details').notNull(),
+    stages: jsonb('stages').notNull(),
+    stageIndex: integer('stage_index').notNull().default(0),
+    status: varchar('status', { length: 32 }).notNull(),
+    history: jsonb('history').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('office_requests_org_idx').on(table.organizationId, table.createdAt),
+    index('office_requests_requester_idx').on(table.organizationId, table.requestedBy),
+  ],
+);
+
+/**
+ * project_tasks — the {@link @nexora/domain-projects!ProjectTask} aggregate: a
+ * piece of work on a project, who does it and where it stands. `version` backs
+ * optimistic updates.
+ */
+export const projectTasks = pgTable(
+  'project_tasks',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    projectId: varchar('project_id', { length: 64 }).notNull(),
+    title: varchar('title', { length: 160 }).notNull(),
+    description: text('description'),
+    priority: varchar('priority', { length: 16 }).notNull(),
+    dueDate: varchar('due_date', { length: 10 }),
+    assigneeId: varchar('assignee_id', { length: 64 }).notNull(),
+    createdBy: varchar('created_by', { length: 64 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    history: jsonb('history').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('project_tasks_org_idx').on(table.organizationId, table.createdAt),
+    index('project_tasks_assignee_idx').on(table.organizationId, table.assigneeId),
+    index('project_tasks_project_idx').on(table.organizationId, table.projectId),
+  ],
+);
