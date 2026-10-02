@@ -26,6 +26,7 @@ import {
   PgEmailOutboxRepository,
   PgInboundMessageRepository,
   PgEmployeeRepository,
+  createTransactionalDatabase,
   PgCandidateRepository,
   PgHiringRequisitionRepository,
   PgJobOpeningRepository,
@@ -1112,6 +1113,10 @@ export function buildPgRepositories(
       'No repositories or database provided: pass either `repositories` (fakes) or `database` (PostgreSQL).',
     );
   }
+  // The people records (candidate, seat count, employee, onboarding) are
+  // written together or not at all: these repositories share one transaction
+  // whenever a step runs inside `atomically`.
+  const people = createTransactionalDatabase(database);
   return {
     users: new PgUserRepository(database),
     sessions: new PgSessionRepository(database),
@@ -1123,11 +1128,12 @@ export function buildPgRepositories(
     workspaceInstallations: new PgWorkspaceInstallationRepository(database),
     projects: new PgProjectRepository(database),
     resourceAssignments: new PgResourceAssignmentRepository(database),
-    employees: new PgEmployeeRepository(database),
-    hiringRequisitions: new PgHiringRequisitionRepository(database),
-    jobOpenings: new PgJobOpeningRepository(database),
-    candidates: new PgCandidateRepository(database),
-    onboardings: new PgOnboardingRepository(database),
+    employees: new PgEmployeeRepository(people.database),
+    hiringRequisitions: new PgHiringRequisitionRepository(people.database),
+    jobOpenings: new PgJobOpeningRepository(people.database),
+    candidates: new PgCandidateRepository(people.database),
+    onboardings: new PgOnboardingRepository(people.database),
+    atomically: people.transaction,
     documents: new PgDocumentRepository(database),
     documentVersions: new PgDocumentVersionRepository(database),
     documentTemplates: new PgDocumentTemplateRepository(database),

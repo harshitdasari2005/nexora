@@ -29,6 +29,7 @@ import {
   type OnboardingRepository,
   type RecruitingEventContext,
 } from '@nexora/domain-hr';
+import type { AtomicRunner } from './recruiting-application-service.js';
 
 /** Dependencies of the {@link OnboardingApplicationService}. */
 export interface OnboardingApplicationServiceDependencies {
@@ -36,6 +37,8 @@ export interface OnboardingApplicationServiceDependencies {
   employeesService: EmployeeDomainService;
   requisitions: HiringRequisitionRepository;
   publisher: EventPublisher;
+  /** Makes "checklist + employee status" one all-or-nothing step. */
+  atomically?: AtomicRunner;
 }
 
 interface CommandBase {
@@ -61,8 +64,10 @@ export class OnboardingApplicationService {
   readonly #employees: EmployeeDomainService;
   readonly #requisitions: HiringRequisitionRepository;
   readonly #publisher: EventPublisher;
+  readonly #atomically: AtomicRunner;
 
   constructor(dependencies: OnboardingApplicationServiceDependencies) {
+    this.#atomically = dependencies.atomically ?? ((work) => work());
     this.#onboardings = dependencies.onboardings;
     this.#employees = dependencies.employeesService;
     this.#requisitions = dependencies.requisitions;
@@ -72,42 +77,50 @@ export class OnboardingApplicationService {
   /** Starts onboarding a hired employee (`hired` → `onboarding`), once. */
   async start(command: StartOnboardingCommand): Promise<Result<Onboarding, NexoraError>> {
     return this.#run(async () => {
-      const employee = await this.#requireEmployee(command.organizationId, command.employeeId);
-      if (employee.status.value !== 'hired') {
-        throw new OnboardingStateError('Onboarding starts once a person has been hired', {
-          status: employee.status.value,
-        });
-      }
-      // The hire came from a hiring request: its requester is the hiring manager.
-      const requisitionId = employee.profile?.requisitionId;
-      const requisition =
-        requisitionId === undefined
-          ? undefined
-          : await this.#requisitions.findById(RequisitionId.from(requisitionId));
-      if (requisition === undefined || requisition.organizationId !== command.organizationId) {
-        throw new OnboardingStateError(
-          'This employee was not hired through a hiring request, so there is no team to onboard them into',
+      const { onboarding, events } = await this.#atomically(async () => {
+        const employee = await this.#requireEmployee(command.organizationId, command.employeeId);
+        if (employee.status.value !== 'hired') {
+          throw new OnboardingStateError('Onboarding starts once a person has been hired', {
+            status: employee.status.value,
+          });
+        }
+        // The hire came from a hiring request: its requester is the hiring manager.
+        const requisitionId = employee.profile?.requisitionId;
+        const requisition =
+          requisitionId === undefined
+            ? undefined
+            : await this.#requisitions.findById(RequisitionId.from(requisitionId));
+        if (requisition === undefined || requisition.organizationId !== command.organizationId) {
+          throw new OnboardingStateError(
+            'This employee was not hired through a hiring request, so there is no team to onboard them into',
+          );
+        }
+        const projectId = requisition.details.projectId;
+        const onboarding = Onboarding.start(
+          {
+            organizationId: command.organizationId,
+            employeeId: employee.id,
+            employeeName: employee.name.value,
+            workspaceId: requisition.workspaceId,
+            hiringManagerId: requisition.requestedBy,
+            ...(projectId === undefined ? {} : { projectId }),
+            startedBy: command.actorId,
+          },
+          context(command),
         );
-      }
-      const projectId = requisition.details.projectId;
-      const onboarding = Onboarding.start(
-        {
-          organizationId: command.organizationId,
-          employeeId: employee.id,
-          employeeName: employee.name.value,
-          workspaceId: requisition.workspaceId,
-          hiringManagerId: requisition.requestedBy,
-          ...(projectId === undefined ? {} : { projectId }),
-          startedBy: command.actorId,
-        },
-        context(command),
-      );
-      if (!(await this.#onboardings.insert(onboarding))) {
-        throw new RecruitingConflictError('Onboarding has already been started for this employee');
-      }
-      const onboarded = await this.#employees.onboard(employee.id, employeeContext(command));
-      if (!onboarded.ok) throw onboarded.error;
-      await this.#publisher.publish([...onboarding.pullDomainEvents(), ...onboarded.value.events]);
+        if (!(await this.#onboardings.insert(onboarding))) {
+          throw new RecruitingConflictError(
+            'Onboarding has already been started for this employee',
+          );
+        }
+        const onboarded = await this.#employees.onboard(employee.id, employeeContext(command));
+        if (!onboarded.ok) throw onboarded.error;
+        return {
+          onboarding,
+          events: [...onboarding.pullDomainEvents(), ...onboarded.value.events],
+        };
+      });
+      await this.#publisher.publish(events);
       return onboarding;
     });
   }
@@ -120,28 +133,31 @@ export class OnboardingApplicationService {
     command: CompleteOnboardingItemCommand,
   ): Promise<Result<Onboarding, NexoraError>> {
     return this.#run(async () => {
-      const onboarding = await this.#require(command.organizationId, command.onboardingId);
-      const loaded = onboarding.version;
-      const finished = onboarding.completeItem(
-        {
-          key: command.item,
-          actorId: command.actorId,
-          ...(command.note === undefined ? {} : { note: command.note }),
-        },
-        context(command),
-      );
-      if (!(await this.#onboardings.update(onboarding, loaded))) {
-        throw new RecruitingConflictError();
-      }
-      const events: EventEnvelope[] = [...onboarding.pullDomainEvents()];
-      if (finished) {
-        const activated = await this.#employees.activate(
-          EmployeeId.from(onboarding.employeeId),
-          employeeContext(command),
+      const { onboarding, events } = await this.#atomically(async () => {
+        const onboarding = await this.#require(command.organizationId, command.onboardingId);
+        const loaded = onboarding.version;
+        const finished = onboarding.completeItem(
+          {
+            key: command.item,
+            actorId: command.actorId,
+            ...(command.note === undefined ? {} : { note: command.note }),
+          },
+          context(command),
         );
-        if (!activated.ok) throw activated.error;
-        events.push(...activated.value.events);
-      }
+        if (!(await this.#onboardings.update(onboarding, loaded))) {
+          throw new RecruitingConflictError();
+        }
+        const events: EventEnvelope[] = [...onboarding.pullDomainEvents()];
+        if (finished) {
+          const activated = await this.#employees.activate(
+            EmployeeId.from(onboarding.employeeId),
+            employeeContext(command),
+          );
+          if (!activated.ok) throw activated.error;
+          events.push(...activated.value.events);
+        }
+        return { onboarding, events };
+      });
       await this.#publisher.publish(events);
       return onboarding;
     });

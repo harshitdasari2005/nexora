@@ -49,12 +49,24 @@ import {
 const SEAT_RETRIES = 5;
 
 /** Dependencies of the {@link RecruitingApplicationService}. */
+/**
+ * Runs a step so that everything it writes is kept together or not at all
+ * (a database transaction in production). Events are published only after it
+ * succeeded.
+ */
+export type AtomicRunner = <T>(work: () => Promise<T>) => Promise<T>;
+
 export interface RecruitingApplicationServiceDependencies {
   openings: JobOpeningRepository;
   candidates: CandidateRepository;
   requisitions: HiringRequisitionRepository;
   employeesService: EmployeeDomainService;
   publisher: EventPublisher;
+  /**
+   * Makes the multi-record steps (offer, acceptance, decline, rejection)
+   * all-or-nothing. Without it each write stands on its own.
+   */
+  atomically?: AtomicRunner;
 }
 
 interface CommandBase {
@@ -121,8 +133,13 @@ export class RecruitingApplicationService {
   readonly #requisitions: HiringRequisitionRepository;
   readonly #employees: EmployeeDomainService;
   readonly #publisher: EventPublisher;
+  readonly #atomically: AtomicRunner;
+  /** A failed step is undone by the runner, so no manual give-back is needed. */
+  readonly #atomic: boolean;
 
   constructor(dependencies: RecruitingApplicationServiceDependencies) {
+    this.#atomic = dependencies.atomically !== undefined;
+    this.#atomically = dependencies.atomically ?? ((work) => work());
     this.#openings = dependencies.openings;
     this.#candidates = dependencies.candidates;
     this.#requisitions = dependencies.requisitions;
@@ -282,36 +299,42 @@ export class RecruitingApplicationService {
   /** Extends an offer inside the approved salary range, holding one approved seat. */
   async extendOffer(command: ExtendOfferCommand): Promise<Result<Candidate, NexoraError>> {
     return this.#run(async () => {
-      const candidate = await this.#requireCandidate(command.organizationId, command.candidateId);
-      const opening = await this.#requireOpening(command.organizationId, candidate.openingId);
-      requireRecruiting(opening);
-      const loaded = candidate.version;
-      const terms = JobOpening.snapshot(opening);
-      // Validate the candidate-side rules BEFORE holding a seat.
-      candidate.extendOffer(
-        {
-          salaryMinorUnits: command.salaryMinorUnits,
-          startDate: command.startDate,
-          by: command.actorId,
-        },
-        {
-          salaryMinMinorUnits: terms.salaryMinMinorUnits,
-          salaryMaxMinorUnits: terms.salaryMaxMinorUnits,
-          currency: terms.currency,
-        },
-        context(command),
-      );
-      // The cap is decided here, atomically: no seat, no offer.
-      await this.#changeSeats(command.organizationId, opening.id, (current) =>
-        current.reserveOffer(),
-      );
-      if (!(await this.#candidates.update(candidate, loaded))) {
-        // Someone changed the candidate meanwhile: give the seat back.
-        await this.#changeSeats(command.organizationId, opening.id, (current) =>
-          current.releaseOffer(),
+      const candidate = await this.#atomically(async () => {
+        const candidate = await this.#requireCandidate(command.organizationId, command.candidateId);
+        const opening = await this.#requireOpening(command.organizationId, candidate.openingId);
+        requireRecruiting(opening);
+        const loaded = candidate.version;
+        const terms = JobOpening.snapshot(opening);
+        // Validate the candidate-side rules BEFORE holding a seat.
+        candidate.extendOffer(
+          {
+            salaryMinorUnits: command.salaryMinorUnits,
+            startDate: command.startDate,
+            by: command.actorId,
+          },
+          {
+            salaryMinMinorUnits: terms.salaryMinMinorUnits,
+            salaryMaxMinorUnits: terms.salaryMaxMinorUnits,
+            currency: terms.currency,
+          },
+          context(command),
         );
-        throw new RecruitingConflictError();
-      }
+        // The cap is decided here, atomically: no seat, no offer.
+        await this.#changeSeats(command.organizationId, opening.id, (current) =>
+          current.reserveOffer(),
+        );
+        if (!(await this.#candidates.update(candidate, loaded))) {
+          // Someone changed the candidate meanwhile: the seat goes back (the
+          // atomic runner undoes the reservation itself).
+          if (!this.#atomic) {
+            await this.#changeSeats(command.organizationId, opening.id, (current) =>
+              current.releaseOffer(),
+            );
+          }
+          throw new RecruitingConflictError();
+        }
+        return candidate;
+      });
       await this.#publisher.publish(candidate.pullDomainEvents());
       return candidate;
     });
@@ -320,53 +343,60 @@ export class RecruitingApplicationService {
   /** Records that the candidate accepted: they are hired and get an employee record. */
   async acceptOffer(command: CandidateCommand): Promise<Result<AcceptOfferResult, NexoraError>> {
     return this.#run(async () => {
-      const candidate = await this.#requireCandidate(command.organizationId, command.candidateId);
-      const loaded = candidate.version;
-      candidate.acceptOffer(command.actorId, context(command));
-      // The candidate first: of two simultaneous answers exactly one is recorded.
-      if (!(await this.#candidates.update(candidate, loaded))) throw new RecruitingConflictError();
-      const events: EventEnvelope[] = [...candidate.pullDomainEvents()];
+      // The candidate, the seat and the employee record are one fact: either
+      // all three are written or none is.
+      const { events, result } = await this.#atomically(async () => {
+        const candidate = await this.#requireCandidate(command.organizationId, command.candidateId);
+        const loaded = candidate.version;
+        candidate.acceptOffer(command.actorId, context(command));
+        // The candidate first: of two simultaneous answers exactly one is recorded.
+        if (!(await this.#candidates.update(candidate, loaded)))
+          throw new RecruitingConflictError();
+        const events: EventEnvelope[] = [...candidate.pullDomainEvents()];
 
-      const opening = await this.#changeSeats(
-        command.organizationId,
-        JobOpeningId.from(candidate.openingId),
-        (current) => current.confirmHire(context(command)),
-      );
-      events.push(...opening.pullDomainEvents());
+        const opening = await this.#changeSeats(
+          command.organizationId,
+          JobOpeningId.from(candidate.openingId),
+          (current) => current.confirmHire(context(command)),
+        );
+        events.push(...opening.pullDomainEvents());
 
-      const terms = JobOpening.snapshot(opening);
-      const employeeContext = {
-        actor: { kind: 'user' as const, id: command.actorId },
-        correlationId: command.correlationId,
-        organizationId: command.organizationId,
-      };
-      const created = await this.#employees.create(
-        {
+        const terms = JobOpening.snapshot(opening);
+        const employeeContext = {
+          actor: { kind: 'user' as const, id: command.actorId },
+          correlationId: command.correlationId,
           organizationId: command.organizationId,
-          name: candidate.name,
-          profile: {
-            email: candidate.email,
-            jobTitle: terms.title,
-            department: terms.department,
-            employmentType: terms.employmentType,
-            ...(candidate.offer === undefined ? {} : { startDate: candidate.offer.startDate }),
-            requisitionId: terms.requisitionId,
+        };
+        const created = await this.#employees.create(
+          {
+            organizationId: command.organizationId,
+            name: candidate.name,
+            profile: {
+              email: candidate.email,
+              jobTitle: terms.title,
+              department: terms.department,
+              employmentType: terms.employmentType,
+              ...(candidate.offer === undefined ? {} : { startDate: candidate.offer.startDate }),
+              requisitionId: terms.requisitionId,
+            },
           },
-        },
-        employeeContext,
-      );
-      if (!created.ok) throw created.error;
-      // `hired`: the offer is accepted. Onboarding and activation come next.
-      const hired = await this.#employees.hire(created.value.employee.id, employeeContext);
-      if (!hired.ok) throw hired.error;
-      events.push(...created.value.events, ...hired.value.events);
+          employeeContext,
+        );
+        if (!created.ok) throw created.error;
+        // `hired`: the offer is accepted. Onboarding and activation come next.
+        const hired = await this.#employees.hire(created.value.employee.id, employeeContext);
+        if (!hired.ok) throw hired.error;
+        events.push(...created.value.events, ...hired.value.events);
 
-      const afterAccept = candidate.version;
-      candidate.linkEmployee(hired.value.employee.id);
-      await this.#candidates.update(candidate, afterAccept);
-
+        const afterAccept = candidate.version;
+        candidate.linkEmployee(hired.value.employee.id);
+        if (!(await this.#candidates.update(candidate, afterAccept))) {
+          throw new RecruitingConflictError();
+        }
+        return { events, result: { candidate, employee: hired.value.employee, opening } };
+      });
       await this.#publisher.publish(events);
-      return { candidate, employee: hired.value.employee, opening };
+      return result;
     });
   }
 
@@ -375,15 +405,19 @@ export class RecruitingApplicationService {
     command: CandidateCommand & { note?: string },
   ): Promise<Result<Candidate, NexoraError>> {
     return this.#run(async () => {
-      const candidate = await this.#requireCandidate(command.organizationId, command.candidateId);
-      const loaded = candidate.version;
-      candidate.declineOffer(command.actorId, command.note, context(command));
-      if (!(await this.#candidates.update(candidate, loaded))) throw new RecruitingConflictError();
-      await this.#changeSeats(
-        command.organizationId,
-        JobOpeningId.from(candidate.openingId),
-        (current) => current.releaseOffer(),
-      );
+      const candidate = await this.#atomically(async () => {
+        const candidate = await this.#requireCandidate(command.organizationId, command.candidateId);
+        const loaded = candidate.version;
+        candidate.declineOffer(command.actorId, command.note, context(command));
+        if (!(await this.#candidates.update(candidate, loaded)))
+          throw new RecruitingConflictError();
+        await this.#changeSeats(
+          command.organizationId,
+          JobOpeningId.from(candidate.openingId),
+          (current) => current.releaseOffer(),
+        );
+        return candidate;
+      });
       await this.#publisher.publish(candidate.pullDomainEvents());
       return candidate;
     });
@@ -392,22 +426,26 @@ export class RecruitingApplicationService {
   /** Rejects a candidate, or records that they withdrew (an open offer is rescinded). */
   async closeCandidate(command: CloseCandidateCommand): Promise<Result<Candidate, NexoraError>> {
     return this.#run(async () => {
-      const candidate = await this.#requireCandidate(command.organizationId, command.candidateId);
-      const loaded = candidate.version;
-      const heldSeat = candidate.hasOpenOffer;
-      if (command.outcome === 'reject') {
-        candidate.reject(command.actorId, command.reason, context(command));
-      } else {
-        candidate.withdraw(command.actorId, command.reason, context(command));
-      }
-      if (!(await this.#candidates.update(candidate, loaded))) throw new RecruitingConflictError();
-      if (heldSeat) {
-        await this.#changeSeats(
-          command.organizationId,
-          JobOpeningId.from(candidate.openingId),
-          (current) => current.releaseOffer(),
-        );
-      }
+      const candidate = await this.#atomically(async () => {
+        const candidate = await this.#requireCandidate(command.organizationId, command.candidateId);
+        const loaded = candidate.version;
+        const heldSeat = candidate.hasOpenOffer;
+        if (command.outcome === 'reject') {
+          candidate.reject(command.actorId, command.reason, context(command));
+        } else {
+          candidate.withdraw(command.actorId, command.reason, context(command));
+        }
+        if (!(await this.#candidates.update(candidate, loaded)))
+          throw new RecruitingConflictError();
+        if (heldSeat) {
+          await this.#changeSeats(
+            command.organizationId,
+            JobOpeningId.from(candidate.openingId),
+            (current) => current.releaseOffer(),
+          );
+        }
+        return candidate;
+      });
       await this.#publisher.publish(candidate.pullDomainEvents());
       return candidate;
     });

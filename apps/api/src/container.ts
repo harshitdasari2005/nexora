@@ -207,6 +207,11 @@ export interface RepositorySet {
   jobOpenings: JobOpeningRepository;
   candidates: CandidateRepository;
   onboardings: OnboardingRepository;
+  /**
+   * Makes a multi-record business step all-or-nothing (one PostgreSQL
+   * transaction across the people repositories). Absent for in-memory fakes.
+   */
+  atomically?: <T>(work: () => Promise<T>) => Promise<T>;
   documents: DocumentRepository;
   documentVersions: DocumentVersionRepository;
   documentTemplates: DocumentTemplateRepository;
@@ -532,6 +537,7 @@ export function buildContainer(options: BuildContainerOptions): Container {
     employeesService,
     requisitions: repositories.hiringRequisitions,
     publisher,
+    ...(repositories.atomically === undefined ? {} : { atomically: repositories.atomically }),
   });
   const recruitingService = new RecruitingApplicationService({
     openings: repositories.jobOpenings,
@@ -539,6 +545,7 @@ export function buildContainer(options: BuildContainerOptions): Container {
     requisitions: repositories.hiringRequisitions,
     employeesService,
     publisher,
+    ...(repositories.atomically === undefined ? {} : { atomically: repositories.atomically }),
   });
   const documentService = new DocumentApplicationService({
     documentsService,
