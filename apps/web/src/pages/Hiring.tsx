@@ -33,6 +33,7 @@ import {
   chainSteps,
   decideRequisition,
   listRequisitions,
+  recruitingProgress,
   reviseRequisition,
   statusLabel,
   submitRequisition,
@@ -324,7 +325,7 @@ function SectionTitle({ children }: { children: React.ReactNode }): JSX.Element 
 export function ChainStrip({
   requisition,
 }: {
-  requisition: Pick<Requisition, 'status' | 'history' | 'round'>;
+  requisition: Pick<Requisition, 'status' | 'history' | 'round' | 'recruiting'>;
 }): JSX.Element {
   const color: Record<string, string> = {
     done: 'var(--nexora-success)',
@@ -424,6 +425,11 @@ export function RequisitionCard({
         </Stack>
 
         <ChainStrip requisition={requisition} />
+        {recruitingProgress(requisition) === undefined ? null : (
+          <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+            {recruitingProgress(requisition)}
+          </div>
+        )}
 
         <div>
           <Button size="sm" variant="ghost" onClick={() => setOpen((value) => !value)}>

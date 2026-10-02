@@ -35,6 +35,11 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   { navLabel: 'Employees', requiredPermission: 'employees.read' },
   // Raisers see their own requests; the CEO, Finance and HR see all of them.
   { navLabel: 'Hiring', anyOfPermissions: ['requisitions.create', 'requisitions.read'] },
+  // HR runs it; the executive watches; hiring managers see their own openings.
+  {
+    navLabel: 'Recruiting',
+    anyOfPermissions: ['recruiting.manage', 'recruiting.read', 'recruiting.interview'],
+  },
   { navLabel: 'Documents', requiredPermission: 'documents.read' },
   { navLabel: 'Knowledge', requiredPermission: 'knowledge.read' },
   { navLabel: 'Workflows', requiredPermission: 'workflows.read' },

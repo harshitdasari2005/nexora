@@ -184,6 +184,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'requisitions.create',
       'requisitions.read',
       'requisitions.approve_executive',
+      'recruiting.read',
+      'recruiting.interview',
     ],
   },
   {
@@ -246,6 +248,9 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'agent.use',
       'activity.read',
       'requisitions.read',
+      'recruiting.manage',
+      'recruiting.read',
+      'recruiting.interview',
     ],
   },
   {
@@ -275,6 +280,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'integrations.manage',
       'marketplace.manage',
       'requisitions.create',
+      'recruiting.interview',
     ],
   },
   {
@@ -301,6 +307,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'integrations.manage',
       'marketplace.manage',
       'requisitions.create',
+      'recruiting.interview',
     ],
   },
   {
@@ -450,6 +457,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'slack.channels.read',
       'slack.messages.send',
       'requisitions.create',
+      'recruiting.interview',
     ],
   },
   {
@@ -642,6 +650,24 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     name: 'Decide Hiring Requests (Finance)',
     description:
       'Take the finance decision on a hiring request — the second stage of the chain, after the executive decision; never one’s own request',
+  },
+  {
+    id: 'recruiting.manage',
+    name: 'Run Recruiting',
+    description:
+      'Open a position for an approved hiring request, manage its candidates, make offers inside the approved terms and record the answers (surface: the recruiting routes)',
+  },
+  {
+    id: 'recruiting.read',
+    name: 'Read Recruiting',
+    description:
+      'See every job opening and candidate of the organization, including offers (surface: the recruiting reads)',
+  },
+  {
+    id: 'recruiting.interview',
+    name: 'Interview Candidates',
+    description:
+      'See the candidates of the openings one is the hiring manager of, and record interview feedback — never offer amounts',
   },
   {
     id: 'workflows.read',

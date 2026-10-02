@@ -55,6 +55,8 @@ export interface Requisition extends RequisitionDetails {
   history: readonly RequisitionHistoryEntry[];
   createdAt: string;
   updatedAt: string;
+  /** HR's progress, once a position has been opened for an approved request. */
+  recruiting?: { openingId: string; status: string; hiredCount: number; headcount: number };
   /** What the CURRENT caller may do right now (server-computed). */
   actions: {
     canDecide: boolean;
@@ -153,7 +155,7 @@ export function statusLabel(status: RequisitionStatus): string {
 
 /** The four steps of the chain, with how far a request has got. */
 export function chainSteps(
-  requisition: Pick<Requisition, 'status' | 'history' | 'round'>,
+  requisition: Pick<Requisition, 'status' | 'history' | 'round' | 'recruiting'>,
 ): { label: string; state: 'done' | 'current' | 'waiting' | 'skipped' | 'returned' }[] {
   const inRound = requisition.history.filter((entry) => entry.round === requisition.round);
   const executiveSkipped = inRound.some((entry) => entry.action === 'executive_not_required');
@@ -173,6 +175,28 @@ export function chainSteps(
     { label: 'Raised', state: 'done' },
     { label: 'CEO decision', state: stageState('executive') },
     { label: 'Finance decision', state: stageState('finance') },
-    { label: 'HR hiring', state: requisition.status === 'approved' ? 'current' : 'waiting' },
+    {
+      label: 'HR hiring',
+      state:
+        requisition.status !== 'approved'
+          ? 'waiting'
+          : requisition.recruiting?.status === 'filled'
+            ? 'done'
+            : 'current',
+    },
   ];
+}
+
+/** What HR is doing with an approved request, in plain words. */
+export function recruitingProgress(
+  requisition: Pick<Requisition, 'status' | 'recruiting'>,
+): string | undefined {
+  if (requisition.status !== 'approved') return undefined;
+  const progress = requisition.recruiting;
+  if (progress === undefined) return 'Waiting for HR to open the position';
+  if (progress.status === 'filled')
+    return `Hired — ${progress.hiredCount} of ${progress.headcount}`;
+  if (progress.status === 'closed') return 'HR closed the position without filling it';
+  if (progress.status === 'on_hold') return 'HR has put recruiting on hold';
+  return `HR is recruiting — ${progress.hiredCount} of ${progress.headcount} hired`;
 }

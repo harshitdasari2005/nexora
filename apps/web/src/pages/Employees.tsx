@@ -182,7 +182,7 @@ export function EmployeesView({
             <EmptyState
               icon="⚕"
               title="No employees yet"
-              description="Ask the AI: “Hire Priya and assign her to the Mobile Banking project.”"
+              description="People appear here once HR hires them for an approved hiring request."
             />
           </Card>
         ) : (
@@ -210,6 +210,21 @@ export function EmployeeRow({ employee }: { employee: EmployeeDto }): JSX.Elemen
       >
         <Stack gap={0.5} style={{ minWidth: 0 }}>
           <div style={{ fontWeight: typography.weights.semibold }}>{employee.name}</div>
+          {employee.jobTitle !== undefined || employee.department !== undefined ? (
+            <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+              {[employee.jobTitle, employee.department].filter(Boolean).join(' · ')}
+            </div>
+          ) : null}
+          {employee.email !== undefined || employee.startDate !== undefined ? (
+            <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+              {[
+                employee.email,
+                employee.startDate === undefined ? undefined : `starts ${employee.startDate}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+          ) : null}
           <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
             Joined{' '}
             {new Date(employee.createdAt).toLocaleDateString('en-US', {

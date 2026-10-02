@@ -355,6 +355,75 @@ export const REST_MUTATION_CLASSES: Readonly<Record<string, RestMutationEntry>> 
       },
     ],
   },
+  // --- Recruiting (HR's side of hiring) ----------------------------------------------------------------
+  'POST /api/recruiting/openings': {
+    class: 'domain_governed',
+    justification:
+      'recruiting.manage; a position can only be opened for a hiring request already approved by the executive and by Finance, once per request.',
+    proof: [
+      cap('recruiting.manage'),
+      {
+        in: 'domains/hr/application/src/services/recruiting-application-service.ts',
+        contains: "requisition.status !== 'approved'",
+      },
+    ],
+  },
+  'POST /api/recruiting/openings/:openingId/status': {
+    class: 'rbac',
+    justification:
+      'recruiting.manage; hold / resume / close an opening (closing needs a reason and no open offer).',
+    proof: [cap('recruiting.manage')],
+  },
+  'POST /api/recruiting/openings/:openingId/candidates': {
+    class: 'rbac',
+    justification: 'recruiting.manage; adds a candidate record to an opening that is recruiting.',
+    proof: [cap('recruiting.manage')],
+  },
+  'POST /api/recruiting/candidates/:candidateId/advance': {
+    class: 'rbac',
+    justification: 'recruiting.manage; the aggregate only allows the next pipeline stage.',
+    proof: [cap('recruiting.manage')],
+  },
+  'POST /api/recruiting/candidates/:candidateId/feedback': {
+    class: 'rbac',
+    justification:
+      'recruiting.interview + visibility of the opening (HR/executive, or the hiring manager of that opening); the interviewer is always the session user, once per stage.',
+    proof: [cap('recruiting.interview')],
+  },
+  'POST /api/recruiting/candidates/:candidateId/offer': {
+    class: 'domain_governed',
+    justification:
+      'recruiting.manage; the offer must be inside the salary range approved on the hiring request and must hold one of the approved seats (never more offers than headcount).',
+    proof: [
+      cap('recruiting.manage'),
+      {
+        in: 'domains/hr/src/entities/candidate.ts',
+        contains: 'The offer is outside the salary range approved for this hiring request',
+      },
+      {
+        in: 'domains/hr/src/entities/job-opening.ts',
+        contains: 'no seat is left for another offer',
+      },
+    ],
+  },
+  'POST /api/recruiting/candidates/:candidateId/offer/response': {
+    class: 'domain_governed',
+    justification:
+      'recruiting.manage; an offer is answered exactly once (optimistic write on the candidate); acceptance creates the employee record in `hired`.',
+    proof: [
+      cap('recruiting.manage'),
+      {
+        in: 'domains/hr/src/entities/candidate.ts',
+        contains: 'There is no open offer for this candidate',
+      },
+    ],
+  },
+  'POST /api/recruiting/candidates/:candidateId/close': {
+    class: 'rbac',
+    justification:
+      'recruiting.manage; reject / withdraw with a reason; a pending offer is rescinded and its seat released.',
+    proof: [cap('recruiting.manage')],
+  },
   'POST /api/workspaces': {
     class: 'rbac',
     justification: 'workspaces.create; no policy DENY rule governs the capability.',

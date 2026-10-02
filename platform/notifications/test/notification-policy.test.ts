@@ -73,6 +73,36 @@ describe('NotificationPolicy — recipient determination', () => {
     expect(returned.activity[0]?.body).toContain('by Finance');
   });
 
+  it("records HR's recruiting steps as activity, never exposing contact details or pay", () => {
+    const steps: [string, string][] = [
+      ['recruiting.opening.opened', 'Position opened'],
+      ['recruiting.opening.filled', 'Position filled'],
+      ['recruiting.candidate.added', 'Candidate added'],
+      ['recruiting.candidate.stage_changed', 'Candidate moved'],
+      ['recruiting.candidate.feedback_recorded', 'Interview feedback recorded'],
+      ['recruiting.offer.extended', 'Offer made'],
+      ['recruiting.offer.accepted', 'Offer accepted'],
+      ['recruiting.offer.declined', 'Offer declined'],
+    ];
+    for (const [type, title] of steps) {
+      const outcome = new NotificationPolicy().evaluate(
+        envelope(type, {
+          payload: {
+            title: 'Backend Developer',
+            candidateName: 'Sarah Thomas',
+            stage: 'interview',
+            // Fields a poisoned payload might carry must never surface.
+            email: 'sarah@example.com',
+            salaryMinorUnits: 200000000,
+          },
+        }),
+      );
+      expect(outcome.notifications, type).toEqual([]);
+      expect(outcome.activity[0], type).toMatchObject({ type, title, actorId: ACTOR });
+      expect(JSON.stringify(outcome.activity)).not.toMatch(/example\.com|200000000/);
+    }
+  });
+
   it('maps employee.created to an employee notification', () => {
     const outcome = new NotificationPolicy().evaluate(
       envelope('employee.created', { payload: { name: 'Sarah Chen' } }),

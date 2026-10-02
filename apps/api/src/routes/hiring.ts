@@ -25,8 +25,10 @@ import type { FastifyInstance, FastifyReply, FastifySchema } from 'fastify';
 import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import {
   toHiringRequisitionDto,
+  toJobOpeningDto,
   type HiringRequisitionApplicationService,
   type HiringRequisitionDto,
+  type RecruitingApplicationService,
 } from '@nexora/application-hr';
 import type { ListOrganizationsHandler } from '@nexora/application-organizations';
 import type { ListMyWorkspacesHandler } from '@nexora/application-workspaces';
@@ -135,6 +137,8 @@ const listSchema: FastifySchema = { querystring: scopeQuery };
 /** Dependencies of the hiring routes. */
 export interface HiringRoutesDependencies {
   requisitions: HiringRequisitionApplicationService;
+  /** HR's progress on an approved request (the opening and how many are hired). */
+  recruiting?: RecruitingApplicationService;
   /** Validates an optional target project belongs to the organization. */
   projects: ProjectRepository;
   listOrganizations: ListOrganizationsHandler;
@@ -158,6 +162,8 @@ interface RequisitionActions {
 type RequisitionView = HiringRequisitionDto & {
   requestedByName?: string;
   history: readonly (HiringRequisitionDto['history'][number] & { actorName?: string })[];
+  /** HR's progress, once a position has been opened for an approved request. */
+  recruiting?: { openingId: string; status: string; hiredCount: number; headcount: number };
   actions: RequisitionActions;
 };
 
@@ -232,9 +238,28 @@ export function registerHiringRoutes(
     const holdsStage = stage !== undefined && hasPermission(effective, STAGE_CAPABILITY[stage]);
     const blocker = holdsStage ? requisition.decisionBlocker(stage, userId) : undefined;
     const isRequester = requisition.requestedBy === userId;
+    const opening =
+      requisition.status === 'approved'
+        ? await dependencies.recruiting?.findOpeningForRequisition(
+            requisition.organizationId,
+            requisition.id,
+          )
+        : undefined;
+    const progress =
+      opening === undefined || opening === null ? undefined : toJobOpeningDto(opening);
     return {
       ...dto,
       ...(requestedByName === undefined ? {} : { requestedByName }),
+      ...(progress === undefined
+        ? {}
+        : {
+            recruiting: {
+              openingId: progress.id,
+              status: progress.status,
+              hiredCount: progress.hiredCount,
+              headcount: progress.headcount,
+            },
+          }),
       history,
       actions: {
         canDecide: holdsStage && blocker === undefined,

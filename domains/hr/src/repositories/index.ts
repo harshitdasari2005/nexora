@@ -10,8 +10,11 @@
 import type { TenantId } from '@nexora/contracts/common';
 
 import type { Employee } from '../entities/employee.js';
+import type { Candidate } from '../entities/candidate.js';
 import type { HiringRequisition } from '../entities/hiring-requisition.js';
+import type { JobOpening } from '../entities/job-opening.js';
 import type { EmployeeId } from '../value-objects/employee-id.js';
+import type { CandidateId, JobOpeningId } from '../value-objects/recruiting-ids.js';
 import type { RequisitionId } from '../value-objects/requisition-id.js';
 
 /**
@@ -56,4 +59,34 @@ export interface HiringRequisitionRepository {
    * @returns `true` when the row was updated; `false` when it had changed.
    */
   update(requisition: HiringRequisition, expectedVersion: number): Promise<boolean>;
+}
+
+/** The persistence port of the {@link JobOpening} aggregate. */
+export interface JobOpeningRepository {
+  findById(id: JobOpeningId): Promise<JobOpening | undefined>;
+  /** The opening created for a hiring request (at most one), tenant-scoped. */
+  findByRequisition(
+    organizationId: TenantId,
+    requisitionId: string,
+  ): Promise<JobOpening | undefined>;
+  /** Lists the organization's openings, newest first. */
+  listByOrganization(organizationId: TenantId): Promise<readonly JobOpening[]>;
+  /**
+   * Inserts a new opening.
+   *
+   * @returns `false` when the hiring request already has an opening (one per request).
+   */
+  insert(opening: JobOpening): Promise<boolean>;
+  /** Persists a change only while the row is still at `expectedVersion`. */
+  update(opening: JobOpening, expectedVersion: number): Promise<boolean>;
+}
+
+/** The persistence port of the {@link Candidate} aggregate. */
+export interface CandidateRepository {
+  findById(id: CandidateId): Promise<Candidate | undefined>;
+  /** Lists the candidates of one opening (tenant-scoped), oldest first. */
+  listByOpening(organizationId: TenantId, openingId: string): Promise<readonly Candidate[]>;
+  insert(candidate: Candidate): Promise<void>;
+  /** Persists a change only while the row is still at `expectedVersion`. */
+  update(candidate: Candidate, expectedVersion: number): Promise<boolean>;
 }

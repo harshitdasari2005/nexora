@@ -204,6 +204,13 @@
       "when": 1790920863435,
       "tag": "0028_hiring_requisitions",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790922209075,
+      "tag": "0029_recruiting",
+      "breakpoints": true
     }
   ]
 }

@@ -118,3 +118,4 @@ export function employeeOffboardedEvent(
 }
 
 export * from './requisition-events.js';
+export * from './recruiting-events.js';

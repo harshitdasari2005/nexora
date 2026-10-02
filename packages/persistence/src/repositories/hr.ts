@@ -11,7 +11,13 @@
 import { and, eq, ilike } from 'drizzle-orm';
 import type { TenantId } from '@nexora/contracts/common';
 import type { EmployeeRepository } from '@nexora/domain-hr';
-import { Employee, EmployeeId, EmployeeName, EmployeeStatus } from '@nexora/domain-hr';
+import {
+  Employee,
+  EmployeeId,
+  EmployeeName,
+  EmployeeStatus,
+  type EmployeeProfile,
+} from '@nexora/domain-hr';
 
 import type { NexoraDatabase } from '../db.js';
 import { employees } from '../schema/index.js';
@@ -28,6 +34,19 @@ function toDate(iso: string): Date {
 
 type EmployeeRow = typeof employees.$inferSelect;
 
+/** The employment details stored on a row (absent when none of them is set). */
+function profileOf(row: EmployeeRow): { profile?: EmployeeProfile } {
+  const profile: EmployeeProfile = {
+    ...(row.email === null ? {} : { email: row.email }),
+    ...(row.jobTitle === null ? {} : { jobTitle: row.jobTitle }),
+    ...(row.department === null ? {} : { department: row.department }),
+    ...(row.employmentType === null ? {} : { employmentType: row.employmentType }),
+    ...(row.startDate === null ? {} : { startDate: row.startDate }),
+    ...(row.requisitionId === null ? {} : { requisitionId: row.requisitionId }),
+  };
+  return Object.keys(profile).length === 0 ? {} : { profile };
+}
+
 /** Maps an employees row to a {@link Employee} snapshot. */
 function rowToEmployeeSnapshot(row: EmployeeRow): ReturnType<typeof Employee.snapshot> {
   return {
@@ -35,6 +54,7 @@ function rowToEmployeeSnapshot(row: EmployeeRow): ReturnType<typeof Employee.sna
     organizationId: row.organizationId as TenantId,
     name: EmployeeName.create(row.name).value,
     status: EmployeeStatus.from(row.status).value,
+    ...profileOf(row),
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
     version: row.version,
@@ -48,6 +68,12 @@ function employeeSnapshotToRow(snapshot: ReturnType<typeof Employee.snapshot>): 
     organizationId: snapshot.organizationId,
     name: snapshot.name,
     status: snapshot.status,
+    email: snapshot.profile?.email ?? null,
+    jobTitle: snapshot.profile?.jobTitle ?? null,
+    department: snapshot.profile?.department ?? null,
+    employmentType: snapshot.profile?.employmentType ?? null,
+    startDate: snapshot.profile?.startDate ?? null,
+    requisitionId: snapshot.profile?.requisitionId ?? null,
     createdAt: toDate(snapshot.createdAt),
     updatedAt: toDate(snapshot.updatedAt),
     version: snapshot.version,

@@ -48,6 +48,12 @@ export interface EmployeeDto {
   organizationId: string;
   name: string;
   status: string;
+  /** Employment details — present for people hired through recruiting. */
+  email?: string;
+  jobTitle?: string;
+  department?: string;
+  employmentType?: string;
+  startDate?: string;
   createdAt: string;
 }
 

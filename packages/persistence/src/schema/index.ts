@@ -238,6 +238,14 @@ export const employees = pgTable(
     organizationId: varchar('organization_id', { length: 64 }).notNull(),
     name: varchar('name', { length: 160 }).notNull(),
     status: varchar('status', { length: 32 }).notNull(),
+    // Employment details captured when a person is hired through recruiting
+    // (all nullable: records created before recruiting carry a name only).
+    email: varchar('email', { length: 254 }),
+    jobTitle: varchar('job_title', { length: 120 }),
+    department: varchar('department', { length: 80 }),
+    employmentType: varchar('employment_type', { length: 32 }),
+    startDate: varchar('start_date', { length: 10 }),
+    requisitionId: varchar('requisition_id', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
     version: integer('version').notNull().default(1),
@@ -281,6 +289,73 @@ export const hiringRequisitions = pgTable(
     index('hiring_requisitions_org_idx').on(table.organizationId, table.createdAt),
     index('hiring_requisitions_requester_idx').on(table.organizationId, table.requestedBy),
   ],
+);
+
+/**
+ * job_openings — the {@link @nexora/domain-hr!JobOpening} aggregate: the
+ * position HR opens for an approved hiring request (exactly one per request).
+ * `offers_out` + `hired_count` never exceed `headcount`.
+ */
+export const jobOpenings = pgTable(
+  'job_openings',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    requisitionId: varchar('requisition_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    hiringManagerId: varchar('hiring_manager_id', { length: 64 }).notNull(),
+    openedBy: varchar('opened_by', { length: 64 }).notNull(),
+    title: varchar('title', { length: 120 }).notNull(),
+    department: varchar('department', { length: 80 }).notNull(),
+    headcount: integer('headcount').notNull(),
+    employmentType: varchar('employment_type', { length: 32 }).notNull(),
+    salaryMinMinorUnits: bigint('salary_min_minor_units', { mode: 'number' }).notNull(),
+    salaryMaxMinorUnits: bigint('salary_max_minor_units', { mode: 'number' }).notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    description: text('description').notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    offersOut: integer('offers_out').notNull().default(0),
+    hiredCount: integer('hired_count').notNull().default(0),
+    closedReason: varchar('closed_reason', { length: 500 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('job_openings_org_idx').on(table.organizationId, table.createdAt),
+    // One opening per hiring request: a duplicate "open position" cannot be created.
+    uniqueIndex('job_openings_requisition_unique').on(table.organizationId, table.requisitionId),
+  ],
+);
+
+/**
+ * candidates — the {@link @nexora/domain-hr!Candidate} aggregate: one person
+ * considered for one opening. `feedback`, `offer` and `history` are owned by
+ * the aggregate; `version` guards every update.
+ */
+export const candidates = pgTable(
+  'candidates',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    openingId: varchar('opening_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    name: varchar('name', { length: 160 }).notNull(),
+    email: varchar('email', { length: 254 }).notNull(),
+    phone: varchar('phone', { length: 40 }),
+    source: varchar('source', { length: 32 }).notNull(),
+    resumeNotes: text('resume_notes'),
+    stage: varchar('stage', { length: 32 }).notNull(),
+    feedback: jsonb('feedback').notNull(),
+    offer: jsonb('offer'),
+    closedReason: varchar('closed_reason', { length: 500 }),
+    employeeId: varchar('employee_id', { length: 64 }),
+    history: jsonb('history').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [index('candidates_opening_idx').on(table.organizationId, table.openingId)],
 );
 
 /**

@@ -12,7 +12,12 @@ import type { EventPublisher } from '@nexora/shared/events';
 import type { MembershipRepository, OrganizationRepository } from '@nexora/domain-organizations';
 import type { RoleRepository, SessionRepository, UserRepository } from '@nexora/domain-identity';
 import type { ProjectRepository, ResourceAssignmentRepository } from '@nexora/domain-projects';
-import type { EmployeeRepository, HiringRequisitionRepository } from '@nexora/domain-hr';
+import type {
+  CandidateRepository,
+  EmployeeRepository,
+  HiringRequisitionRepository,
+  JobOpeningRepository,
+} from '@nexora/domain-hr';
 import type {
   DocumentRepository,
   DocumentTemplateRepository,
@@ -99,6 +104,7 @@ import {
   RevokeHireHandler,
   EmployeeApplicationService,
   HiringRequisitionApplicationService,
+  RecruitingApplicationService,
   FindEmployeeByNameHandler,
   ListEmployeesByIdsHandler,
   ListEmployeesHandler,
@@ -196,6 +202,8 @@ export interface RepositorySet {
   resourceAssignments: ResourceAssignmentRepository;
   employees: EmployeeRepository;
   hiringRequisitions: HiringRequisitionRepository;
+  jobOpenings: JobOpeningRepository;
+  candidates: CandidateRepository;
   documents: DocumentRepository;
   documentVersions: DocumentVersionRepository;
   documentTemplates: DocumentTemplateRepository;
@@ -277,6 +285,8 @@ export interface Container {
   createEmployee: CreateEmployeeHandler;
   /** The hiring request chain (raise → executive → finance). */
   hiringRequisitions: HiringRequisitionApplicationService;
+  /** HR's side of hiring: openings, candidates, offers, the hire. */
+  recruiting: RecruitingApplicationService;
   /** Hire compensation (the workflow rollback of the hire step). */
   revokeHire: RevokeHireHandler;
   /** Employee listing handler. */
@@ -512,6 +522,13 @@ export function buildContainer(options: BuildContainerOptions): Container {
     requisitions: repositories.hiringRequisitions,
     publisher,
   });
+  const recruitingService = new RecruitingApplicationService({
+    openings: repositories.jobOpenings,
+    candidates: repositories.candidates,
+    requisitions: repositories.hiringRequisitions,
+    employeesService,
+    publisher,
+  });
   const documentService = new DocumentApplicationService({
     documentsService,
     documents: repositories.documents,
@@ -573,6 +590,7 @@ export function buildContainer(options: BuildContainerOptions): Container {
     listProjectMembers: new ListProjectMembersHandler(projectService),
     createEmployee: new CreateEmployeeHandler(employeeService),
     hiringRequisitions: hiringRequisitionService,
+    recruiting: recruitingService,
     revokeHire: new RevokeHireHandler(employeeService),
     listEmployees: new ListEmployeesHandler(employeeService),
     findEmployeeByName: new FindEmployeeByNameHandler(employeeService),

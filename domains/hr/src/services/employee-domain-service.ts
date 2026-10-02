@@ -13,7 +13,7 @@ import type { Result } from '@nexora/shared/result';
 import { ok, err } from '@nexora/shared/result';
 import type { TenantId } from '@nexora/contracts/common';
 
-import { Employee } from '../entities/employee.js';
+import { Employee, type EmployeeProfile } from '../entities/employee.js';
 import type { EmployeeEventContext } from '../events/index.js';
 import {
   EmployeeNotFoundError,
@@ -32,6 +32,8 @@ export interface CreateEmployeeCommand {
   organizationId: TenantId;
   /** The employee name. */
   name: string;
+  /** The employment details known at hire, when there are any. */
+  profile?: EmployeeProfile;
 }
 
 /** The outcome of an employee command: the aggregate plus emitted events. */
@@ -90,6 +92,7 @@ export class EmployeeDomainService {
         {
           organizationId: input.organizationId,
           name: input.name,
+          ...(input.profile === undefined ? {} : { profile: input.profile }),
         },
         context,
       );

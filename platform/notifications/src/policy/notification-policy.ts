@@ -291,6 +291,69 @@ export class NotificationPolicy {
               : [{ workspaceId, type: event.type, title: text.title, body: text.body, actorId }],
         };
       }
+      // HR's recruiting steps are part of the same auditable hiring trail.
+      // Activity only; the text names the role and the candidate, never contact
+      // details or an offer amount (those are not on the event at all).
+      case 'recruiting.opening.opened':
+      case 'recruiting.opening.status_changed':
+      case 'recruiting.opening.filled':
+      case 'recruiting.candidate.added':
+      case 'recruiting.candidate.stage_changed':
+      case 'recruiting.candidate.feedback_recorded':
+      case 'recruiting.offer.extended':
+      case 'recruiting.offer.accepted':
+      case 'recruiting.offer.declined': {
+        const role = readString(event.payload, 'title') ?? 'the role';
+        const candidate = readString(event.payload, 'candidateName') ?? 'A candidate';
+        const stage = readString(event.payload, 'stage') ?? 'the next stage';
+        const status = readString(event.payload, 'status') ?? 'updated';
+        const wording: Record<string, { title: string; body: string }> = {
+          'recruiting.opening.opened': {
+            title: 'Position opened',
+            body: `HR opened the position for ${role}.`,
+          },
+          'recruiting.opening.status_changed': {
+            title: 'Position updated',
+            body: `The position for ${role} is now ${status.replace('_', ' ')}.`,
+          },
+          'recruiting.opening.filled': {
+            title: 'Position filled',
+            body: `Every approved seat for ${role} has been hired.`,
+          },
+          'recruiting.candidate.added': {
+            title: 'Candidate added',
+            body: `${candidate} was added as a candidate.`,
+          },
+          'recruiting.candidate.stage_changed': {
+            title: 'Candidate moved',
+            body: `${candidate} is now at: ${stage}.`,
+          },
+          'recruiting.candidate.feedback_recorded': {
+            title: 'Interview feedback recorded',
+            body: `Interview feedback was recorded for ${candidate}.`,
+          },
+          'recruiting.offer.extended': {
+            title: 'Offer made',
+            body: `An offer was made to ${candidate}.`,
+          },
+          'recruiting.offer.accepted': {
+            title: 'Offer accepted',
+            body: `${candidate} accepted the offer and was hired.`,
+          },
+          'recruiting.offer.declined': {
+            title: 'Offer declined',
+            body: `${candidate} declined the offer.`,
+          },
+        };
+        const text = wording[event.type];
+        return {
+          notifications: [],
+          activity:
+            text === undefined
+              ? []
+              : [{ workspaceId, type: event.type, title: text.title, body: text.body, actorId }],
+        };
+      }
       case 'workflow.completed':
         return {
           notifications: actorId

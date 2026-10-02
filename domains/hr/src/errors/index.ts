@@ -108,3 +108,31 @@ export class RequisitionConflictError extends HrDomainError {
     );
   }
 }
+
+/** The job opening does not exist (or is not visible to the caller). */
+export class JobOpeningNotFoundError extends HrDomainError {
+  constructor(details?: unknown) {
+    super('Job opening not found', 'NOT_FOUND', details);
+  }
+}
+
+/** The candidate does not exist (or is not visible to the caller). */
+export class CandidateNotFoundError extends HrDomainError {
+  constructor(details?: unknown) {
+    super('Candidate not found', 'NOT_FOUND', details);
+  }
+}
+
+/** A recruiting step was attempted that the current state forbids. */
+export class RecruitingStateError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'BUSINESS_RULE_VIOLATION', details);
+  }
+}
+
+/** A recruiting record changed since it was read (a concurrent change won). */
+export class RecruitingConflictError extends HrDomainError {
+  constructor(message = 'This record was changed by someone else — reload and try again') {
+    super(message, 'CONFLICT');
+  }
+}

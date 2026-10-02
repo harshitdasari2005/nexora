@@ -26,7 +26,9 @@ import {
   PgEmailOutboxRepository,
   PgInboundMessageRepository,
   PgEmployeeRepository,
+  PgCandidateRepository,
   PgHiringRequisitionRepository,
+  PgJobOpeningRepository,
   PgKnowledgeArticleRepository,
   PgKnowledgeCategoryRepository,
   PgKnowledgeIndexStore,
@@ -129,6 +131,7 @@ import { registerFinanceRoutes } from './routes/finance.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
 import { registerHiringRoutes } from './routes/hiring.js';
+import { registerRecruitingRoutes } from './routes/recruiting.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { registerDomainRoutes } from './routes/domains.js';
@@ -324,18 +327,28 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listOrganizations: container.listOrganizations,
     permissions: rbac,
   });
+  // Display names only — never an email fallback (same rule as the governance read models).
+  const hiringDisplayName = async (userId: string): Promise<string | undefined> => {
+    const user = await repositories.users.findById(userId as never);
+    const displayName = user?.profile.displayName.value;
+    return displayName === undefined || displayName.length === 0 ? undefined : displayName;
+  };
   registerHiringRoutes(app, {
     requisitions: container.hiringRequisitions,
+    recruiting: container.recruiting,
     projects: repositories.projects,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
-    // Display names only — never an email fallback (same rule as the governance read models).
-    resolveUserName: async (userId) => {
-      const user = await repositories.users.findById(userId as never);
-      const displayName = user?.profile.displayName.value;
-      return displayName === undefined || displayName.length === 0 ? undefined : displayName;
-    },
+    resolveUserName: hiringDisplayName,
+  });
+  registerRecruitingRoutes(app, {
+    recruiting: container.recruiting,
+    requisitions: container.hiringRequisitions,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
   });
   registerDocumentRoutes(app, {
     uploadDocument: container.uploadDocument,
@@ -1085,6 +1098,8 @@ export function buildPgRepositories(
     resourceAssignments: new PgResourceAssignmentRepository(database),
     employees: new PgEmployeeRepository(database),
     hiringRequisitions: new PgHiringRequisitionRepository(database),
+    jobOpenings: new PgJobOpeningRepository(database),
+    candidates: new PgCandidateRepository(database),
     documents: new PgDocumentRepository(database),
     documentVersions: new PgDocumentVersionRepository(database),
     documentTemplates: new PgDocumentTemplateRepository(database),
