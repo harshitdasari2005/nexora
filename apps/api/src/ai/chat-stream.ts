@@ -6,14 +6,6 @@
  * SPA can render progressively (FRONTEND.md §6 streaming responses).
  */
 
-/** A single SSE event to write to the wire. */
-export interface SseEvent {
-  /** The event name. */
-  event: string;
-  /** The event payload (serialized as JSON). */
-  data: unknown;
-}
-
 /** Formats one event into the SSE wire format (`event:` + `data:` + blank line). */
 export function formatSse(event: string, data: unknown): string {
   const payload = typeof data === 'string' ? data : JSON.stringify(data);

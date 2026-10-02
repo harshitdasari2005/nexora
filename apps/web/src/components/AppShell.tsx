@@ -13,10 +13,8 @@
  * can opt into the design system's dark palette from the top-bar toggle
  * (`ThemeToggle` → `useThemeMode` → `<html data-theme="dark">`), persisted
  * per browser and applied before first paint by a script in `index.html`.
- * The S39–S41
- * cinematic 3D ambient background (`DigitalHeadquarters`/
- * `IntelligenceNetwork`) was retired from the authenticated shell entirely
- * — it stays on Login only, which keeps its own separate composition.
+ * The S39–S41 cinematic 3D ambient background was retired from the
+ * authenticated shell entirely.
  *
  * S33: the shell's accent, navigation priority, and role badge are driven
  * by the caller's RESOLVED business role (`RoleThemeContext`) rather than

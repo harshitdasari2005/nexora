@@ -34,7 +34,7 @@
  * Every value is fictional application data for demonstration.
  */
 
-import { deterministicId, WorldBuilder, type ScenarioWorld } from '@nexora/evaluation';
+import { WorldBuilder, type ScenarioWorld } from '@nexora/evaluation';
 
 /** The world id (also its deterministic-id namespace). */
 export const DEMO_WORLD_ID = 'nexora-demo-v1';
@@ -460,9 +460,4 @@ export function demoIds(world: ScenarioWorld = buildDemoWorld()): DemoIds {
     budgetId: entity('mobile-delivery'),
     projectId: entity('mobile-banking'),
   };
-}
-
-/** A stable id derived in the demo namespace (exported for tests). */
-export function demoDeterministicId(prefix: string, name: string): string {
-  return deterministicId(prefix, `${DEMO_WORLD_ID}/${name}`);
 }

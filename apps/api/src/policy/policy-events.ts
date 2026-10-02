@@ -7,11 +7,7 @@
  * type, the config HASH and the actor — NEVER configuration values.
  */
 
-import {
-  createEventEnvelope,
-  type EventEnvelope,
-  type EventPublisher,
-} from '@nexora/shared/events';
+import { createEventEnvelope, type EventEnvelope } from '@nexora/shared/events';
 
 export const POLICY_VERSION_CREATED_EVENT = 'policy.version_created';
 export const POLICY_ENABLED_EVENT = 'policy.enabled';
@@ -100,12 +96,4 @@ export function policyAdminDeniedEvent(input: PolicyAdminDeniedEventInput): Even
     },
     metadata: METADATA,
   });
-}
-
-/** Publishes policy events best-effort-safe: a projection failure never breaks the caller. */
-export async function publishPolicyEvents(
-  publisher: EventPublisher,
-  events: readonly EventEnvelope[],
-): Promise<void> {
-  await publisher.publish([...events]);
 }

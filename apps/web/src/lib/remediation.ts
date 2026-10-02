@@ -9,7 +9,7 @@
  * `./chat.js`) — one approval path, same as the Agent page.
  */
 
-import { api, ApiError } from './api.js';
+import { api } from './api.js';
 import type { RemediationPlanDto } from './types.js';
 
 /** The tenant/workspace scope of a remediation request. */
@@ -84,22 +84,4 @@ export async function fetchRemediationPlans(
 ): Promise<readonly RemediationPlanDto[]> {
   const result = await api<{ plans: readonly RemediationPlanDto[] }>(`/plans${scopeSuffix(scope)}`);
   return result.plans;
-}
-
-/** Resolves one plan by id (tenant-scoped; forged ids resolve to 404). */
-export async function fetchRemediationPlan(
-  scope: RemediationScope,
-  planId: string,
-): Promise<RemediationPlanDto | undefined> {
-  try {
-    const result = await api<{ plan: RemediationPlanDto }>(
-      `/plans/${encodeURIComponent(planId)}${scopeSuffix(scope)}`,
-    );
-    return result.plan;
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) {
-      return undefined;
-    }
-    throw error;
-  }
 }

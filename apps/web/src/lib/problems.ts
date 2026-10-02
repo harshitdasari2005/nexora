@@ -42,14 +42,3 @@ export async function scanProblems(scope: ProblemsScope): Promise<readonly Busin
   );
   return result.problems;
 }
-
-/** Resolves one problem by id (tenant-scoped). */
-export async function fetchProblem(
-  scope: ProblemsScope,
-  problemId: string,
-): Promise<BusinessProblemDto> {
-  const result = await api<{ problem: BusinessProblemDto }>(
-    `/problems/${encodeURIComponent(problemId)}${scopeSuffix(scope)}`,
-  );
-  return result.problem;
-}

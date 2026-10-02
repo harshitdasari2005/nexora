@@ -23,11 +23,7 @@
  * that fail produce no proposals (fail safe, no internals leaked).
  */
 
-import type {
-  ActionProposal,
-  AgentTargetSystem,
-  BusinessAgentDefinition,
-} from '@nexora/contracts/agent';
+import type { ActionProposal, BusinessAgentDefinition } from '@nexora/contracts/agent';
 import type { AgentProposalProvider, BusinessAgentContext } from '@nexora/module-agents';
 import type { GetTenantMeasurementsHandler } from '@nexora/module-measurements';
 import type { ListProjectsHandler } from '@nexora/application-projects';
@@ -47,23 +43,6 @@ export interface AgentProposalProviderDependencies {
 
 /** The maximum number of items considered per proposal source. */
 const SIGNAL_LIMIT = 8;
-
-/** Maps a capability id to the target system it acts on (WHERE). */
-export function targetSystemFor(capabilityId: string): AgentTargetSystem {
-  if (capabilityId.startsWith('github.')) {
-    return 'github';
-  }
-  if (capabilityId.startsWith('slack.')) {
-    return 'slack';
-  }
-  if (capabilityId.startsWith('calendar.')) {
-    return 'calendar';
-  }
-  if (capabilityId.startsWith('email.')) {
-    return 'email';
-  }
-  return 'nexora';
-}
 
 /** The agent goal that focuses on a capability, when one exists (proposal → goal linkage). */
 function goalIdFor(agent: BusinessAgentDefinition, capabilityId: string): string | undefined {

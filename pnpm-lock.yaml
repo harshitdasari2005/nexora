@@ -24,22 +24,6 @@ importers:
         specifier: ^8.0.0
         version: 8.66.0(eslint@9.39.5)(typescript@5.9.3)
 
-  apps/admin:
-    dependencies:
-      '@nexora/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@nexora/design-system':
-        specifier: workspace:*
-        version: link:../../packages/design-system
-    devDependencies:
-      typescript:
-        specifier: ^5.5.0
-        version: 5.9.3
-      vitest:
-        specifier: ^2.0.0
-        version: 2.1.9(@types/node@22.20.1)
-
   apps/api:
     dependencies:
       '@fastify/cookie':
@@ -197,12 +181,6 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)
 
-  apps/docs:
-    devDependencies:
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
-
   apps/web:
     dependencies:
       '@nexora/contracts':
@@ -237,18 +215,6 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)
 
-  domains/administration:
-    devDependencies:
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
-
-  domains/analytics:
-    devDependencies:
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
-
   domains/calendar:
     dependencies:
       '@nexora/contracts':
@@ -273,12 +239,6 @@ importers:
       '@nexora/shared':
         specifier: workspace:*
         version: link:../../../packages/shared
-    devDependencies:
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
-
-  domains/crm:
     devDependencies:
       vitest:
         specifier: ^2.1.0
@@ -400,12 +360,6 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)
 
-  domains/inventory:
-    devDependencies:
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
-
   domains/knowledge:
     dependencies:
       '@nexora/contracts':
@@ -433,12 +387,6 @@ importers:
       '@nexora/shared':
         specifier: workspace:*
         version: link:../../../packages/shared
-    devDependencies:
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
-
-  domains/marketplace:
     devDependencies:
       vitest:
         specifier: ^2.1.0
@@ -473,12 +421,6 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@22.20.1)
 
-  domains/procurement:
-    devDependencies:
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
-
   domains/projects:
     dependencies:
       '@nexora/contracts':
@@ -503,12 +445,6 @@ importers:
       '@nexora/shared':
         specifier: workspace:*
         version: link:../../../packages/shared
-    devDependencies:
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
-
-  domains/sales:
     devDependencies:
       vitest:
         specifier: ^2.1.0
@@ -774,12 +710,6 @@ importers:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@20.19.43)
 
-  platform/configuration:
-    devDependencies:
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
-
   platform/connectors:
     dependencies:
       '@nexora/shared':
@@ -827,12 +757,6 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@20.19.43)
-
-  platform/event-bus:
-    devDependencies:
-      vitest:
-        specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.1)
 
   platform/integrations:
     dependencies:

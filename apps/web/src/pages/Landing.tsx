@@ -27,8 +27,7 @@
  * see the encode pipeline for why that's affordable now.
  *
  * This is the ONLY page carrying this visual system: the authenticated
- * application, Login's own composition (still `IntelligenceNetwork` /
- * `DigitalHeadquarters`), and Command Center are unchanged.
+ * application and Command Center are unchanged.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
