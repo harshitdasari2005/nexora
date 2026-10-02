@@ -28,6 +28,7 @@ import {
   PgInboundMessageRepository,
   PgEmployeeRepository,
   PgOfficeRequestRepository,
+  PgWorkspaceInviteRepository,
   PgProjectTaskRepository,
   createTransactionalDatabase,
   PgCandidateRepository,
@@ -144,6 +145,10 @@ import { OfficeAi } from './office/office-ai.js';
 import { registerOfficeRequestRoutes } from './routes/office-requests.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { registerTaskRoutes } from './routes/tasks.js';
+import { registerPeopleRoutes } from './routes/people.js';
+import { createStaffing } from './office/staffing.js';
+import { MembershipDomainService } from '@nexora/domain-organizations';
+import { WorkspaceMembershipService } from '@nexora/domain-workspaces';
 import { registerRecruitingRoutes } from './routes/recruiting.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
@@ -284,6 +289,12 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   // (Command Center, AI, agent) already uses, never a second authorization
   // system.
   const rbac = { roleResolver: businessRoleResolver, catalog: domainCatalog };
+  // Who holds which seat: a workflow stage nobody can take falls to the executive.
+  const staffing = createStaffing({
+    workspaces: repositories.workspaces,
+    workspaceMemberships: repositories.workspaceMemberships,
+    catalog: domainCatalog,
+  });
 
   // The integration application service is composed AFTER the AI runtime
   // (its inbound router targets the existing ApprovalEngine); the webhook
@@ -312,7 +323,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         requests: repositories.officeRequests,
         tasks: repositories.projectTasks,
         projects: repositories.projects,
-        authority: createRequestAuthority(rbac),
+        authority: createRequestAuthority(rbac, staffing),
         permissions: rbac,
         personaOfUser: (userId) => demo.personaOfUser(userId),
         readHiringFacts: (organizationId) =>
@@ -427,6 +438,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
+    staffing,
     resolveUserName: hiringDisplayName,
     // An approved project proposal opens the project it proposed, so the team
     // can be given tasks on it. A project of that name already existing is fine.
@@ -448,6 +460,26 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         correlationId,
       });
     },
+  });
+  registerPeopleRoutes(app, {
+    organizations: repositories.organizations,
+    memberships: repositories.memberships,
+    workspaces: repositories.workspaces,
+    workspaceMemberships: repositories.workspaceMemberships,
+    invites: repositories.invites,
+    organizationMembers: new MembershipDomainService({
+      memberships: repositories.memberships,
+      organizations: repositories.organizations,
+    }),
+    teamMembers: new WorkspaceMembershipService({
+      memberships: repositories.workspaceMemberships,
+      workspaces: repositories.workspaces,
+    }),
+    listOrganizations: container.listOrganizations,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
+    publish: (events) => publisher.publish(events),
+    ...(repositories.atomically === undefined ? {} : { atomically: repositories.atomically }),
   });
   registerTaskRoutes(app, {
     tasks: repositories.projectTasks,
@@ -1210,9 +1242,12 @@ export function buildPgRepositories(
     sessions: new PgSessionRepository(database),
     roles: new PgRoleRepository(database),
     organizations: new PgOrganizationRepository(database),
-    memberships: new PgMembershipRepository(database),
+    // Memberships join the same transaction: taking an invited seat adds the
+    // organization membership, the team seat and uses the link, or none of it.
+    memberships: new PgMembershipRepository(people.database),
     workspaces: new PgWorkspaceRepository(database),
-    workspaceMemberships: new PgWorkspaceMembershipRepository(database),
+    workspaceMemberships: new PgWorkspaceMembershipRepository(people.database),
+    invites: new PgWorkspaceInviteRepository(people.database),
     workspaceInstallations: new PgWorkspaceInstallationRepository(database),
     projects: new PgProjectRepository(database),
     resourceAssignments: new PgResourceAssignmentRepository(database),

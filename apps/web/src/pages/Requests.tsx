@@ -323,6 +323,13 @@ export function WorkflowPicker({
   );
 }
 
+/** What to say about a step whose seat nobody in the organization holds yet. */
+export function vacancyNote(canDecide: boolean): string {
+  return canDecide
+    ? 'Nobody holds this seat yet, so this step comes to you as chief executive.'
+    : 'Nobody holds this seat yet. Until someone joins that team, the step waits for the chief executive (who cannot approve their own request).';
+}
+
 /** The form of one workflow, with the assistant's "fill it in from a sentence". */
 export function RequestForm({
   scope,
@@ -607,6 +614,15 @@ export function RequestCard({
             Refused by {refusal.actorName ?? 'the approver'}: “{refusal.comment}”
           </p>
         )}
+
+        {pending?.vacant === true ? (
+          <p
+            role="note"
+            style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}
+          >
+            {vacancyNote(actions.canDecide)}
+          </p>
+        ) : null}
 
         {actions.canDecide && pending !== undefined ? (
           <Stack gap={3} stretch>

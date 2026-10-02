@@ -42,6 +42,10 @@ const ALLOWLIST: ReadonlySet<string> = new Set([
   'POST /api/notifications/:id/read',
   'POST /api/notifications/read-all',
   'PUT /api/notifications/preferences',
+  // Self-scoped: the signed-in caller takes the ONE seat a one-time invite
+  // link was made for. They are not a member yet, so there is no role to
+  // resolve; the link's secret (hashed, single-use, expiring) is the control.
+  'POST /api/invites/accept',
   // Membership-gated; every tool the AI can invoke is itself
   // capability-gated and discovery is permission-filtered (the S34
   // boundary — a chat turn is not a privileged action on its own).

@@ -1525,3 +1525,30 @@ export const projectTasks = pgTable(
     index('project_tasks_project_idx').on(table.organizationId, table.projectId),
   ],
 );
+
+/**
+ * workspace_invites — one-time links that bring a person into a team
+ * ({@link @nexora/domain-workspaces!WorkspaceInvite}). Only the hash of the
+ * link's secret is stored.
+ */
+export const workspaceInvites = pgTable(
+  'workspace_invites',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    seat: varchar('seat', { length: 32 }).notNull(),
+    tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+    label: varchar('label', { length: 120 }).notNull(),
+    createdBy: varchar('created_by', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedBy: varchar('used_by', { length: 64 }),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('workspace_invites_token_unique').on(table.tokenHash),
+    index('workspace_invites_org_idx').on(table.organizationId, table.createdAt),
+  ],
+);

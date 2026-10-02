@@ -142,6 +142,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'organization.read',
       'workspaces.list',
       'workspaces.create',
+      'members.manage',
       'projects.read',
       'projects.create',
       'projects.assign',
@@ -252,6 +253,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     capabilityIds: [
       'employees.read',
       'employees.manage',
+      'members.manage',
       'documents.read',
       'problems.read',
       'agent.use',
@@ -850,6 +852,12 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     name: 'Create Workspaces',
     description:
       'Create a workspace (existing surface: workspace creation + AI create-workspace tool)',
+  },
+  {
+    id: 'members.manage',
+    name: 'Bring People In',
+    description:
+      'Invite a person to a seat in a team of the organization, and take an unused invitation back',
   },
   {
     id: 'projects.assign',

@@ -67,6 +67,8 @@ export interface OfficeRequest {
     kind: StageKind;
     noteRequired: boolean;
     noteLabel?: string;
+    /** Nobody in the organization holds this seat yet: it falls to the chief executive. */
+    vacant?: boolean;
   };
   stages: readonly { key: string; label: string; kind: StageKind; state: StageState }[];
   requestedBy: string;

@@ -28,3 +28,13 @@ export { WorkspaceSearchBinding } from './workspace-search-binding.js';
 export { WorkspaceNotificationBinding } from './workspace-notification-binding.js';
 export { WorkspaceMembership, type AddMemberInput } from './workspace-membership.js';
 export { WorkspaceInstallation, type InstallPluginInput } from './workspace-installation.js';
+export {
+  INVITE_LIFETIME_DAYS,
+  INVITE_SEATS,
+  inviteExpiry,
+  inviteStatus,
+  type InviteSeat,
+  type InviteStatus,
+  type WorkspaceInvite,
+  type WorkspaceInviteRepository,
+} from './workspace-invite.js';

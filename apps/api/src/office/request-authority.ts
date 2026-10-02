@@ -5,7 +5,10 @@
  * resolved role in the workspace they act from. The manager seat belongs to a
  * manager of the team the request was raised from, a step that belongs to the
  * requester can be taken only by them, and a decision that would fall to its
- * own requester goes up to the executive.
+ * own requester goes up to the executive. A seat nobody in the organization
+ * holds yet (a young office without that department) falls to the executive
+ * too, so no request waits for a person who does not exist. Nobody decides
+ * their own request, whoever they are.
  *
  * One place decides this, for the routes and for anything that needs to know
  * whose turn it is (the guided demo).
@@ -20,6 +23,7 @@ import {
   type PermissionResolverDependencies,
 } from '../business-context/permissions.js';
 import type { OfficeScope } from '../routes/office-scope.js';
+import type { Staffing, StaffingSnapshot } from './staffing.js';
 
 /** The capability that grants each seat (the requester's own seat needs none). */
 export const SEAT_CAPABILITY: Record<Exclude<WorkflowSeat, 'requester'>, string> = {
@@ -56,6 +60,15 @@ export interface RequestAuthority {
     effective: EffectivePermissions | undefined,
     userId: string,
   ): Promise<boolean>;
+  /**
+   * Whether NOBODY holds this seat for this request: no manager in the
+   * request's own team, or nobody in the organization for any other seat.
+   */
+  seatIsVacant(
+    request: OfficeRequest,
+    seat: WorkflowSeat,
+    effective: EffectivePermissions | undefined,
+  ): Promise<boolean>;
   /** Whether the caller may take the stage the request is waiting at. */
   mayTakePending(
     request: OfficeRequest,
@@ -68,7 +81,39 @@ export interface RequestAuthority {
 /** Builds the authority questions over the platform's role resolver. */
 export function createRequestAuthority(
   permissions: PermissionResolverDependencies,
+  staffing?: Staffing,
 ): RequestAuthority {
+  // Staffing is read once per caller per call: the resolved permissions object
+  // lives exactly as long as one request is being answered.
+  const staffingOf = new WeakMap<object, Map<string, Promise<StaffingSnapshot>>>();
+  const readStaffing = (
+    organizationId: string,
+    effective: EffectivePermissions | undefined,
+  ): Promise<StaffingSnapshot> | undefined => {
+    if (staffing === undefined) return undefined;
+    if (effective === undefined) return staffing.read(organizationId);
+    let perCaller = staffingOf.get(effective);
+    if (perCaller === undefined) {
+      perCaller = new Map();
+      staffingOf.set(effective, perCaller);
+    }
+    let snapshot = perCaller.get(organizationId);
+    if (snapshot === undefined) {
+      snapshot = staffing.read(organizationId);
+      perCaller.set(organizationId, snapshot);
+    }
+    return snapshot;
+  };
+
+  const seatIsVacant: RequestAuthority['seatIsVacant'] = async (request, seat, effective) => {
+    if (seat === 'requester') return false;
+    const snapshot = await readStaffing(request.organizationId, effective);
+    if (snapshot === undefined) return false;
+    const held =
+      seat === 'manager' ? snapshot.byTeam.get(request.workspaceId) : snapshot.organization;
+    return held?.has(SEAT_CAPABILITY[seat]) !== true;
+  };
+
   const holdsSeat: RequestAuthority['holdsSeat'] = (request, seat, scope, effective, userId) => {
     if (seat === 'requester') return request.requestedBy === userId;
     return (
@@ -84,10 +129,13 @@ export function createRequestAuthority(
     effective,
     userId,
   ) => {
-    if (stage.kind !== 'decide' || stage.seat === 'requester') return false;
+    if (stage.seat === 'requester') return false;
     if (!hasPermission(effective, EXECUTIVE_CAPABILITY) || request.requestedBy === userId) {
       return false;
     }
+    // A seat nobody holds yet: the executive covers it, work and decisions alike.
+    if (await seatIsVacant(request, stage.seat, effective)) return true;
+    if (stage.kind !== 'decide') return false;
     const requesters = await resolveEffectivePermissions(permissions, {
       userId: request.requestedBy,
       tenantId: request.organizationId,
@@ -110,5 +158,5 @@ export function createRequestAuthority(
     );
   };
 
-  return { holdsSeat, escalatesToExecutive, mayTakePending };
+  return { holdsSeat, escalatesToExecutive, seatIsVacant, mayTakePending };
 }

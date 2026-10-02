@@ -10,6 +10,7 @@ export * from './hr.js';
 export * from './hiring-requisitions.js';
 export * from './recruiting.js';
 export * from './office-work.js';
+export * from './invites.js';
 export * from './resource-assignments.js';
 export * from './workflows.js';
 export * from './documents.js';

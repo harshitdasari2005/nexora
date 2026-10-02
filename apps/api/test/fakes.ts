@@ -78,6 +78,8 @@ import type {
   Workspace,
   WorkspaceInstallation,
   WorkspaceInstallationRepository,
+  WorkspaceInvite,
+  WorkspaceInviteRepository,
   WorkspaceMembership,
   WorkspaceMembershipRepository,
   WorkspaceRepository,
@@ -1539,6 +1541,46 @@ export class FakeProjectTaskRepository implements ProjectTaskRepository {
     const stored = this.rows.get(task.id);
     if (stored === undefined || stored.version !== expectedVersion) return false;
     this.rows.set(task.id, structuredClone(ProjectTask.snapshot(task)));
+    return true;
+  }
+}
+
+/** An in-memory {@link WorkspaceInviteRepository} (conditional use, like Postgres). */
+export class FakeWorkspaceInviteRepository implements WorkspaceInviteRepository {
+  readonly rows = new Map<string, WorkspaceInvite>();
+
+  async insert(invite: WorkspaceInvite): Promise<void> {
+    this.rows.set(invite.id, { ...invite });
+  }
+
+  async findById(id: string): Promise<WorkspaceInvite | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : { ...row };
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<WorkspaceInvite | undefined> {
+    const row = [...this.rows.values()].find((invite) => invite.tokenHash === tokenHash);
+    return row === undefined ? undefined : { ...row };
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly WorkspaceInvite[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => ({ ...row }));
+  }
+
+  async markUsed(id: string, userId: string, at: string): Promise<boolean> {
+    const row = this.rows.get(id);
+    if (row === undefined || row.usedAt !== undefined || row.revokedAt !== undefined) return false;
+    this.rows.set(id, { ...row, usedBy: userId, usedAt: at });
+    return true;
+  }
+
+  async revoke(id: string, at: string): Promise<boolean> {
+    const row = this.rows.get(id);
+    if (row === undefined || row.usedAt !== undefined || row.revokedAt !== undefined) return false;
+    this.rows.set(id, { ...row, revokedAt: at });
     return true;
   }
 }

@@ -414,6 +414,37 @@ export const REST_MUTATION_CLASSES: Readonly<Record<string, RestMutationEntry>> 
     proof: [cap('requests.create'), { in: 'route', contains: 'mayTakePending(' }],
   },
 
+  // --- People and teams ----------------------------------------------------------------------------------
+  'POST /api/invites': {
+    class: 'rbac',
+    justification:
+      'members.manage, as the chief executive of the organization or from the caller’s own seat in it (HR). Only the chief executive appoints a team head, and an invitation never gives an executive’s oversight seat. The link’s secret is returned once; only its hash is stored.',
+    proof: [
+      cap('members.manage'),
+      { in: 'route', contains: 'Only the chief executive can appoint a team head' },
+      { in: 'route', contains: 'tokenHash: hashOf(code)' },
+    ],
+  },
+  'POST /api/invites/:inviteId/revoke': {
+    class: 'rbac',
+    justification:
+      'members.manage; taking an unused invitation back only reduces who can join. A used or already revoked invitation is refused.',
+    proof: [cap('members.manage')],
+  },
+  'POST /api/invites/accept': {
+    class: 'rbac',
+    justification:
+      'Self-scoped: the signed-in caller takes the one seat the link was made for (by someone holding members.manage). The link’s secret is the authority; it works once, can be revoked and expires. No membership exists yet to resolve a role against. The seat is fixed by the invitation, never by the request.',
+    proof: [
+      { in: 'route', contains: 'markUsed(invite.id, userId' },
+      { in: 'route', contains: 'invite.seat,' },
+      {
+        in: 'domains/workspaces/src/entities/workspace-invite.ts',
+        contains: "INVITE_SEATS = ['owner', 'admin', 'member']",
+      },
+    ],
+  },
+
   // --- Project tasks -------------------------------------------------------------------------------------
   'POST /api/tasks': {
     class: 'rbac',

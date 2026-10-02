@@ -74,6 +74,7 @@ import {
   WorkspaceDomainService,
   WorkspaceInstallationService,
   WorkspaceMembershipService,
+  type WorkspaceInviteRepository,
 } from '@nexora/domain-workspaces';
 import {
   AuthenticateWithOidcHandler,
@@ -214,6 +215,8 @@ export interface RepositorySet {
   onboardings: OnboardingRepository;
   officeRequests: OfficeRequestRepository;
   projectTasks: ProjectTaskRepository;
+  /** One-time links that bring a person into a team. */
+  invites: WorkspaceInviteRepository;
   /**
    * Makes a multi-record business step all-or-nothing (one PostgreSQL
    * transaction across the people repositories). Absent for in-memory fakes.

@@ -33,6 +33,7 @@ import { api, ApiError } from '../lib/api.js';
 import type { DashboardResponse } from '../lib/types.js';
 import { useSession } from '../session.js';
 import { NavIcon } from '../components/NavIcon.js';
+import { pendingInvite } from '../lib/people.js';
 
 /** The dashboard page (fetches the read model). */
 export function Dashboard(): JSX.Element {
@@ -83,6 +84,11 @@ export function Dashboard(): JSX.Element {
   const data = state.data;
   if (data === null || session === null) {
     return <LoadingScreen />;
+  }
+
+  // An invite link opened before signing in: go back to it first.
+  if (pendingInvite() !== null) {
+    return <Navigate to="/join" replace />;
   }
 
   if (data.organization !== null) {

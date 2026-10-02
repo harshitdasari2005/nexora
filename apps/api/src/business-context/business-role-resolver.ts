@@ -118,6 +118,24 @@ const WORKSPACE_TYPE_ROLE_OVERRIDE: Readonly<Record<string, Readonly<Record<stri
   },
 };
 
+/**
+ * The business role a seat in a team resolves to: the team's type × the
+ * membership tier. The ONE mapping — the resolver below uses it for the
+ * caller, and read models use it to say what a seat means before anyone
+ * holds it (an invitation) or for somebody else (the people directory).
+ */
+export function businessRoleForSeat(
+  workspaceType: string | undefined,
+  tier: string,
+): string | undefined {
+  if (tier === EXECUTIVE_TIER) {
+    return CHIEF_EXECUTIVE_ROLE;
+  }
+  const override =
+    workspaceType === undefined ? undefined : WORKSPACE_TYPE_ROLE_OVERRIDE[workspaceType];
+  return override?.[tier] ?? MEMBERSHIP_ROLE_TO_BUSINESS_ROLE[tier];
+}
+
 /** Dependencies of the resolver. */
 export interface MembershipBusinessRoleResolverDependencies {
   /** Organization memberships (tenant-level fallback scope). */
@@ -166,9 +184,7 @@ export class MembershipBusinessRoleResolver {
         this.#workspaces === undefined
           ? undefined
           : await this.#workspaces.findById(context.workspaceId as never);
-      const override =
-        workspace === undefined ? undefined : WORKSPACE_TYPE_ROLE_OVERRIDE[workspace.type.value];
-      return override?.[membership.role] ?? MEMBERSHIP_ROLE_TO_BUSINESS_ROLE[membership.role];
+      return businessRoleForSeat(workspace?.type.value, membership.role);
     }
     const membership = await this.#memberships.findByOrganizationAndUser(
       context.tenantId as never,

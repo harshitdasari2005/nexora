@@ -49,6 +49,7 @@ import {
   SEAT_CAPABILITY,
   createRequestAuthority,
 } from '../office/request-authority.js';
+import type { Staffing } from '../office/staffing.js';
 import {
   denyScope,
   officeScopeDenial,
@@ -146,6 +147,8 @@ export interface OfficeRequestRoutesDependencies {
   resolveUserName?: (userId: string) => Promise<string | undefined>;
   /** The assistant inside the workflows (suggests; never decides). */
   assistant: OfficeAi;
+  /** Who holds which seat: a seat nobody holds falls to the executive. */
+  staffing?: Staffing;
   /**
    * What a finished workflow sets in motion elsewhere (an approved project
    * proposal opens the project). Called once, after the last stage was saved.
@@ -217,8 +220,9 @@ export function registerOfficeRequestRoutes(
     return reply.code(http.statusCode).send(http.body);
   };
 
-  const { holdsSeat, escalatesToExecutive, mayTakePending } = createRequestAuthority(
+  const { holdsSeat, escalatesToExecutive, seatIsVacant, mayTakePending } = createRequestAuthority(
     dependencies.permissions,
+    dependencies.staffing,
   );
 
   /** Whether the caller may see this request: their own, one they take part in, or all. */
@@ -265,6 +269,7 @@ export function registerOfficeRequestRoutes(
     const pending = request.pendingStageDefinition;
     const mine = pending !== undefined && (await mayTakePending(request, scope, effective, userId));
     const blocker = mine ? request.decisionBlocker(userId) : undefined;
+    const vacant = pending !== undefined && (await seatIsVacant(request, pending.seat, effective));
     const stages = request.stageStates().map(({ key, state }) => {
       const stage = definition === undefined ? undefined : findWorkflowStage(definition, key);
       return { key, label: stage?.label ?? key, kind: stage?.kind ?? 'decide', state };
@@ -297,6 +302,8 @@ export function registerOfficeRequestRoutes(
               kind: pending.kind,
               noteRequired: pending.noteRequired === true,
               ...(pending.noteLabel === undefined ? {} : { noteLabel: pending.noteLabel }),
+              // Nobody holds this seat yet: it falls to the chief executive.
+              ...(vacant ? { vacant: true } : {}),
             },
           }),
       stages,

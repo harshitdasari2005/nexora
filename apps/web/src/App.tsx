@@ -40,6 +40,8 @@ import { DeskPage } from './pages/Desk.js';
 import { GuidedDemo } from './pages/GuidedDemo.js';
 import { RequestsPage } from './pages/Requests.js';
 import { TasksPage } from './pages/Tasks.js';
+import { PeoplePage } from './pages/People.js';
+import { JoinPage } from './pages/Join.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { DemoProvider } from './demo/DemoProvider.js';
 import { RequireAuth, SessionProvider } from './session.js';
@@ -75,6 +77,15 @@ export function App(): JSX.Element {
                 element={
                   <RequireAuth>
                     <RequestsPage />
+                  </RequireAuth>
+                }
+              />
+              <Route path="/join" element={<JoinPage />} />
+              <Route
+                path="/app/people"
+                element={
+                  <RequireAuth>
+                    <PeoplePage />
                   </RequireAuth>
                 }
               />

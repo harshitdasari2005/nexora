@@ -42,6 +42,8 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   },
   // Managers see the board; everyone who does project work sees their own tasks.
   { navLabel: 'Tasks', anyOfPermissions: ['tasks.manage', 'tasks.work'] },
+  // The directory is for everyone in the organization; inviting is re-checked by the server.
+  { navLabel: 'People & teams' },
   { navLabel: 'Command Center' },
   { navLabel: 'Agent', requiredPermission: 'agent.use' },
   { navLabel: 'Agents', requiredPermission: 'agent.use' },

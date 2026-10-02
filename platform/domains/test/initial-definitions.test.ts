@@ -86,6 +86,7 @@ const EXPECTED_CAPABILITY_IDS = [
   'approvals.create',
   'workspaces.list',
   'workspaces.create',
+  'members.manage',
   'projects.assign',
   'calendar.create',
   'github.repositories.read',

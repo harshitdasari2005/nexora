@@ -91,6 +91,7 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'Agents', icon: 'team', to: '/app/agents' },
   { label: 'Problems', icon: 'problems', to: '/app/problems' },
   { label: 'Projects', icon: 'projects', to: '/app/projects' },
+  { label: 'People & teams', icon: 'team', to: '/app/people' },
   { label: 'Employees', icon: 'employees', to: '/app/employees' },
   { label: 'Hiring', icon: 'hiring', to: '/app/hiring' },
   { label: 'Recruiting', icon: 'recruiting', to: '/app/recruiting' },
@@ -113,7 +114,12 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
 ];
 
 /** The modules of everyday office work (never curated away by a persona). */
-const EVERYDAY_MODULES: readonly string[] = ['My desk', 'Office workflows', 'Tasks'];
+const EVERYDAY_MODULES: readonly string[] = [
+  'My desk',
+  'Office workflows',
+  'Tasks',
+  'People & teams',
+];
 
 /**
  * Where each destination lives in the rail. The groups are fixed for every
@@ -123,7 +129,10 @@ const EVERYDAY_MODULES: readonly string[] = ['My desk', 'Office workflows', 'Tas
  */
 const NAV_SECTIONS: readonly { title: string | null; labels: readonly string[] }[] = [
   { title: null, labels: ['My desk', 'Office workflows', 'Command Center'] },
-  { title: 'People', labels: ['Hiring', 'Recruiting', 'Onboarding', 'Employees'] },
+  {
+    title: 'People',
+    labels: ['People & teams', 'Hiring', 'Recruiting', 'Onboarding', 'Employees'],
+  },
   {
     title: 'Work',
     labels: ['Tasks', 'Projects', 'Problems', 'Workflows', 'Calendar', 'Documents', 'Knowledge'],

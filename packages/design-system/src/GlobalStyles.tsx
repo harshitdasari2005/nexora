@@ -242,6 +242,25 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 }
 .nexora-desk-icon[data-mine='true'] { background: var(--nexora-marker); color: var(--nexora-markerInk); }
 
+/* People & teams: one card per team, the people in it as a ruled list. */
+.nexora-people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 16px; align-items: start; }
+.nexora-people-list { list-style: none; margin: 0; padding: 0; }
+.nexora-people-list > li { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-top: 1px solid var(--nexora-border); }
+.nexora-people-initial {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nexora-primarySoft);
+  color: var(--nexora-primary);
+  font-weight: 600;
+  font-size: 13px;
+}
+.nexora-people-empty { background: transparent; border: 1.5px dashed var(--nexora-borderStrong); }
+
 /* A checklist mark: empty ring, amber ring when it is yours, filled when done. */
 .nexora-check {
   flex: 0 0 auto;

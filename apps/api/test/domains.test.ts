@@ -104,6 +104,7 @@ describe('GET /api/domains', () => {
       'approvals.create',
       'workspaces.list',
       'workspaces.create',
+      'members.manage',
       'projects.assign',
       'calendar.create',
       'github.repositories.read',
