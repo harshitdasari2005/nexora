@@ -432,7 +432,14 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         : undefined);
   registerOfficeRequestRoutes(app, {
     assistant: new OfficeAi(
-      officeChat === undefined ? {} : { chat: officeChat, model: dependencies.config.ai.model },
+      officeChat === undefined
+        ? {}
+        : {
+            chat: officeChat,
+            model: dependencies.config.ai.model,
+            onModelFailure: (reason) =>
+              app.log.warn({ reason }, 'office assistant fell back to plain rules'),
+          },
     ),
     requests: repositories.officeRequests,
     listOrganizations: container.listOrganizations,

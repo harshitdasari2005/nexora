@@ -32,7 +32,7 @@ export type AiProviderKind = 'none' | 'groq' | 'local';
 export interface AiConfig {
   /** The selected narration provider. */
   provider: AiProviderKind;
-  /** The model id served by the provider (e.g. `llama-3.3-70b-versatile`, `llama3`). */
+  /** The model id served by the provider (e.g. `openai/gpt-oss-120b`, `llama3`). */
   model: string;
   /** Bearer token for the provider, when it requires one. */
   apiKey?: string;
@@ -215,7 +215,7 @@ export function loadAiConfig(env: NodeJS.ProcessEnv): AiConfig {
   const provider = resolveAiProvider(env);
   const apiKey = (env['AI_API_KEY']?.trim() ?? '') || (env['GROQ_API_KEY']?.trim() ?? '');
   const baseUrl = env['AI_BASE_URL']?.trim() ?? '';
-  const model = env['AI_MODEL']?.trim() || 'llama-3.3-70b-versatile';
+  const model = env['AI_MODEL']?.trim() || 'openai/gpt-oss-120b';
 
   // Fail fast on a provider that cannot possibly serve a completion, rather
   // than degrading to deterministic narration on the first user request and

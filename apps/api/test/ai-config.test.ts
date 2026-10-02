@@ -46,7 +46,7 @@ describe('loadAiConfig', () => {
   it('none needs no endpoint or key', () => {
     expect(loadAiConfig(env({}))).toEqual({
       provider: 'none',
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
     });
   });
 
@@ -86,7 +86,7 @@ describe('loadAiConfig', () => {
   it('preserves the legacy "key only" deployment', () => {
     expect(loadAiConfig(env({ GROQ_API_KEY: 'gsk_legacy' }))).toEqual({
       provider: 'groq',
-      model: 'llama-3.3-70b-versatile',
+      model: 'openai/gpt-oss-120b',
       apiKey: 'gsk_legacy',
     });
   });
