@@ -84,6 +84,7 @@ const BASE_NAV_ITEMS: readonly NavItem[] = [
   { label: 'My desk', icon: 'desk', to: '/app/desk' },
   { label: 'Office workflows', icon: 'requests', to: '/app/requests' },
   { label: 'Tasks', icon: 'tasks', to: '/app/tasks' },
+  { label: 'Weekly review', icon: 'insights', to: '/app/review' },
   { label: 'Command Center', icon: 'command-center', to: '/app/command-center' },
   { label: 'Agent', icon: 'agent', to: '/app/agent' },
   { label: 'Agents', icon: 'team', to: '/app/agents' },
@@ -117,6 +118,7 @@ const EVERYDAY_MODULES: readonly string[] = [
   'Office workflows',
   'Tasks',
   'People & teams',
+  'Weekly review',
 ];
 
 /**
@@ -126,7 +128,7 @@ const EVERYDAY_MODULES: readonly string[] = [
  * with nothing visible in it is simply not rendered.
  */
 const NAV_SECTIONS: readonly { title: string | null; labels: readonly string[] }[] = [
-  { title: null, labels: ['My desk', 'Office workflows', 'Command Center'] },
+  { title: null, labels: ['My desk', 'Office workflows', 'Weekly review', 'Command Center'] },
   {
     title: 'People',
     labels: ['People & teams', 'Hiring', 'Recruiting', 'Onboarding', 'Employees'],

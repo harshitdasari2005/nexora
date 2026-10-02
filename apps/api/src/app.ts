@@ -146,6 +146,7 @@ import { registerOfficeRequestRoutes } from './routes/office-requests.js';
 import { registerOnboardingRoutes } from './routes/onboarding.js';
 import { registerTaskRoutes } from './routes/tasks.js';
 import { registerPeopleRoutes } from './routes/people.js';
+import { registerReviewRoutes } from './routes/review.js';
 import { createStaffing } from './office/staffing.js';
 import { MembershipDomainService } from '@nexora/domain-organizations';
 import { WorkspaceMembershipService } from '@nexora/domain-workspaces';
@@ -430,17 +431,18 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
               : { apiKey: dependencies.config.ai.apiKey }),
           }).chat
         : undefined);
+  const officeAssistant = new OfficeAi(
+    officeChat === undefined
+      ? {}
+      : {
+          chat: officeChat,
+          model: dependencies.config.ai.model,
+          onModelFailure: (reason) =>
+            app.log.warn({ reason }, 'office assistant fell back to plain rules'),
+        },
+  );
   registerOfficeRequestRoutes(app, {
-    assistant: new OfficeAi(
-      officeChat === undefined
-        ? {}
-        : {
-            chat: officeChat,
-            model: dependencies.config.ai.model,
-            onModelFailure: (reason) =>
-              app.log.warn({ reason }, 'office assistant fell back to plain rules'),
-          },
-    ),
+    assistant: officeAssistant,
     requests: repositories.officeRequests,
     listOrganizations: container.listOrganizations,
     listMyWorkspaces: container.listMyWorkspaces,
@@ -467,6 +469,15 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
         correlationId,
       });
     },
+  });
+  registerReviewRoutes(app, {
+    requests: repositories.officeRequests,
+    tasks: repositories.projectTasks,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
+    assistant: officeAssistant,
   });
   registerPeopleRoutes(app, {
     organizations: repositories.organizations,

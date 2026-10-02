@@ -41,6 +41,7 @@ import { GuidedDemo } from './pages/GuidedDemo.js';
 import { RequestsPage } from './pages/Requests.js';
 import { TasksPage } from './pages/Tasks.js';
 import { PeoplePage } from './pages/People.js';
+import { ReviewPage } from './pages/Review.js';
 import { JoinPage } from './pages/Join.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { DemoProvider } from './demo/DemoProvider.js';
@@ -81,6 +82,14 @@ export function App(): JSX.Element {
                 }
               />
               <Route path="/join" element={<JoinPage />} />
+              <Route
+                path="/app/review"
+                element={
+                  <RequireAuth>
+                    <ReviewPage />
+                  </RequireAuth>
+                }
+              />
               <Route
                 path="/app/people"
                 element={

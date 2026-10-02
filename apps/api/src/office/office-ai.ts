@@ -330,6 +330,28 @@ export class OfficeAi {
     };
   }
 
+  /**
+   * Puts counted facts into a few sentences for the person reading a review.
+   * The facts are given as finished lines; the model adds no numbers of its
+   * own, and without a model the plain-rules text is returned as it is.
+   */
+  async summarise(facts: readonly string[], byRules: string): Promise<WriteResult> {
+    const answer = await this.#ask(
+      [
+        'Write the weekly review of an office for its chief executive.',
+        'Return {"text": "..."}: three or four short sentences in plain words. Say what moved,',
+        'where work is waiting, and the one thing to look at first. Use only the counted facts',
+        'below; never add a number, a name or a cause that is not in them.',
+        'Counted facts:',
+        ...facts.map((fact) => `- ${fact}`),
+      ].join('\n'),
+      400,
+    );
+    const text = typeof answer?.['text'] === 'string' ? answer['text'].trim() : '';
+    if (text.length >= 20) return { text: text.slice(0, 900), source: 'ai' };
+    return { text: byRules, source: 'rules' };
+  }
+
   /** Drafts the written part of a piece of work, for the person to edit. */
   async write(request: RequestForAi, stage: WorkflowStageDefinition): Promise<WriteResult> {
     const asked = stage.noteLabel ?? stage.label;

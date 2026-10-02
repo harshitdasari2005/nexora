@@ -310,6 +310,40 @@ a:hover { color: var(--nexora-linkHover); text-decoration: underline; text-under
 .nexora-ask-examples > button:not(:disabled):hover { border-color: var(--nexora-primary); color: var(--nexora-text); }
 .nexora-ask-examples > button:disabled { opacity: 0.6; cursor: default; }
 
+.nexora-figure {
+  font-family: 'Bricolage Grotesque', 'Instrument Sans', sans-serif;
+  font-size: 1.75rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+/* Weekly review: where work is waiting, as rows with a bar, and a small table. */
+.nexora-review-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(60px, 1fr) auto; gap: 12px 20px; align-items: center; padding: 14px 20px; }
+.nexora-review-bar { height: 8px; border-radius: 999px; background: var(--nexora-surfaceMuted); overflow: hidden; }
+.nexora-review-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--nexora-primary);
+  transform-origin: left center;
+  animation: nexora-route-draw 700ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+@media (max-width: 560px) {
+  .nexora-review-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .nexora-review-bar { grid-column: 1 / -1; order: 3; }
+}
+.nexora-review-table { overflow-x: auto; }
+.nexora-review-table > [role='row'] {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.6fr) repeat(3, minmax(64px, 0.7fr)) minmax(96px, 1fr);
+  gap: 12px;
+  padding: 12px 20px;
+  min-width: 480px;
+  border-top: 1px solid var(--nexora-border);
+}
+.nexora-review-table > .nexora-review-head { border-top: none; font-size: 0.8125rem; color: var(--nexora-textMuted); }
+
 /* People & teams: one card per team, the people in it as a ruled list. */
 .nexora-people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 16px; align-items: start; }
 .nexora-people-list { list-style: none; margin: 0; padding: 0; }

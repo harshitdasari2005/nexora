@@ -196,7 +196,7 @@ function show(
 }
 
 /** What a request asks for, in one line. */
-function summaryOf(definition: WorkflowDefinition, details: OfficeRequestDetails): string {
+export function summaryOf(definition: WorkflowDefinition, details: OfficeRequestDetails): string {
   return definition.summaryFields
     .map((key) => show(definition, key, details[key]))
     .filter((part): part is string => part !== undefined)

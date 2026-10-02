@@ -44,6 +44,8 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
   { navLabel: 'Tasks', anyOfPermissions: ['tasks.manage', 'tasks.work'] },
   // The directory is for everyone in the organization; inviting is re-checked by the server.
   { navLabel: 'People & teams' },
+  // How the office ran this week: for the roles that read the organization's insights.
+  { navLabel: 'Weekly review', requiredPermission: 'insights.read' },
   { navLabel: 'Command Center' },
   { navLabel: 'Agent', requiredPermission: 'agent.use' },
   { navLabel: 'Agents', requiredPermission: 'agent.use' },
