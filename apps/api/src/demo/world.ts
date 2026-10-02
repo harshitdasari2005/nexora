@@ -323,6 +323,13 @@ export function buildDemoWorld(): ScenarioWorld {
         config: { rules: DEMO_APPROVAL_AUTHORITY_RULES },
         createdBy: 'ceo',
       })
+      // This office hires the way an office does: through a hiring request.
+      .policy('hiring-channel', {
+        organization: 'lumen',
+        policyId: 'POLICY_HIRING_CHANNEL',
+        config: { directHire: 'deny' },
+        createdBy: 'ceo',
+      })
       .build()
   );
 }

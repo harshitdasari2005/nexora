@@ -557,6 +557,10 @@ export class EnterpriseAIOrchestrator {
           verified: false,
           error: 'Policy does not allow this action',
           errorCode: 'POLICY_DENIED',
+          // The policy's own reason is written by the platform (never by the
+          // model or from argument values), so it is safe to tell the person
+          // why — and, for some policies, what to do instead.
+          detail: `${policy.reason}.`,
         });
         break;
       }

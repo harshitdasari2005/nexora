@@ -18,6 +18,11 @@ export const POLICY_IDS = {
    * Tighten-only — it never turns REQUIRE_APPROVAL into ALLOW.
    */
   APPROVAL_AUTHORITY: 'POLICY_APPROVAL_AUTHORITY',
+  /**
+   * Organization-configurable: people are hired through a hiring request, so a
+   * direct hire by the assistant or an agent is denied.
+   */
+  HIRING_CHANNEL: 'POLICY_HIRING_CHANNEL',
   /** Agent delegation — resource scope. */
   AGENT_DELEGATION_SCOPE: 'POLICY_AGENT_DELEGATION_SCOPE',
   /** Agent delegation — expiry and revocation. */

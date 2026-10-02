@@ -24,6 +24,8 @@ export interface PolicyScope {
 
 export const POLICY_FINANCE_BUDGET_LIMIT = 'POLICY_FINANCE_BUDGET_LIMIT';
 export const POLICY_APPROVAL_AUTHORITY = 'POLICY_APPROVAL_AUTHORITY';
+/** People are hired through a hiring request; a direct hire by the assistant is denied. */
+export const POLICY_HIRING_CHANNEL = 'POLICY_HIRING_CHANNEL';
 
 /** Budget-limit modes (tighten-only enum). */
 export const BUDGET_MODES = ['deny', 'require_approval'] as const;

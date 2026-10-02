@@ -26,6 +26,12 @@ export {
 } from './rules/approval-authority.js';
 export { sideEffectRequiresApproval, sideEffectApprovalRule } from './rules/side-effect.js';
 export {
+  DIRECT_HIRE_CAPABILITIES,
+  hiringChannelRule,
+  parseHiringChannelConfig,
+  type HiringChannelConfig,
+} from './rules/hiring.js';
+export {
   SUBMIT_EXPENSE_CAPABILITY,
   financeBudgetLimitRule,
   financeBudgetStateRule,

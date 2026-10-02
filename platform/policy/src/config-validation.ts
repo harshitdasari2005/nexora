@@ -16,6 +16,7 @@ import {
   type ApprovalAuthorityRule,
 } from './rules/approval-authority.js';
 import { parseBudgetLimitConfig, type BudgetLimitConfig } from './rules/finance.js';
+import { parseHiringChannelConfig, type HiringChannelConfig } from './rules/hiring.js';
 
 /** The result of validating a configuration. */
 export type PolicyConfigValidation<T = unknown> =
@@ -30,6 +31,7 @@ export const POLICY_CONFIG_MAX_DEPTH = 4;
 export interface ConfigurablePolicyValues {
   POLICY_FINANCE_BUDGET_LIMIT: BudgetLimitConfig;
   POLICY_APPROVAL_AUTHORITY: ApprovalAuthorityConfig;
+  POLICY_HIRING_CHANNEL: HiringChannelConfig;
 }
 
 const EXECUTABLE_PATTERNS: readonly RegExp[] = [
@@ -108,6 +110,19 @@ function validateBudgetLimit(config: unknown): PolicyConfigValidation<BudgetLimi
   if (keys.some((key) => key !== 'mode')) errors.push('$: contains an unknown key');
   const parsed = parseBudgetLimitConfig(config);
   if (parsed === undefined) errors.push('$.mode: must be "deny" or "require_approval"');
+  return errors.length > 0 || parsed === undefined
+    ? { ok: false, errors }
+    : { ok: true, value: parsed };
+}
+
+function validateHiringChannel(config: unknown): PolicyConfigValidation<HiringChannelConfig> {
+  const errors: string[] = [];
+  if (!isPlainObject(config)) return { ok: false, errors: ['$: must be an object'] };
+  if (Object.keys(config).some((key) => key !== 'directHire')) {
+    errors.push('$: contains an unknown key');
+  }
+  const parsed = parseHiringChannelConfig(config);
+  if (parsed === undefined) errors.push('$.directHire: must be "deny"');
   return errors.length > 0 || parsed === undefined
     ? { ok: false, errors }
     : { ok: true, value: parsed };
@@ -195,12 +210,16 @@ export function validatePolicyConfig(
   policyId: string,
   config: unknown,
 ): PolicyConfigValidation<ConfigurablePolicyValues[keyof ConfigurablePolicyValues]> {
-  if (policyId !== POLICY_IDS.FINANCE_BUDGET_LIMIT && policyId !== POLICY_IDS.APPROVAL_AUTHORITY) {
+  if (
+    policyId !== POLICY_IDS.FINANCE_BUDGET_LIMIT &&
+    policyId !== POLICY_IDS.APPROVAL_AUTHORITY &&
+    policyId !== POLICY_IDS.HIRING_CHANNEL
+  ) {
     return { ok: false, errors: ['policy is not configurable'] };
   }
   const structural = structuralErrors(config);
   if (structural.length > 0) return { ok: false, errors: structural };
-  return policyId === POLICY_IDS.FINANCE_BUDGET_LIMIT
-    ? validateBudgetLimit(config)
-    : validateApprovalAuthority(config);
+  if (policyId === POLICY_IDS.FINANCE_BUDGET_LIMIT) return validateBudgetLimit(config);
+  if (policyId === POLICY_IDS.HIRING_CHANNEL) return validateHiringChannel(config);
+  return validateApprovalAuthority(config);
 }

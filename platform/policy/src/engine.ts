@@ -13,6 +13,7 @@ import {
   financeBudgetStateRule,
   financeExpenseApprovalRule,
 } from './rules/finance.js';
+import { hiringChannelRule } from './rules/hiring.js';
 import { sideEffectApprovalRule } from './rules/side-effect.js';
 
 /** Restrictiveness order: a higher number wins. */
@@ -28,6 +29,7 @@ export const DEFAULT_POLICY_RULES: readonly PolicyRule[] = [
   financeExpenseApprovalRule,
   financeBudgetStateRule,
   financeBudgetLimitRule,
+  hiringChannelRule,
 ];
 
 /** A verdict together with the rule that produced it. */
