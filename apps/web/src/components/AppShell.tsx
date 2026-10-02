@@ -385,7 +385,8 @@ function AppShellChrome({
   const [searchOpen, setSearchOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const { theme, current } = useRoleTheme();
-  const demoActive = useDemo().status === 'enabled';
+  // Someone from the demo office is signed in (not merely: demo mode is on).
+  const demoActive = useDemo().persona !== null;
   // "Entering the Nexora operating environment": a brief, one-time entrance
   // right after authentication — never replayed on later in-app navigation.
   const [grandEntrance] = useState(() => {
