@@ -73,11 +73,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Start infrastructure (Postgres, Redis, MinIO, Keycloak)
+      - name: Start infrastructure (Postgres)
         run: |
           cp .env.example .env
-          docker compose -f infrastructure/compose/docker-compose.yml up -d
-          # Wait for Postgres — the only hard dependency for API boot.
+          # Postgres is the only hard dependency for API boot, so only it is
+          # started: pulling the optional services (e.g. the minio/minio image,
+          # no longer published on Docker Hub) must not fail the boot check.
+          docker compose -f infrastructure/compose/docker-compose.yml up -d postgres
           for i in $(seq 1 30); do
             if docker exec nexora-postgres pg_isready -U nexora -d nexora >/dev/null 2>&1; then
               echo "postgres ready"; break
