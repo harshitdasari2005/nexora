@@ -77,7 +77,8 @@ pnpm scenarios:reset         # delete only the dataset's rows, then reseed
 The scenario dataset and evaluation framework (`packages/evaluation`,
 `apps/api/evaluation`) are documented in `packages/evaluation/README.md`.
 
-Ports can be overridden: `NEXORA_API_PORT=3100 NEXORA_WEB_PORT=5174 pnpm dev:local`.
+Ports can be overridden: `NEXORA_API_PORT=3100 NEXORA_WEB_PORT=5174 pnpm dev:local` (sign-in
+through Keycloak is registered for the default ports 3001/5173 only).
 Copy `.env.example` to `.env` first — Postgres is mapped to host port **5433** (not 5432).
 
 ### Scoped / single-package / single-test
@@ -156,7 +157,7 @@ mostly `.gitkeep` placeholders per `ENGINEERING_PLAYBOOK.md §3.3`; real code li
 
 ### Infrastructure (`infrastructure/compose/`)
 
-PostgreSQL (host :5433), Redis, MinIO (S3-compatible document storage; :9000, override to :9002),
+PostgreSQL (host :5433), Redis, MinIO (S3-compatible document storage; host port = `S3_PORT` in `.env`, default :9000),
 Keycloak (:8080, `nexora` realm imported at startup). When `S3_ENDPOINT` is unset the API falls
 back to in-memory document storage.
 

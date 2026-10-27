@@ -89,6 +89,7 @@ examples/          Sample plugins, integrations, workflow templates
 ## Getting Started
 
 ```bash
+cp .env.example .env    # local settings; the defaults work as they are
 pnpm install
 
 # One command: starts the Docker infra, waits for health, then API :3001 + Web :5173.
@@ -99,8 +100,10 @@ pnpm dev:local
 pnpm demo:reset
 ```
 
-Port overrides: `NEXORA_API_PORT=3100 NEXORA_WEB_PORT=5174 pnpm dev:local`.
-Copy `.env.example` to `.env` first — Postgres is mapped to host port **5433**.
+Postgres is mapped to host port **5433**; MinIO follows `S3_PORT` in `.env` (default 9000 —
+change it there if that port is taken). Port overrides:
+`NEXORA_API_PORT=3100 NEXORA_WEB_PORT=5174 pnpm dev:local` — sign-in through Keycloak is
+registered for the default ports 3001/5173 only.
 
 Other useful scripts:
 
