@@ -38,6 +38,47 @@ export interface CreateEmployeeInput {
   organizationId: TenantId;
   /** The employee name (validated). */
   name: string;
+  /** The employment details known at hire (absent for legacy name-only records). */
+  profile?: EmployeeProfile;
+}
+
+/**
+ * What the organization knows about the employment itself, captured when a
+ * person is hired through recruiting. Every field is optional: records created
+ * before recruiting existed carry a name only.
+ */
+export interface EmployeeProfile {
+  /** Work/contact email. */
+  email?: string;
+  jobTitle?: string;
+  /** The team / department. */
+  department?: string;
+  /** `full_time` | `part_time` | `contract` | `intern`. */
+  employmentType?: string;
+  /** The agreed start date (`YYYY-MM-DD`). */
+  startDate?: string;
+  /** The hiring request this hire fulfils. */
+  requisitionId?: string;
+}
+
+/** Trims a profile and drops empty fields (so an empty profile is no profile). */
+function normalizeProfile(profile: EmployeeProfile | undefined): EmployeeProfile | undefined {
+  if (profile === undefined) return undefined;
+  const normalized: EmployeeProfile = {};
+  for (const key of [
+    'email',
+    'jobTitle',
+    'department',
+    'employmentType',
+    'startDate',
+    'requisitionId',
+  ] as const) {
+    const value = profile[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      normalized[key] = value.trim();
+    }
+  }
+  return Object.keys(normalized).length === 0 ? undefined : normalized;
 }
 
 /**
@@ -54,6 +95,8 @@ export interface EmployeeSnapshot {
   name: string;
   /** The employment status value. */
   status: string;
+  /** The employment details, when known. */
+  profile?: EmployeeProfile;
   /** ISO-8601 UTC creation time. */
   createdAt: string;
   /** ISO-8601 UTC last mutation time. */
@@ -72,6 +115,7 @@ export class Employee {
   #id: EmployeeId;
   readonly #organizationId: TenantId;
   readonly #name: EmployeeName;
+  readonly #profile: EmployeeProfile | undefined;
   #status: EmployeeStatus;
   readonly #createdAt: string;
   #updatedAt: string;
@@ -82,6 +126,7 @@ export class Employee {
     this.#id = EmployeeIdFactory.create();
     this.#organizationId = input.organizationId;
     this.#name = EmployeeName.create(input.name);
+    this.#profile = normalizeProfile(input.profile);
     this.#status = EmployeeStatus.proposed();
     this.#createdAt = createdAt;
     this.#updatedAt = createdAt;
@@ -126,6 +171,11 @@ export class Employee {
   /** The employee name. */
   get name(): EmployeeName {
     return this.#name;
+  }
+
+  /** The employment details, when known (a copy). */
+  get profile(): EmployeeProfile | undefined {
+    return this.#profile === undefined ? undefined : { ...this.#profile };
   }
 
   /** The employment status. */
@@ -225,6 +275,7 @@ export class Employee {
       organizationId: employee.organizationId,
       name: employee.name.value,
       status: employee.status.value,
+      ...(employee.profile === undefined ? {} : { profile: employee.profile }),
       createdAt: employee.createdAt,
       updatedAt: employee.updatedAt,
       version: employee.version,
@@ -242,6 +293,7 @@ export class Employee {
       {
         organizationId: snapshot.organizationId,
         name: snapshot.name,
+        ...(snapshot.profile === undefined ? {} : { profile: snapshot.profile }),
       },
       snapshot.createdAt,
     );

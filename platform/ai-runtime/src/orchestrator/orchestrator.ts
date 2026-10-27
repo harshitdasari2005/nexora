@@ -557,6 +557,10 @@ export class EnterpriseAIOrchestrator {
           verified: false,
           error: 'Policy does not allow this action',
           errorCode: 'POLICY_DENIED',
+          // The policy's own reason is written by the platform (never by the
+          // model or from argument values), so it is safe to tell the person
+          // why — and, for some policies, what to do instead.
+          detail: `${policy.reason}.`,
         });
         break;
       }
@@ -674,7 +678,11 @@ export class EnterpriseAIOrchestrator {
           ? ((await this.#approvals?.decisionStatus(approval.id)) ?? undefined) === 'granted'
           : approvalRequired
             ? this.#requestMayAutoApprove(request)
-            : true;
+            : // Not gated at this moment: nothing was approved, so none is claimed. The executor
+              // re-evaluates policy; if that flips to REQUIRE_APPROVAL between this precheck and
+              // the executor's own evaluation (budget goes under review, org config added), a
+              // `true` here would let the step run with no human approval.
+              false;
 
       if (approvalRequired) {
         const disposition =

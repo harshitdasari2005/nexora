@@ -439,8 +439,8 @@ authorization DENIAL, like an agent run.
 | NXS-116  | wrong approver role                   | 403 `WRONG_APPROVER_ROLE`, undecided, no expense, audited                                  |
 | NXS-117  | forged role in the decision body      | same refusal as the plain request; role and approver resolved server-side only             |
 | NXS-118  | expired approval                      | 410 `APPROVAL_EXPIRED`, store says expired, nothing executed, expiry audited               |
-| NXS-119  | approval of another organization      | 403, undecided, recorded in the TARGET tenant's audit only                                 |
-| NXS-120  | approval of another workspace         | 403 for an org member outside the workspace; no event created                              |
+| NXS-119  | approval of another organization      | 404 (same as a missing id), undecided, recorded in the TARGET tenant's audit only          |
+| NXS-120  | approval of another workspace         | 404 (same as a missing id) for an org member outside the workspace; no event created       |
 | NXS-121  | approval cannot override DENY         | budget closed after the gate: approved anyway, refused `POLICY_DENIED`, no expense         |
 | NXS-122  | policy changed after approval         | admin API publishes v2; grant refused `POLICY_CHANGED_AFTER_APPROVAL`; no event            |
 | NXS-123  | workflow ceiling                      | manager cannot hire via chat or REST workflow; no plan, approval or employee               |
@@ -455,8 +455,11 @@ authorization DENIAL, like an agent run.
 Honest limits: an approval that was GRANTED and then expires before execution
 (the `APPROVAL_EXPIRED` failure code / `expired` telemetry state) needs a
 cross-process resume and is covered by the backend tests, not a scenario; the
-decision route answers 403 for another tenant's approval id (404 only for an
-id that does not exist).
+decision route answers 404 — the same as for an id that does not exist — to a
+caller with no standing (another organization, or a workspace they are not in)
+in the approval's scope, so the response cannot reveal whether an approval id
+exists; a legitimate member who is refused (role, separation of duties, ...)
+still receives the specific 403.
 
 ## Governed lifecycle scenarios (dataset 1.8.0)
 

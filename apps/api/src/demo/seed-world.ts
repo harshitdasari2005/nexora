@@ -69,7 +69,15 @@ interface SeedableMeasurements {
 export async function seedWorld(
   repos: RepositorySet,
   world: ScenarioWorld,
-  options: { skipOrganizationPolicy?: boolean } = {},
+  options: {
+    skipOrganizationPolicy?: boolean;
+    /**
+     * The external OIDC identity (issuer + subject) to bind each seeded user to,
+     * by fixture key (AUTH-009). Deterministic by construction. Absent = the
+     * seeded users stay unbound (they bind at their first OIDC login).
+     */
+    oidcIdentity?: (userKey: string) => { issuer: string; subject: string } | undefined;
+  } = {},
 ): Promise<SeedSummary> {
   const index = new WorldIndex(world);
   const at = world.referenceTime;
@@ -134,6 +142,12 @@ export async function seedWorld(
           `scenario-fixture:${user.key}:no-local-password`,
         ),
         status: 'active',
+        ...(options.oidcIdentity?.(user.key) === undefined
+          ? {}
+          : {
+              oidcIssuer: options.oidcIdentity(user.key)?.issuer,
+              oidcSubject: options.oidcIdentity(user.key)?.subject,
+            }),
         profile: {
           displayName: user.displayName,
           ...(user.title === undefined ? {} : { title: user.title }),

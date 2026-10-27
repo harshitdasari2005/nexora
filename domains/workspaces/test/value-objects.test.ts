@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { WorkspaceMembership } from '../src/entities/workspace-membership.js';
 import { InvalidWorkspaceValueError } from '../src/errors/index.js';
 import { WorkspaceId } from '../src/value-objects/workspace-id.js';
 import { MAX_WORKSPACE_NAME_LENGTH, WorkspaceName } from '../src/value-objects/workspace-name.js';
@@ -220,6 +221,24 @@ describe('WorkspaceLocale', () => {
 
 describe('MembershipRole', () => {
   it('exposes the role vocabulary', () => {
-    expect(MEMBERSHIP_ROLES).toEqual(['owner', 'admin', 'member']);
+    // `executive` is an organization executive's oversight seat in a department workspace.
+    expect(MEMBERSHIP_ROLES).toEqual(['owner', 'admin', 'member', 'executive']);
+  });
+
+  it('an executive seat is a valid membership that is NOT a workspace owner', () => {
+    const seat = WorkspaceMembership.create(
+      {
+        workspaceId: 'wsp_1' as never,
+        userId: 'usr_1' as never,
+        role: 'executive',
+      },
+      {
+        actor: { kind: 'user', id: 'usr_1' },
+        correlationId: 'corr_1',
+        organizationId: 'org_1' as never,
+      },
+    );
+    expect(seat.role).toBe('executive');
+    expect(seat.isOwner()).toBe(false);
   });
 });

@@ -74,5 +74,15 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       body?.error?.details,
     );
   }
+  // Something was changed on the server: let anything that shows shared state
+  // (the guided story, the desk) read it again instead of going stale.
+  if (init.method !== undefined && init.method.toUpperCase() !== 'GET') announceChange();
   return body as T;
+}
+
+/** The browser event fired after every successful change made through {@link api}. */
+export const CHANGE_EVENT = 'nexora:changed';
+
+function announceChange(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(CHANGE_EVENT));
 }

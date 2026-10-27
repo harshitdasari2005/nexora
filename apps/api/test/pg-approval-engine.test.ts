@@ -143,6 +143,30 @@ describeDb('PgApprovalEngine (durable governance)', () => {
     expect(await engine.decisionStatus(opened.id)).toBe('granted');
   });
 
+  it('listByTenant narrows by status BEFORE the limit — an old pending approval is not crowded out by newer decided ones', async () => {
+    const engine = new PgApprovalEngine(db);
+    const TENANT_LIST = 'org_status_window';
+    const oldPending = await engine.open(
+      openInput({ tenantId: TENANT_LIST, input: { title: 'old pending' } }),
+    );
+    for (let index = 0; index < 5; index += 1) {
+      const newer = await engine.open(
+        openInput({ tenantId: TENANT_LIST, input: { title: `newer ${index}` } }),
+      );
+      await engine.decide(newer.id, { decision: 'reject', decidedBy: USER });
+    }
+    // Unfiltered newest-3: the old pending approval is NOT in the window (the bug's shape)…
+    const crowded = await engine.listByTenant(TENANT_LIST, { limit: 3 });
+    expect(crowded.map((record) => record.id)).not.toContain(oldPending.id);
+    // …but a status filter is applied before the limit, so it is found.
+    const pending = await engine.listByTenant(TENANT_LIST, {
+      limit: 3,
+      statuses: ['awaiting_approval'],
+    });
+    expect(pending.map((record) => record.id)).toEqual([oldPending.id]);
+    expect(await engine.listByTenant(TENANT_LIST, { limit: 3, statuses: [] })).toEqual([]);
+  });
+
   it('a duplicate decision is rejected — a request can be decided exactly once', async () => {
     const engine = new PgApprovalEngine(db);
     const opened = await engine.open(openInput({ input: { title: 'Once' } }));

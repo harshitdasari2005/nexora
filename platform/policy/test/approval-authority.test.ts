@@ -228,11 +228,12 @@ describe('POLICY_REGISTRY', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('marks exactly the two organization-tunable policies configurable', () => {
+  it('marks exactly the organization-tunable policies configurable', () => {
     const configurable = POLICY_REGISTRY.filter((e) => e.configurable).map((e) => e.policyId);
     expect(configurable.sort()).toEqual([
       'POLICY_APPROVAL_AUTHORITY',
       'POLICY_FINANCE_BUDGET_LIMIT',
+      'POLICY_HIRING_CHANNEL',
     ]);
     for (const entry of POLICY_REGISTRY) {
       expect(entry.managedBy).toBe(entry.configurable ? 'organization' : 'platform');

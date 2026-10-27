@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { TenantId } from '@nexora/contracts/common';
 
 import { IDENTITY_EVENT_TYPES, SessionNotFoundError } from '@nexora/domain-identity';
-import { SessionDomainService, UserDomainService } from '@nexora/domain-identity';
+import { hashSessionToken, SessionDomainService, UserDomainService } from '@nexora/domain-identity';
 
 import type { EndSessionCommand } from '../src/commands/end-session.command.js';
 import { IdentityApplicationService } from '../src/services/identity-application-service.js';
@@ -54,7 +54,7 @@ async function makeLoggedInSession(): Promise<{
   if (!authenticated.ok) {
     throw new Error('setup failed');
   }
-  const session = sessions.byToken.get(authenticated.value.sessionToken);
+  const session = sessions.byToken.get(hashSessionToken(authenticated.value.sessionToken));
   if (session === undefined) {
     throw new Error('setup failed');
   }

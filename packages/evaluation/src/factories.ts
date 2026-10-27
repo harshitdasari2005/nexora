@@ -26,6 +26,7 @@ import type {
   KnowledgeArticleFixture,
   MeasurementFixture,
   MembershipTier,
+  WorkspaceMembershipTier,
   PolicyFixture,
   NotificationFixture,
   OrganizationFixture,
@@ -93,7 +94,7 @@ export class WorldBuilder {
   workspaceMember(
     user: string,
     workspace: string,
-    tier: MembershipTier,
+    tier: WorkspaceMembershipTier,
     expectedRole: string,
   ): this {
     this.#workspaceMemberships.push({ user, workspace, tier, expectedRole });

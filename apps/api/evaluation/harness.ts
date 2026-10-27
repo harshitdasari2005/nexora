@@ -56,6 +56,13 @@ import {
   FakeDocumentVersionRepository,
   FakeEmailOutboxRepository,
   FakeEmployeeRepository,
+  FakeCandidateRepository,
+  FakeHiringRequisitionRepository,
+  FakeJobOpeningRepository,
+  FakeOfficeRequestRepository,
+  FakeWorkspaceInviteRepository,
+  FakeOnboardingRepository,
+  FakeProjectTaskRepository,
   FakeExpenseRepository,
   FakeInboundMessageRepository,
   FakeKnowledgeArticleRepository,
@@ -234,6 +241,13 @@ export async function createScenarioApp(
     projects: new FakeProjectRepository(),
     resourceAssignments: new FakeResourceAssignmentRepository(),
     employees: new FakeEmployeeRepository(),
+    hiringRequisitions: new FakeHiringRequisitionRepository(),
+    jobOpenings: new FakeJobOpeningRepository(),
+    candidates: new FakeCandidateRepository(),
+    onboardings: new FakeOnboardingRepository(),
+    officeRequests: new FakeOfficeRequestRepository(),
+    invites: new FakeWorkspaceInviteRepository(),
+    projectTasks: new FakeProjectTaskRepository(),
     documents: new FakeDocumentRepository(),
     documentVersions: new FakeDocumentVersionRepository(),
     documentTemplates: new FakeDocumentTemplateRepository(),
@@ -416,10 +430,11 @@ async function login(app: FastifyInstance): Promise<string> {
   const start = await app.inject({ method: 'GET', url: '/api/auth/login' });
   const state = cookie(start, 'oidc_state');
   const verifier = cookie(start, 'oidc_verifier');
+  const nonce = cookie(start, 'oidc_nonce');
   const callback = await app.inject({
     method: 'GET',
     url: `/api/auth/callback?code=scenario-code&state=${state}`,
-    headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}` },
+    headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}; oidc_nonce=${nonce}` },
   });
   const session = cookie(callback, 'nexora_session');
   if (session.length === 0) {

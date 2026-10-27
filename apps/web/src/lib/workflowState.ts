@@ -72,13 +72,3 @@ export function resolveWorkflowState(
       return 'planned';
   }
 }
-
-/** States whose outcome is NOT a success (never rendered green or "completed"). */
-export const NON_SUCCESS_STATES: readonly WorkflowStateKey[] = [
-  'failed',
-  'compensated',
-  'partial',
-  'rejected',
-  'expired',
-  'cancelled',
-];

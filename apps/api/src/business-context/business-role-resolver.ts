@@ -45,6 +45,12 @@ export interface BusinessRoleResolutionContext {
   workspaceId?: string;
 }
 
+/** The workspace membership tier of an executive's oversight seat. */
+const EXECUTIVE_TIER = 'executive';
+
+/** The business role an executive seat resolves to, in every workspace type. */
+const CHIEF_EXECUTIVE_ROLE = 'executive.ceo';
+
 /** The membership role → business role default mapping (first-party seed). */
 const MEMBERSHIP_ROLE_TO_BUSINESS_ROLE: Readonly<Record<string, string>> = {
   owner: 'executive.ceo',
@@ -112,6 +118,24 @@ const WORKSPACE_TYPE_ROLE_OVERRIDE: Readonly<Record<string, Readonly<Record<stri
   },
 };
 
+/**
+ * The business role a seat in a team resolves to: the team's type × the
+ * membership tier. The ONE mapping — the resolver below uses it for the
+ * caller, and read models use it to say what a seat means before anyone
+ * holds it (an invitation) or for somebody else (the people directory).
+ */
+export function businessRoleForSeat(
+  workspaceType: string | undefined,
+  tier: string,
+): string | undefined {
+  if (tier === EXECUTIVE_TIER) {
+    return CHIEF_EXECUTIVE_ROLE;
+  }
+  const override =
+    workspaceType === undefined ? undefined : WORKSPACE_TYPE_ROLE_OVERRIDE[workspaceType];
+  return override?.[tier] ?? MEMBERSHIP_ROLE_TO_BUSINESS_ROLE[tier];
+}
+
 /** Dependencies of the resolver. */
 export interface MembershipBusinessRoleResolverDependencies {
   /** Organization memberships (tenant-level fallback scope). */
@@ -147,13 +171,20 @@ export class MembershipBusinessRoleResolver {
       if (membership === undefined) {
         return undefined;
       }
+      // An `executive` seat is an organization executive's oversight membership
+      // of a department workspace: the holder stays the CEO whatever the
+      // workspace's type — they can look into Finance or HR without becoming the
+      // CFO or the HR manager, so approvals that require those roles still need
+      // those people. The tier is trusted, server-controlled membership data
+      // (never a request parameter), exactly like owner/admin/member.
+      if (membership.role === EXECUTIVE_TIER) {
+        return CHIEF_EXECUTIVE_ROLE;
+      }
       const workspace =
         this.#workspaces === undefined
           ? undefined
           : await this.#workspaces.findById(context.workspaceId as never);
-      const override =
-        workspace === undefined ? undefined : WORKSPACE_TYPE_ROLE_OVERRIDE[workspace.type.value];
-      return override?.[membership.role] ?? MEMBERSHIP_ROLE_TO_BUSINESS_ROLE[membership.role];
+      return businessRoleForSeat(workspace?.type.value, membership.role);
     }
     const membership = await this.#memberships.findByOrganizationAndUser(
       context.tenantId as never,

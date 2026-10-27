@@ -18,9 +18,9 @@ import { loadConfig } from '../src/config.js';
 import { DemoError, DemoService } from '../src/demo/demo-service.js';
 import { countScopedRows, type ResetScope } from '../src/demo/reset.js';
 import { seedWorld } from '../src/demo/seed-world.js';
-import { DEMO_HIRE_REQUEST, buildDemoWorld, demoIds } from '../src/demo/world.js';
+import { buildDemoWorld, demoIds } from '../src/demo/world.js';
 import { FakeOidcGateway } from './fakes.js';
-import { parseSse } from './helpers.js';
+import { hireThroughChain } from './hiring-chain.js';
 
 const BASE_URL =
   process.env.TEST_DATABASE_URL ??
@@ -127,7 +127,8 @@ describeDb('Demo World (PostgreSQL)', () => {
   it('seeds idempotently: a second seed changes nothing (including the policy version log)', async () => {
     const first = await countScopedRows(db, demoScope);
     expect(first['organizations']).toBe(1);
-    expect(first['policy_settings']).toBe(1);
+    // Approval authority, and "hiring goes through a hiring request".
+    expect(first['policy_settings']).toBe(2);
     const repositories = buildPgRepositories(db, { s3: undefined } as never);
     await seedWorld(repositories, buildDemoWorld());
     await seedWorld(repositories, buildDemoWorld());
@@ -139,23 +140,16 @@ describeDb('Demo World (PostgreSQL)', () => {
     const foreignBefore = await countScopedRows(db, foreignScope);
     expect(Object.keys(foreignBefore).length).toBeGreaterThan(0);
 
-    // Dirty the demo: a real governed hire, approved by the Team Manager.
+    // Dirty the demo the way the office does: one whole hire, from the hiring
+    // request to the project assignment (every table the chain writes to).
     const ceo = await login('ceo');
-    const chat = await post(ceo, '/api/ai/chat', {
-      message: DEMO_HIRE_REQUEST,
-      workspaceId: ids.workspaceIds.eng,
-      organizationId: ids.organizationId,
-    });
-    const done = parseSse(chat.body).find((event) => event.event === 'done')?.data as {
-      approvals: { id: string }[];
-    };
+    await hireThroughChain(app, ids, 'Sarah Thomas');
     const manager = await login('manager');
-    const decided = await post(manager, `/api/ai/approvals/${done.approvals[0]!.id}/decision`, {
-      decision: 'approve',
-    });
-    expect(decided.statusCode).toBe(200);
     const dirty = await countScopedRows(db, demoScope);
     expect(dirty['employees']).toBe((pristine['employees'] ?? 0) + 1);
+    for (const table of ['hiring_requisitions', 'job_openings', 'candidates', 'onboardings']) {
+      expect(dirty[table], table).toBe((pristine[table] ?? 0) + 1);
+    }
 
     const reset = await post(manager, '/api/demo/reset', {});
     expect(reset.statusCode).toBe(200);

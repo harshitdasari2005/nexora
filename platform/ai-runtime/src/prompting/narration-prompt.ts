@@ -29,7 +29,7 @@ import type { PromptTemplate } from './prompt-template.js';
 export const NARRATION_PROMPT_ID = 'ai.narration.summary';
 
 /** The current narration prompt version. */
-export const NARRATION_PROMPT_VERSION = '4.0.0';
+export const NARRATION_PROMPT_VERSION = '4.1.0';
 
 /**
  * The v3 narration prompt text.
@@ -47,6 +47,9 @@ const NARRATION_PROMPT_TEXT = [
   '',
   'Keep it concise — 2 to 5 plain, professional sentences. No preamble, no bullet',
   'points, no restating the question. Lead with the direct answer.',
+  'Write the way a colleague would say it out loud. Say what a value MEANS in plain',
+  'words ("nothing needs your attention", "there are no unread notifications"); never',
+  'quote a field name, key or flag from RESULTS (needsAttention, unreadCount, true/false).',
   '',
   'HOW TO READ THE RESULTS:',
   '- Work through EVERY step and EVERY numbered source under RESULTS before you answer.',

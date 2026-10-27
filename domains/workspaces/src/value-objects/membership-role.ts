@@ -7,8 +7,16 @@
  * between the membership entity and the events module.
  */
 
-/** Workspace membership roles (PSD.md §10 roles). */
-export const MEMBERSHIP_ROLES = ['owner', 'admin', 'member'] as const;
+/**
+ * Workspace membership roles (PSD.md §10 roles).
+ *
+ * `executive` is an organization executive's seat in a department workspace:
+ * oversight membership. It gives the holder standing in the workspace (they
+ * can see it and raise requests in it) while keeping their own executive
+ * business role — it never turns them into that department's head. It is not
+ * a management tier of the workspace (`isOwner` stays false).
+ */
+export const MEMBERSHIP_ROLES = ['owner', 'admin', 'member', 'executive'] as const;
 
 /** Single membership role literal. */
 export type MembershipRole = (typeof MEMBERSHIP_ROLES)[number];

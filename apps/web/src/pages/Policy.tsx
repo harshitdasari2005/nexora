@@ -30,6 +30,7 @@ import {
 } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
+import { NavIcon } from '../components/NavIcon.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
@@ -37,6 +38,7 @@ import {
   BUDGET_MODES,
   POLICY_APPROVAL_AUTHORITY,
   POLICY_FINANCE_BUDGET_LIMIT,
+  POLICY_HIRING_CHANNEL,
   MAX_APPROVAL_RULES,
   createPolicyVersion,
   emptyRuleDraft,
@@ -216,7 +218,7 @@ export function Policy(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="🛡"
+            icon={<NavIcon name="policy" size={18} />}
             title="Create a workspace first"
             description="Policies are scoped to a workspace. Set one up to get started."
             action={
@@ -311,16 +313,7 @@ export function PolicyView({
         style={{ flexWrap: 'wrap' }}
       >
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Policy Administration
-          </h1>
+          <h1 className="nexora-page-title">Policy Administration</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName} · {workspaceName} — governed rules and their version history
           </p>
@@ -351,7 +344,7 @@ export function PolicyView({
       ) : policies.length === 0 ? (
         <Card>
           <EmptyState
-            icon="🛡"
+            icon={<NavIcon name="policy" size={18} />}
             title="No policies"
             description="No policies are registered for this organization."
           />
@@ -426,7 +419,7 @@ export function PolicyView({
             {selected === null ? (
               <Card>
                 <EmptyState
-                  icon="🛡"
+                  icon={<NavIcon name="policy" size={18} />}
                   title="Select a policy"
                   description="Choose a policy to see its rules and version history."
                 />
@@ -765,6 +758,9 @@ export function PolicyChangeForm({
 }: PolicyChangeFormProps): JSX.Element {
   const isBudget = policy.policyId === POLICY_FINANCE_BUDGET_LIMIT;
   const isAuthority = policy.policyId === POLICY_APPROVAL_AUTHORITY;
+  const isHiring = policy.policyId === POLICY_HIRING_CHANNEL;
+  // The hiring policy has one setting, so it is simply on or off.
+  const neverConfigured = policy.currentVersion === undefined;
   const initialMode = policy.config?.['mode'];
   const [mode, setMode] = useState<BudgetMode>(
     BUDGET_MODES.find((m) => m === initialMode) ?? 'require_approval',
@@ -792,8 +788,8 @@ export function PolicyChangeForm({
     setLocalError(null);
     onSubmit({
       ...base(),
-      config: isBudget ? { mode } : rulesToConfig(rules),
-      enabled: policy.enabled,
+      config: isBudget ? { mode } : isHiring ? { directHire: 'deny' } : rulesToConfig(rules),
+      enabled: isHiring ? true : policy.enabled,
     });
   };
 
@@ -820,6 +816,13 @@ export function PolicyChangeForm({
               <option value="deny">Deny</option>
             </Select>
           </Field>
+        ) : null}
+
+        {isHiring ? (
+          <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+            When this is on, people join only through a hiring request: the team asks, the CEO and
+            Finance decide, HR recruits. Asking the assistant to hire someone directly is refused.
+          </p>
         ) : null}
 
         {isAuthority ? (
@@ -927,12 +930,16 @@ export function PolicyChangeForm({
         ) : null}
 
         <Stack direction="row" gap={2} style={{ flexWrap: 'wrap' }}>
-          <Button size="sm" onClick={createVersion} disabled={submitting} loading={submitting}>
-            Create new version
-          </Button>
-          <Button size="sm" variant="secondary" onClick={toggle} disabled={submitting}>
-            {policy.enabled ? 'Disable policy' : 'Enable policy'}
-          </Button>
+          {isHiring && !neverConfigured ? null : (
+            <Button size="sm" onClick={createVersion} disabled={submitting} loading={submitting}>
+              {isHiring ? 'Turn on' : 'Create new version'}
+            </Button>
+          )}
+          {isHiring && neverConfigured ? null : (
+            <Button size="sm" variant="secondary" onClick={toggle} disabled={submitting}>
+              {policy.enabled ? 'Disable policy' : 'Enable policy'}
+            </Button>
+          )}
         </Stack>
       </Stack>
     </Card>

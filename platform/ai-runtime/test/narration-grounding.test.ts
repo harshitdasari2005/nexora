@@ -236,7 +236,7 @@ describe('createNarrationPrompt (v4) — systematic coverage, grounding, and the
     const prompt = createNarrationPrompt();
     expect(prompt.id).toBe(NARRATION_PROMPT_ID);
     expect([...prompt.variables].sort()).toEqual(['businessContext', 'intent', 'results']);
-    expect(prompt.version).toBe('4.0.0');
+    expect(prompt.version).toBe('4.1.0');
   });
 
   it('directs the model to work through every source before answering', () => {

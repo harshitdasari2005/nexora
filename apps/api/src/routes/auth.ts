@@ -14,12 +14,20 @@ import type { FastifyInstance } from 'fastify';
 import type { AuthenticateWithOidcHandler, EndSessionHandler } from '@nexora/application-identity';
 
 import type { ApiConfig } from '../config.js';
-import { generatePkce, type OidcGateway } from '../oidc/gateway.js';
+import {
+  generateNonce,
+  generatePkce,
+  OidcValidationError,
+  type OidcGateway,
+} from '../oidc/gateway.js';
 import { requireAuth } from '../plugins/auth.js';
 import { toHttpError } from '../http/errors.js';
 
 /** Cookie name holding the PKCE code verifier between login and callback. */
 const OIDC_VERIFIER_COOKIE = 'oidc_verifier';
+
+/** Cookie name holding the OIDC nonce between login and callback (AUTH-006). */
+const OIDC_NONCE_COOKIE = 'oidc_nonce';
 
 /** Dependencies of the auth routes. */
 export interface AuthRoutesDependencies {
@@ -44,6 +52,7 @@ export function registerAuthRoutes(
   app.get('/api/auth/login', { config: { public: true } }, async (_request, reply) => {
     const state = randomUUID();
     const pkce = generatePkce();
+    const nonce = generateNonce();
     const cookieOptions = {
       httpOnly: true,
       sameSite: 'lax' as const,
@@ -55,7 +64,9 @@ export function registerAuthRoutes(
     // The verifier is only needed at the callback; httpOnly + short maxAge
     // keeps it out of script scope.
     reply.setCookie(OIDC_VERIFIER_COOKIE, pkce.codeVerifier, cookieOptions);
-    return reply.redirect(await oidc.buildAuthorizationUrl(state, pkce));
+    // The nonce is a third single-use, short-lived, HttpOnly transaction value.
+    reply.setCookie(OIDC_NONCE_COOKIE, nonce, cookieOptions);
+    return reply.redirect(await oidc.buildAuthorizationUrl(state, pkce, nonce));
   });
 
   // Exchange the authorization code and issue the session cookie.
@@ -68,17 +79,20 @@ export function registerAuthRoutes(
     };
     const expectedState = request.cookies?.['oidc_state'];
     const codeVerifier = request.cookies?.[OIDC_VERIFIER_COOKIE];
+    const expectedNonce = request.cookies?.[OIDC_NONCE_COOKIE];
     if (
       query.code === undefined ||
       query.state === undefined ||
       expectedState === undefined ||
       codeVerifier === undefined ||
+      expectedNonce === undefined ||
       query.state !== expectedState
     ) {
       // Clear the OIDC cookies even on failure so a stale attempt cannot
       // shadow the next login (both cookies are single-use).
       reply.clearCookie('oidc_state', { path: '/' });
       reply.clearCookie(OIDC_VERIFIER_COOKIE, { path: '/' });
+      reply.clearCookie(OIDC_NONCE_COOKIE, { path: '/' });
       return reply.code(400).send({
         error: {
           code: 'VALIDATION_ERROR',
@@ -89,10 +103,27 @@ export function registerAuthRoutes(
     }
     reply.clearCookie('oidc_state', { path: '/' });
     reply.clearCookie(OIDC_VERIFIER_COOKIE, { path: '/' });
+    reply.clearCookie(OIDC_NONCE_COOKIE, { path: '/' });
 
     // The full parsed callback query is passed to the gateway so the real
     // Keycloak flow (state + iss) validates end-to-end.
-    const identity = await oidc.exchangeCode(query, expectedState, codeVerifier);
+    let identity: Awaited<ReturnType<OidcGateway['exchangeCode']>>;
+    try {
+      identity = await oidc.exchangeCode(query, expectedState, codeVerifier, expectedNonce);
+    } catch (error) {
+      if (error instanceof OidcValidationError) {
+        // The IdP's answer failed validation (nonce/state/iss/aud/signature/expiry/code):
+        // no session, and nothing about WHY is reflected to the client.
+        return reply.code(401).send({
+          error: {
+            code: 'AUTHORIZATION_ERROR',
+            message: 'Authentication failed',
+            requestId: request.id,
+          },
+        });
+      }
+      throw error;
+    }
     const result = await dependencies.authenticate.handle({
       oidcSubject: identity.subject,
       email: identity.email,
@@ -129,7 +160,14 @@ export function registerAuthRoutes(
       const http = toHttpError(result.error, request.id);
       return reply.code(http.statusCode).send(http.body);
     }
-    reply.clearCookie(config.cookie.name, { path: '/' });
+    // A `__Host-` cookie can only be (over)written — including expired — with the
+    // same `Secure; Path=/` attributes, so logout clears it with the cookie's own options.
+    reply.clearCookie(config.cookie.name, {
+      path: '/',
+      httpOnly: true,
+      sameSite: config.cookie.sameSite,
+      secure: config.cookie.secure,
+    });
     // End the IdP session too so a follow-up SSO login prompts again
     // (single logout, SAD.md §13.1). The IdP redirects back to the origin.
     // The local session is already ended, so an IdP discovery failure falls

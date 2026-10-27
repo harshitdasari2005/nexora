@@ -12,3 +12,4 @@ export * from './hasher/index.js';
 export * from './migrate.js';
 export * from './repositories/index.js';
 export * from './schema/index.js';
+export * from './transaction.js';

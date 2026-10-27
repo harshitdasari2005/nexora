@@ -12,6 +12,7 @@
 import { sql } from 'drizzle-orm';
 import { desc } from 'drizzle-orm';
 import {
+  bigint,
   boolean,
   doublePrecision,
   index,
@@ -40,12 +41,20 @@ export const users = pgTable(
     status: varchar('status', { length: 32 }).notNull(),
     profile: jsonb('profile').notNull(),
     roles: jsonb('roles').notNull().default([]),
+    // External OIDC identity binding (AUTH-009). Nullable: existing users stay
+    // unbound until their next successful OIDC login. Authentication-internal.
+    oidcIssuer: varchar('oidc_issuer', { length: 512 }),
+    oidcSubject: varchar('oidc_subject', { length: 255 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
     version: integer('version').notNull().default(1),
   },
   (table) => [
     uniqueIndex('users_email_unique').on(table.email),
+    // One account per external identity; multiple unbound (NULL) users coexist.
+    uniqueIndex('users_oidc_identity_unique')
+      .on(table.oidcIssuer, table.oidcSubject)
+      .where(sql`${table.oidcIssuer} IS NOT NULL AND ${table.oidcSubject} IS NOT NULL`),
     uniqueIndex('users_username_unique').on(table.username),
     uniqueIndex('users_tenant_email_unique').on(table.tenantId, table.email),
     uniqueIndex('users_tenant_username_unique').on(table.tenantId, table.username),
@@ -61,7 +70,8 @@ export const sessions = pgTable(
     id: varchar('id', { length: 64 }).primaryKey(),
     userId: varchar('user_id', { length: 64 }).notNull(),
     tenantId: varchar('tenant_id', { length: 64 }).notNull(),
-    token: varchar('token', { length: 128 }).notNull(),
+    // SHA-256 hex digest of the bearer token (AUTH-004). The raw token is never stored.
+    tokenHash: varchar('token_hash', { length: 64 }).notNull(),
     status: varchar('status', { length: 32 }).notNull(),
     issuedAt: timestamp('issued_at', { withTimezone: true }).notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -69,7 +79,7 @@ export const sessions = pgTable(
     endedAt: timestamp('ended_at', { withTimezone: true }),
     version: integer('version').notNull().default(1),
   },
-  (table) => [uniqueIndex('sessions_token_unique').on(table.token)],
+  (table) => [uniqueIndex('sessions_token_hash_unique').on(table.tokenHash)],
 );
 
 /**
@@ -228,11 +238,154 @@ export const employees = pgTable(
     organizationId: varchar('organization_id', { length: 64 }).notNull(),
     name: varchar('name', { length: 160 }).notNull(),
     status: varchar('status', { length: 32 }).notNull(),
+    // Employment details captured when a person is hired through recruiting
+    // (all nullable: records created before recruiting carry a name only).
+    email: varchar('email', { length: 254 }),
+    jobTitle: varchar('job_title', { length: 120 }),
+    department: varchar('department', { length: 80 }),
+    employmentType: varchar('employment_type', { length: 32 }),
+    startDate: varchar('start_date', { length: 10 }),
+    requisitionId: varchar('requisition_id', { length: 64 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
     version: integer('version').notNull().default(1),
   },
   (table) => [index('employees_org_idx').on(table.organizationId)],
+);
+
+/**
+ * hiring_requisitions — the {@link @nexora/domain-hr!HiringRequisition}
+ * aggregate: a team's request to hire, with its decision chain. The
+ * organization id is the tenant scope; `workspace_id` is the team it was
+ * raised from. `history` is the append-only trail (who did what, when);
+ * `version` guards every update (optimistic concurrency).
+ */
+export const hiringRequisitions = pgTable(
+  'hiring_requisitions',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    requestedBy: varchar('requested_by', { length: 64 }).notNull(),
+    jobTitle: varchar('job_title', { length: 120 }).notNull(),
+    department: varchar('department', { length: 80 }).notNull(),
+    projectId: varchar('project_id', { length: 64 }),
+    headcount: integer('headcount').notNull(),
+    employmentType: varchar('employment_type', { length: 32 }).notNull(),
+    salaryMinMinorUnits: bigint('salary_min_minor_units', { mode: 'number' }).notNull(),
+    salaryMaxMinorUnits: bigint('salary_max_minor_units', { mode: 'number' }).notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    justification: text('justification').notNull(),
+    urgency: varchar('urgency', { length: 16 }).notNull(),
+    targetStartDate: varchar('target_start_date', { length: 10 }),
+    status: varchar('status', { length: 32 }).notNull(),
+    round: integer('round').notNull().default(1),
+    history: jsonb('history').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('hiring_requisitions_org_idx').on(table.organizationId, table.createdAt),
+    index('hiring_requisitions_requester_idx').on(table.organizationId, table.requestedBy),
+  ],
+);
+
+/**
+ * job_openings — the {@link @nexora/domain-hr!JobOpening} aggregate: the
+ * position HR opens for an approved hiring request (exactly one per request).
+ * `offers_out` + `hired_count` never exceed `headcount`.
+ */
+export const jobOpenings = pgTable(
+  'job_openings',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    requisitionId: varchar('requisition_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    hiringManagerId: varchar('hiring_manager_id', { length: 64 }).notNull(),
+    openedBy: varchar('opened_by', { length: 64 }).notNull(),
+    title: varchar('title', { length: 120 }).notNull(),
+    department: varchar('department', { length: 80 }).notNull(),
+    headcount: integer('headcount').notNull(),
+    employmentType: varchar('employment_type', { length: 32 }).notNull(),
+    salaryMinMinorUnits: bigint('salary_min_minor_units', { mode: 'number' }).notNull(),
+    salaryMaxMinorUnits: bigint('salary_max_minor_units', { mode: 'number' }).notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    description: text('description').notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    offersOut: integer('offers_out').notNull().default(0),
+    hiredCount: integer('hired_count').notNull().default(0),
+    closedReason: varchar('closed_reason', { length: 500 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('job_openings_org_idx').on(table.organizationId, table.createdAt),
+    // One opening per hiring request: a duplicate "open position" cannot be created.
+    uniqueIndex('job_openings_requisition_unique').on(table.organizationId, table.requisitionId),
+  ],
+);
+
+/**
+ * candidates — the {@link @nexora/domain-hr!Candidate} aggregate: one person
+ * considered for one opening. `feedback`, `offer` and `history` are owned by
+ * the aggregate; `version` guards every update.
+ */
+export const candidates = pgTable(
+  'candidates',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    openingId: varchar('opening_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    name: varchar('name', { length: 160 }).notNull(),
+    email: varchar('email', { length: 254 }).notNull(),
+    phone: varchar('phone', { length: 40 }),
+    source: varchar('source', { length: 32 }).notNull(),
+    resumeNotes: text('resume_notes'),
+    stage: varchar('stage', { length: 32 }).notNull(),
+    feedback: jsonb('feedback').notNull(),
+    offer: jsonb('offer'),
+    closedReason: varchar('closed_reason', { length: 500 }),
+    employeeId: varchar('employee_id', { length: 64 }),
+    history: jsonb('history').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [index('candidates_opening_idx').on(table.organizationId, table.openingId)],
+);
+
+/**
+ * onboardings — the {@link @nexora/domain-hr!Onboarding} aggregate: a new
+ * hire's checklist (exactly one per employee). `items` is owned by the
+ * aggregate; `version` guards every update.
+ */
+export const onboardings = pgTable(
+  'onboardings',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    employeeId: varchar('employee_id', { length: 64 }).notNull(),
+    employeeName: varchar('employee_name', { length: 160 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    hiringManagerId: varchar('hiring_manager_id', { length: 64 }).notNull(),
+    projectId: varchar('project_id', { length: 64 }),
+    startedBy: varchar('started_by', { length: 64 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    items: jsonb('items').notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('onboardings_org_idx').on(table.organizationId, table.createdAt),
+    // One onboarding per employee.
+    uniqueIndex('onboardings_employee_unique').on(table.organizationId, table.employeeId),
+  ],
 );
 
 /**
@@ -873,7 +1026,8 @@ export const budgets = pgTable(
     workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
     createdBy: varchar('created_by', { length: 64 }).notNull(),
     name: varchar('name', { length: 120 }).notNull(),
-    allocatedMinorUnits: integer('allocated_minor_units').notNull(),
+    // bigint: the domain allows up to 1e11 minor units, past int4's 2 147 483 647.
+    allocatedMinorUnits: bigint('allocated_minor_units', { mode: 'number' }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
     periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
@@ -905,7 +1059,7 @@ export const expenses = pgTable(
     budgetId: varchar('budget_id', { length: 64 }).notNull(),
     submittedBy: varchar('submitted_by', { length: 64 }).notNull(),
     description: varchar('description', { length: 120 }).notNull(),
-    amountMinorUnits: integer('amount_minor_units').notNull(),
+    amountMinorUnits: bigint('amount_minor_units', { mode: 'number' }).notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     status: varchar('status', { length: 32 }).notNull(),
     decidedBy: varchar('decided_by', { length: 64 }),
@@ -1309,5 +1463,92 @@ export const runtimeRuns = pgTable(
     index('runtime_runs_tenant_provider_model_idx').on(table.tenantId, table.provider, table.model),
     index('runtime_runs_tenant_agent_idx').on(table.tenantId, table.agentId),
     index('runtime_runs_tenant_request_idx').on(table.tenantId, table.requestId),
+  ],
+);
+
+/**
+ * office_requests — the {@link @nexora/domain-hr!OfficeRequest} aggregate: an
+ * everyday office request (leave, purchase, IT access) and the chain of people
+ * it passes through. `details` and `history` are validated by the aggregate;
+ * `version` backs optimistic updates.
+ */
+export const officeRequests = pgTable(
+  'office_requests',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    requestedBy: varchar('requested_by', { length: 64 }).notNull(),
+    type: varchar('type', { length: 32 }).notNull(),
+    details: jsonb('details').notNull(),
+    stages: jsonb('stages').notNull(),
+    stageIndex: integer('stage_index').notNull().default(0),
+    status: varchar('status', { length: 32 }).notNull(),
+    history: jsonb('history').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('office_requests_org_idx').on(table.organizationId, table.createdAt),
+    index('office_requests_requester_idx').on(table.organizationId, table.requestedBy),
+  ],
+);
+
+/**
+ * project_tasks — the {@link @nexora/domain-projects!ProjectTask} aggregate: a
+ * piece of work on a project, who does it and where it stands. `version` backs
+ * optimistic updates.
+ */
+export const projectTasks = pgTable(
+  'project_tasks',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    projectId: varchar('project_id', { length: 64 }).notNull(),
+    title: varchar('title', { length: 160 }).notNull(),
+    description: text('description'),
+    priority: varchar('priority', { length: 16 }).notNull(),
+    dueDate: varchar('due_date', { length: 10 }),
+    assigneeId: varchar('assignee_id', { length: 64 }).notNull(),
+    createdBy: varchar('created_by', { length: 64 }).notNull(),
+    status: varchar('status', { length: 32 }).notNull(),
+    history: jsonb('history').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+    version: integer('version').notNull().default(1),
+  },
+  (table) => [
+    index('project_tasks_org_idx').on(table.organizationId, table.createdAt),
+    index('project_tasks_assignee_idx').on(table.organizationId, table.assigneeId),
+    index('project_tasks_project_idx').on(table.organizationId, table.projectId),
+  ],
+);
+
+/**
+ * workspace_invites — one-time links that bring a person into a team
+ * ({@link @nexora/domain-workspaces!WorkspaceInvite}). Only the hash of the
+ * link's secret is stored.
+ */
+export const workspaceInvites = pgTable(
+  'workspace_invites',
+  {
+    id: varchar('id', { length: 64 }).primaryKey(),
+    organizationId: varchar('organization_id', { length: 64 }).notNull(),
+    workspaceId: varchar('workspace_id', { length: 64 }).notNull(),
+    seat: varchar('seat', { length: 32 }).notNull(),
+    tokenHash: varchar('token_hash', { length: 64 }).notNull(),
+    label: varchar('label', { length: 120 }).notNull(),
+    createdBy: varchar('created_by', { length: 64 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedBy: varchar('used_by', { length: 64 }),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('workspace_invites_token_unique').on(table.tokenHash),
+    index('workspace_invites_org_idx').on(table.organizationId, table.createdAt),
   ],
 );

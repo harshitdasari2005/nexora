@@ -12,10 +12,16 @@ import type {
   RoleRepository,
   Session,
   SessionRepository,
-  User,
   UserRepository,
 } from '@nexora/domain-identity';
-import { PasswordHash, type Email, type Username } from '@nexora/domain-identity';
+import {
+  isSessionLive,
+  User,
+  PasswordHash,
+  type Email,
+  type SessionLivenessWindow,
+  type Username,
+} from '@nexora/domain-identity';
 import type {
   MembershipRepository,
   Organization,
@@ -32,6 +38,20 @@ import type {
 } from '@nexora/domain-projects';
 import type { AssignmentId } from '@nexora/domain-projects';
 import type { Employee, EmployeeRepository } from '@nexora/domain-hr';
+import {
+  Candidate,
+  HiringRequisition,
+  JobOpening,
+  Onboarding,
+  type OnboardingRepository,
+  type OnboardingSnapshot,
+  type CandidateRepository,
+  type CandidateSnapshot,
+  type HiringRequisitionRepository,
+  type HiringRequisitionSnapshot,
+  type JobOpeningRepository,
+  type JobOpeningSnapshot,
+} from '@nexora/domain-hr';
 import type { CalendarEntry, CalendarEntryRepository } from '@nexora/module-calendar';
 import type { Budget, BudgetRepository, Expense, ExpenseRepository } from '@nexora/module-finance';
 import type {
@@ -58,6 +78,8 @@ import type {
   Workspace,
   WorkspaceInstallation,
   WorkspaceInstallationRepository,
+  WorkspaceInvite,
+  WorkspaceInviteRepository,
   WorkspaceMembership,
   WorkspaceMembershipRepository,
   WorkspaceRepository,
@@ -89,12 +111,23 @@ import type { EmailRecord, WebhookDelivery, WebhookEndpoint } from '@nexora/modu
 import type { MeasurementRepository } from '@nexora/module-measurements';
 import type { TenantMeasurementsSnapshot } from '@nexora/module-measurements';
 
-import type {
-  OidcCallbackParams,
-  OidcGateway,
-  OidcIdentity,
-  PkceParameters,
+import {
+  OidcValidationError,
+  type OidcCallbackParams,
+  type OidcGateway,
+  type OidcIdentity,
+  type PkceParameters,
 } from '../src/oidc/gateway.js';
+import {
+  OfficeRequest,
+  type OfficeRequestRepository,
+  type OfficeRequestSnapshot,
+} from '@nexora/domain-hr';
+import {
+  ProjectTask,
+  type ProjectTaskRepository,
+  type ProjectTaskSnapshot,
+} from '@nexora/domain-projects';
 
 /** An in-memory {@link UserRepository}. */
 export class FakeUserRepository implements UserRepository {
@@ -111,6 +144,36 @@ export class FakeUserRepository implements UserRepository {
       }
     }
     return undefined;
+  }
+
+  async findByOidcIdentity(issuer: string, subject: string): Promise<User | undefined> {
+    for (const user of this.users.values()) {
+      if (user.oidcIssuer === issuer && user.oidcSubject === subject) {
+        return user;
+      }
+    }
+    return undefined;
+  }
+
+  async bindOidcIdentity(userId: UserId, issuer: string, subject: string): Promise<boolean> {
+    const user = this.users.get(userId);
+    if (user === undefined || user.oidcIssuer !== undefined) {
+      return false; // missing, or already bound: first-wins, never overwritten
+    }
+    // Check-and-set with NO await in between: atomic, like the single conditional UPDATE in Postgres.
+    for (const other of this.users.values()) {
+      if (other.oidcIssuer === issuer && other.oidcSubject === subject) {
+        return false; // that identity belongs to someone else (the unique index in Postgres)
+      }
+    }
+    // The in-memory aggregate is immutable here: replace it with a bound copy.
+    const bound = User.hydrate({
+      ...User.snapshot(user),
+      oidcIssuer: issuer,
+      oidcSubject: subject,
+    });
+    this.users.set(userId, bound);
+    return true;
   }
 
   async findByUsername(username: Username): Promise<User | undefined> {
@@ -144,8 +207,8 @@ export class FakeSessionRepository implements SessionRepository {
     return this.sessions.get(id);
   }
 
-  async findByToken(token: string): Promise<Session | undefined> {
-    return this.byToken.get(token);
+  async findByTokenHash(tokenHash: string): Promise<Session | undefined> {
+    return this.byToken.get(tokenHash);
   }
 
   async findActiveByUser(userId: UserId): Promise<readonly Session[]> {
@@ -154,13 +217,14 @@ export class FakeSessionRepository implements SessionRepository {
     );
   }
 
-  async countActiveByUser(userId: UserId): Promise<number> {
-    return (await this.findActiveByUser(userId)).length;
+  async countActiveByUser(userId: UserId, window: SessionLivenessWindow): Promise<number> {
+    return (await this.findActiveByUser(userId)).filter((session) => isSessionLive(session, window))
+      .length;
   }
 
   async save(session: Session): Promise<void> {
     this.sessions.set(session.id, session);
-    this.byToken.set(session.token, session);
+    this.byToken.set(session.tokenHash, session);
   }
 }
 
@@ -531,6 +595,155 @@ export class FakeKnowledgeCategoryRepository implements KnowledgeCategoryReposit
 }
 
 /** An in-memory {@link EmployeeRepository}. */
+/** An in-memory {@link JobOpeningRepository} (one opening per request; optimistic updates). */
+export class FakeJobOpeningRepository implements JobOpeningRepository {
+  readonly rows = new Map<string, JobOpeningSnapshot>();
+
+  async findById(id: JobOpening['id']): Promise<JobOpening | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : JobOpening.hydrate(structuredClone(row));
+  }
+
+  async findByRequisition(
+    organizationId: TenantId,
+    requisitionId: string,
+  ): Promise<JobOpening | undefined> {
+    const row = [...this.rows.values()].find(
+      (entry) => entry.organizationId === organizationId && entry.requisitionId === requisitionId,
+    );
+    return row === undefined ? undefined : JobOpening.hydrate(structuredClone(row));
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly JobOpening[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => JobOpening.hydrate(structuredClone(row)));
+  }
+
+  async insert(opening: JobOpening): Promise<boolean> {
+    // Check-and-set with no await in between: like the unique index.
+    const snapshot = JobOpening.snapshot(opening);
+    const taken = [...this.rows.values()].some(
+      (row) =>
+        row.organizationId === snapshot.organizationId &&
+        row.requisitionId === snapshot.requisitionId,
+    );
+    if (taken) return false;
+    this.rows.set(snapshot.id, structuredClone(snapshot));
+    return true;
+  }
+
+  async update(opening: JobOpening, expectedVersion: number): Promise<boolean> {
+    const stored = this.rows.get(opening.id);
+    if (stored === undefined || stored.version !== expectedVersion) return false;
+    this.rows.set(opening.id, structuredClone(JobOpening.snapshot(opening)));
+    return true;
+  }
+}
+
+/** An in-memory {@link OnboardingRepository} (one per employee; optimistic updates). */
+export class FakeOnboardingRepository implements OnboardingRepository {
+  readonly rows = new Map<string, OnboardingSnapshot>();
+
+  async findById(id: Onboarding['id']): Promise<Onboarding | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : Onboarding.hydrate(structuredClone(row));
+  }
+
+  async findByEmployee(
+    organizationId: TenantId,
+    employeeId: string,
+  ): Promise<Onboarding | undefined> {
+    const row = [...this.rows.values()].find(
+      (entry) => entry.organizationId === organizationId && entry.employeeId === employeeId,
+    );
+    return row === undefined ? undefined : Onboarding.hydrate(structuredClone(row));
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly Onboarding[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => Onboarding.hydrate(structuredClone(row)));
+  }
+
+  async insert(onboarding: Onboarding): Promise<boolean> {
+    const snapshot = Onboarding.snapshot(onboarding);
+    const taken = [...this.rows.values()].some(
+      (row) =>
+        row.organizationId === snapshot.organizationId && row.employeeId === snapshot.employeeId,
+    );
+    if (taken) return false;
+    this.rows.set(snapshot.id, structuredClone(snapshot));
+    return true;
+  }
+
+  async update(onboarding: Onboarding, expectedVersion: number): Promise<boolean> {
+    const stored = this.rows.get(onboarding.id);
+    if (stored === undefined || stored.version !== expectedVersion) return false;
+    this.rows.set(onboarding.id, structuredClone(Onboarding.snapshot(onboarding)));
+    return true;
+  }
+}
+
+/** An in-memory {@link CandidateRepository} (optimistic updates). */
+export class FakeCandidateRepository implements CandidateRepository {
+  readonly rows = new Map<string, CandidateSnapshot>();
+
+  async findById(id: Candidate['id']): Promise<Candidate | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : Candidate.hydrate(structuredClone(row));
+  }
+
+  async listByOpening(organizationId: TenantId, openingId: string): Promise<readonly Candidate[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId && row.openingId === openingId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .map((row) => Candidate.hydrate(structuredClone(row)));
+  }
+
+  async insert(candidate: Candidate): Promise<void> {
+    this.rows.set(candidate.id, structuredClone(Candidate.snapshot(candidate)));
+  }
+
+  async update(candidate: Candidate, expectedVersion: number): Promise<boolean> {
+    const stored = this.rows.get(candidate.id);
+    if (stored === undefined || stored.version !== expectedVersion) return false;
+    this.rows.set(candidate.id, structuredClone(Candidate.snapshot(candidate)));
+    return true;
+  }
+}
+
+/** An in-memory {@link HiringRequisitionRepository} (optimistic updates, like Postgres). */
+export class FakeHiringRequisitionRepository implements HiringRequisitionRepository {
+  readonly rows = new Map<string, HiringRequisitionSnapshot>();
+
+  async findById(id: HiringRequisition['id']): Promise<HiringRequisition | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : HiringRequisition.hydrate(structuredClone(row));
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly HiringRequisition[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => HiringRequisition.hydrate(structuredClone(row)));
+  }
+
+  async insert(requisition: HiringRequisition): Promise<void> {
+    this.rows.set(requisition.id, structuredClone(HiringRequisition.snapshot(requisition)));
+  }
+
+  async update(requisition: HiringRequisition, expectedVersion: number): Promise<boolean> {
+    // Check-and-set with no await in between: atomic, like the conditional UPDATE.
+    const stored = this.rows.get(requisition.id);
+    if (stored === undefined || stored.version !== expectedVersion) return false;
+    this.rows.set(requisition.id, structuredClone(HiringRequisition.snapshot(requisition)));
+    return true;
+  }
+}
+
 export class FakeEmployeeRepository implements EmployeeRepository {
   readonly employees = new Map<string, Employee>();
 
@@ -1146,17 +1359,31 @@ export class FakeOidcGateway implements OidcGateway {
     this.identity = identity;
   }
 
-  async buildAuthorizationUrl(state: string, pkce: PkceParameters): Promise<string> {
-    return `http://keycloak.test/realms/nexora/protocol/openid-connect/auth?state=${state}&code_challenge=${pkce.codeChallenge}&code_challenge_method=S256`;
+  /** The nonce each authorization request carried, by state (what the IdP will echo in the ID token). */
+  readonly issuedNonces = new Map<string, string>();
+  readonly exchangedNonces: string[] = [];
+
+  async buildAuthorizationUrl(state: string, pkce: PkceParameters, nonce: string): Promise<string> {
+    this.issuedNonces.set(state, nonce);
+    return `http://keycloak.test/realms/nexora/protocol/openid-connect/auth?state=${state}&nonce=${nonce}&code_challenge=${pkce.codeChallenge}&code_challenge_method=S256`;
   }
 
   async exchangeCode(
-    _params: OidcCallbackParams,
+    params: OidcCallbackParams,
     expectedState: string,
     codeVerifier: string,
+    expectedNonce: string,
   ): Promise<OidcIdentity> {
     this.exchangedStates.push(expectedState);
     this.exchangedVerifiers.push(codeVerifier);
+    this.exchangedNonces.push(expectedNonce);
+    // Model the real IdP: the ID token carries the nonce of the authorization
+    // request that produced this code, and the client must see exactly its own.
+    const issued = this.issuedNonces.get(params.state ?? expectedState);
+    if (issued === undefined || issued !== expectedNonce) {
+      throw new OidcValidationError('nonce mismatch');
+    }
+    this.issuedNonces.delete(params.state ?? expectedState); // single use
     return this.identity;
   }
 
@@ -1259,5 +1486,101 @@ export class FakeMeasurementRepository implements MeasurementRepository {
   /** Seeds a fixed snapshot for a tenant (test setup convenience). */
   seed(tenantId: TenantId, snapshot: TenantMeasurementsSnapshot): void {
     this.snapshots.set(tenantId, snapshot);
+  }
+}
+
+/** An in-memory {@link OfficeRequestRepository} (optimistic updates, like Postgres). */
+export class FakeOfficeRequestRepository implements OfficeRequestRepository {
+  readonly rows = new Map<string, OfficeRequestSnapshot>();
+
+  async findById(id: OfficeRequest['id']): Promise<OfficeRequest | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : OfficeRequest.hydrate(structuredClone(row));
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly OfficeRequest[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => OfficeRequest.hydrate(structuredClone(row)));
+  }
+
+  async insert(request: OfficeRequest): Promise<void> {
+    this.rows.set(request.id, structuredClone(OfficeRequest.snapshot(request)));
+  }
+
+  async update(request: OfficeRequest, expectedVersion: number): Promise<boolean> {
+    const stored = this.rows.get(request.id);
+    if (stored === undefined || stored.version !== expectedVersion) return false;
+    this.rows.set(request.id, structuredClone(OfficeRequest.snapshot(request)));
+    return true;
+  }
+}
+
+/** An in-memory {@link ProjectTaskRepository} (optimistic updates, like Postgres). */
+export class FakeProjectTaskRepository implements ProjectTaskRepository {
+  readonly rows = new Map<string, ProjectTaskSnapshot>();
+
+  async findById(id: ProjectTask['id']): Promise<ProjectTask | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : ProjectTask.hydrate(structuredClone(row));
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly ProjectTask[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => ProjectTask.hydrate(structuredClone(row)));
+  }
+
+  async insert(task: ProjectTask): Promise<void> {
+    this.rows.set(task.id, structuredClone(ProjectTask.snapshot(task)));
+  }
+
+  async update(task: ProjectTask, expectedVersion: number): Promise<boolean> {
+    const stored = this.rows.get(task.id);
+    if (stored === undefined || stored.version !== expectedVersion) return false;
+    this.rows.set(task.id, structuredClone(ProjectTask.snapshot(task)));
+    return true;
+  }
+}
+
+/** An in-memory {@link WorkspaceInviteRepository} (conditional use, like Postgres). */
+export class FakeWorkspaceInviteRepository implements WorkspaceInviteRepository {
+  readonly rows = new Map<string, WorkspaceInvite>();
+
+  async insert(invite: WorkspaceInvite): Promise<void> {
+    this.rows.set(invite.id, { ...invite });
+  }
+
+  async findById(id: string): Promise<WorkspaceInvite | undefined> {
+    const row = this.rows.get(id);
+    return row === undefined ? undefined : { ...row };
+  }
+
+  async findByTokenHash(tokenHash: string): Promise<WorkspaceInvite | undefined> {
+    const row = [...this.rows.values()].find((invite) => invite.tokenHash === tokenHash);
+    return row === undefined ? undefined : { ...row };
+  }
+
+  async listByOrganization(organizationId: TenantId): Promise<readonly WorkspaceInvite[]> {
+    return [...this.rows.values()]
+      .filter((row) => row.organizationId === organizationId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .map((row) => ({ ...row }));
+  }
+
+  async markUsed(id: string, userId: string, at: string): Promise<boolean> {
+    const row = this.rows.get(id);
+    if (row === undefined || row.usedAt !== undefined || row.revokedAt !== undefined) return false;
+    this.rows.set(id, { ...row, usedBy: userId, usedAt: at });
+    return true;
+  }
+
+  async revoke(id: string, at: string): Promise<boolean> {
+    const row = this.rows.get(id);
+    if (row === undefined || row.usedAt !== undefined || row.revokedAt !== undefined) return false;
+    this.rows.set(id, { ...row, revokedAt: at });
+    return true;
   }
 }

@@ -10,6 +10,7 @@
 import type { TenantId } from '@nexora/contracts/common';
 
 import type { Project } from '../entities/project.js';
+import type { ProjectTask, ProjectTaskId } from '../entities/project-task.js';
 import type { ResourceAssignment } from '../entities/resource-assignment.js';
 import type { AssignmentId } from '../value-objects/assignment-id.js';
 import type { ProjectId } from '../value-objects/project-id.js';
@@ -56,4 +57,14 @@ export interface ResourceAssignmentRepository {
 
   /** Persists the aggregate (insert or update by id). */
   save(assignment: ResourceAssignment): Promise<void>;
+}
+
+/** The persistence port of the {@link ProjectTask} aggregate. */
+export interface ProjectTaskRepository {
+  findById(id: ProjectTaskId): Promise<ProjectTask | undefined>;
+  /** Lists the organization's tasks, newest first (tenant-scoped read). */
+  listByOrganization(organizationId: TenantId): Promise<readonly ProjectTask[]>;
+  insert(task: ProjectTask): Promise<void>;
+  /** Persists a change only while the row is still at `expectedVersion`. */
+  update(task: ProjectTask, expectedVersion: number): Promise<boolean>;
 }

@@ -672,7 +672,9 @@ describe('WebhookDispatcher', () => {
     expect(receipts).toHaveLength(1);
     expect(receipts[0]?.status).toBe('failed');
     expect(receipts[0]?.attempt).toBe(3);
-    expect(receipts[0]?.error).toBe('ECONNREFUSED');
+    // Transport failures are recorded generically (no network oracle for workspace readers).
+    expect(receipts[0]?.error).toBe('Delivery failed');
+    expect(receipts[0]?.error).not.toContain('ECONNREFUSED');
     expect(publisher.events.some((e) => e.type === 'integration.webhook.failed')).toBe(true);
   });
 

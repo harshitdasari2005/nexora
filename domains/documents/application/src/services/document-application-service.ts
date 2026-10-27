@@ -468,6 +468,11 @@ export class DocumentApplicationService {
         organizationId,
         workspaceId,
       );
+      // Archiving removes the document's content from storage; the retained
+      // earlier versions must not stay downloadable behind an archived document.
+      if (document.status.value === 'archived') {
+        return err(new DocumentVersionNotFoundError({ documentId: document.id, version }));
+      }
       const historical = await this.#documentsService.requireVersion(document.id, version);
       if (!historical.ok) {
         return err(historical.error);

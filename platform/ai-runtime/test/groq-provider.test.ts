@@ -89,6 +89,28 @@ describe('GroqAdapter (wired transport)', () => {
     expect(body.messages).toEqual([{ role: 'user', content: 'What workspaces do I have?' }]);
     expect(body.temperature).toBe(0.4);
     expect(body.max_tokens).toBe(128);
+    // An ordinary model gets exactly what was asked for, and no reasoning field.
+    expect('reasoning_effort' in body).toBe(false);
+  });
+
+  it('gives a reasoning model room to think, and asks it to think briefly', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse(200, {
+        choices: [{ message: { content: '{"ok":true}' }, finish_reason: 'stop' }],
+      }),
+    );
+    const adapter = new GroqAdapter({ model: 'openai/gpt-oss-120b', apiKey: 'sk-test' });
+
+    await adapter.chat!.complete({
+      messages: [{ role: 'user', content: 'Hello' }],
+      maxTokens: 128,
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(String(init.body)) as { max_tokens: number; reasoning_effort?: string };
+    // The thinking is billed against max_tokens: a bare 128 would come back empty.
+    expect(body.max_tokens).toBe(128 + 1024);
+    expect(body.reasoning_effort).toBe('low');
   });
 
   it('maps a length-truncated finish reason', async () => {

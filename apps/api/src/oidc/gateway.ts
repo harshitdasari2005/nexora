@@ -40,6 +40,28 @@ export interface PkceParameters {
   codeVerifier: string;
 }
 
+/**
+ * Generates a fresh OIDC nonce for ONE login transaction (AUTH-006). It is bound
+ * to that transaction (HttpOnly cookie, like state and the PKCE verifier), sent
+ * in the authorization request, and must come back in the ID token.
+ */
+export function generateNonce(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/**
+ * An authentication-response validation failure (state, nonce, issuer, audience,
+ * signature, expiry, rejected code…): the IdP's answer is not acceptable. The
+ * callback maps it to 401; infrastructure failures (network, discovery) are not
+ * this type and keep propagating as server errors.
+ */
+export class OidcValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OidcValidationError';
+  }
+}
+
 /** Generates a PKCE verifier + S256 challenge pair for one authorization. */
 export function generatePkce(): PkceParameters {
   const codeVerifier = randomBytes(32).toString('base64url');
@@ -50,9 +72,10 @@ export function generatePkce(): PkceParameters {
 /** The IdP boundary used by the auth routes. */
 export interface OidcGateway {
   /**
-   * Builds the authorization URL for the given CSRF state and PKCE challenge.
+   * Builds the authorization URL for the given CSRF state, PKCE challenge and
+   * ID-token nonce.
    */
-  buildAuthorizationUrl(state: string, pkce: PkceParameters): Promise<string>;
+  buildAuthorizationUrl(state: string, pkce: PkceParameters, nonce: string): Promise<string>;
   /**
    * Exchanges an authorization code (validating the state) for an identity,
    * proving possession of the PKCE verifier. `params` is the parsed callback
@@ -63,6 +86,7 @@ export interface OidcGateway {
     params: OidcCallbackParams,
     expectedState: string,
     codeVerifier: string,
+    expectedNonce: string,
   ): Promise<OidcIdentity>;
   /** Builds the IdP logout URL that returns to the given post-logout target. */
   buildLogoutUrl(redirectTo: string): Promise<string>;
@@ -96,12 +120,12 @@ export class KeycloakOidcGateway implements OidcGateway {
     this.#redirectUri = config.redirectUri;
   }
 
-  async buildAuthorizationUrl(state: string, pkce: PkceParameters): Promise<string> {
+  async buildAuthorizationUrl(state: string, pkce: PkceParameters, nonce: string): Promise<string> {
     const client = await this.#client();
     return client.authorizationUrl({
       scope: 'openid profile email',
       state,
-      nonce: undefined,
+      nonce,
       code_challenge: pkce.codeChallenge,
       code_challenge_method: 'S256',
     });
@@ -111,6 +135,7 @@ export class KeycloakOidcGateway implements OidcGateway {
     params: OidcCallbackParams,
     expectedState: string,
     codeVerifier: string,
+    expectedNonce: string,
   ): Promise<OidcIdentity> {
     const client = await this.#client();
     // openid-client validates the callback query PARAMS against the issuer
@@ -118,12 +143,29 @@ export class KeycloakOidcGateway implements OidcGateway {
     // real Keycloak redirect appends `state` and `iss`, so the full parsed
     // callback query is passed through. (Regression: the fake gateway used
     // in tests never exercised this real flow.)
-    const tokenSet = await client.callback(
-      this.#redirectUri,
-      { code: params.code, state: params.state, iss: params.iss },
-      { state: expectedState, code_verifier: codeVerifier },
-    );
+    let tokenSet: Awaited<ReturnType<Client['callback']>>;
+    try {
+      // `nonce` makes openid-client verify the ID token's `nonce` claim (AUTH-006).
+      tokenSet = await client.callback(
+        this.#redirectUri,
+        { code: params.code, state: params.state, iss: params.iss },
+        { state: expectedState, code_verifier: codeVerifier, nonce: expectedNonce },
+      );
+    } catch (error) {
+      // RPError = the response failed validation (state/nonce/iss/aud/signature/expiry);
+      // OPError = the IdP rejected the request (e.g. invalid or reused code).
+      // Both are an unacceptable authentication response, not a server fault.
+      if (error instanceof Error && (error.name === 'RPError' || error.name === 'OPError')) {
+        throw new OidcValidationError(error.message);
+      }
+      throw error;
+    }
     const claims = tokenSet.claims();
+    // Defense in depth: do not rely solely on the library's check — the ID token
+    // MUST carry exactly the nonce bound to this login transaction.
+    if (typeof claims.nonce !== 'string' || claims.nonce !== expectedNonce) {
+      throw new OidcValidationError('ID token nonce does not match this login transaction');
+    }
     if (typeof claims.sub !== 'string' || claims.sub.length === 0) {
       throw new Error('OIDC token set carried no subject claim');
     }

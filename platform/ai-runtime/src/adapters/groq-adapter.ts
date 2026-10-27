@@ -21,9 +21,22 @@ import { completeOpenAICompatible } from './openai-compatible-transport.js';
 /** Groq's OpenAI-compatible API base URL. */
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 
+/**
+ * Groq's reasoning models think before they answer, and the thinking is
+ * counted against `max_tokens`. They are asked to think briefly and given
+ * room to do it, so a caller's small answer budget still yields an answer.
+ */
+const REASONING_MODEL = /^openai\/gpt-oss/;
+const REASONING_HEADROOM_TOKENS = 1024;
+
+/** Whether a Groq model id is one of the reasoning models. */
+export function isGroqReasoningModel(model: string): boolean {
+  return REASONING_MODEL.test(model);
+}
+
 /** Options for the Groq adapter. */
 export interface GroqAdapterOptions {
-  /** The Groq model id to serve (e.g. `llama-3.3-70b-versatile`). */
+  /** The Groq model id to serve (e.g. `openai/gpt-oss-120b`). */
   model: string;
   /** The Groq API key; required before completions can be served. */
   apiKey?: string;
@@ -44,6 +57,7 @@ export class GroqAdapter implements ModelProvider {
 
   constructor(options: GroqAdapterOptions) {
     this.models = [options.model];
+    const reasoning = isGroqReasoningModel(options.model);
     this.chat = {
       id: this.id,
       complete: (request: ChatRequest): Promise<ChatResponse> =>
@@ -56,6 +70,12 @@ export class GroqAdapter implements ModelProvider {
             requireApiKey: true,
             apiKeyEnvVar: 'GROQ_API_KEY',
             ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+            ...(reasoning
+              ? {
+                  maxTokensHeadroom: REASONING_HEADROOM_TOKENS,
+                  extraBody: { reasoning_effort: 'low' },
+                }
+              : {}),
           },
           request,
         ),

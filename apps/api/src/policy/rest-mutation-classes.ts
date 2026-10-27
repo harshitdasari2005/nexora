@@ -307,6 +307,312 @@ export const REST_MUTATION_CLASSES: Readonly<Record<string, RestMutationEntry>> 
       'employees.manage; direct human HR action. The AI hire tool is consequential (approval); no policy DENY rule governs the capability.',
     proof: [cap('employees.manage')],
   },
+  // --- Hiring requisitions (the office hiring chain) --------------------------------------------------
+  'POST /api/hiring/requisitions': {
+    class: 'rbac',
+    justification:
+      'requisitions.create; raising a request changes nothing but the request itself — it then has to pass the executive and finance decisions.',
+    proof: [cap('requisitions.create')],
+  },
+  'POST /api/hiring/requisitions/:requisitionId/decision': {
+    class: 'domain_governed',
+    justification:
+      'The stage is derived from the request (never the body) and the caller must hold THAT stage’s capability; the aggregate then refuses a decision on one’s own request, a second stage by the same person, and any stage the request is not waiting at.',
+    proof: [
+      cap('requisitions.approve_executive'),
+      cap('requisitions.approve_finance'),
+      {
+        in: 'domains/hr/src/entities/hiring-requisition.ts',
+        contains: 'You cannot decide your own hiring request',
+      },
+      {
+        in: 'domains/hr/src/entities/hiring-requisition.ts',
+        contains: 'You already decided an earlier stage of this hiring request',
+      },
+    ],
+  },
+  'PUT /api/hiring/requisitions/:requisitionId': {
+    class: 'domain_governed',
+    justification:
+      'requisitions.create + requester-only (aggregate): a returned request may be revised by the person who raised it; resubmitting restarts the whole chain.',
+    proof: [
+      cap('requisitions.create'),
+      {
+        in: 'domains/hr/src/entities/hiring-requisition.ts',
+        contains: 'Only the requester can revise a hiring request',
+      },
+    ],
+  },
+  'POST /api/hiring/requisitions/:requisitionId/withdraw': {
+    class: 'domain_governed',
+    justification:
+      'requisitions.create + requester-only (aggregate); an approved request can no longer be withdrawn.',
+    proof: [
+      cap('requisitions.create'),
+      {
+        in: 'domains/hr/src/entities/hiring-requisition.ts',
+        contains: 'Only the requester can withdraw a hiring request',
+      },
+    ],
+  },
+  // --- Office requests (leave, purchase, IT access) ----------------------------------------------------
+  'POST /api/requests': {
+    class: 'rbac',
+    justification:
+      'requests.create; raises a request of one of the catalogued office workflows from the caller’s own team. The aggregate keeps only the workflow’s own fields and validates each. A decision the requester would have to take themselves is recorded as not required, never self-approved.',
+    proof: [cap('requests.create')],
+  },
+  'POST /api/requests/:requestId/decision': {
+    class: 'domain_governed',
+    justification:
+      'The authority of the SEAT the pending stage belongs to (manager of the request’s own team, the executive, HR, Finance, IT, engineering, marketing, sales, support, Legal, or the requester for their own step), derived server-side; a decision that would fall to the requester goes up to the executive. The aggregate enforces the order of the stages and separation of duties: nobody decides their own request, and saying no needs a reason.',
+    proof: [
+      { in: 'route', contains: 'requests.approve_manager' },
+      {
+        in: 'apps/api/src/office/request-authority.ts',
+        contains: "seat !== 'manager' || scope.workspaceId === request.workspaceId",
+      },
+      {
+        in: 'domains/hr/src/entities/office-request.ts',
+        contains: 'You cannot decide your own request',
+      },
+      {
+        in: 'domains/hr/src/entities/office-request.ts',
+        contains: 'This request is waiting at a different stage',
+      },
+    ],
+  },
+  'POST /api/requests/:requestId/withdraw': {
+    class: 'domain_governed',
+    justification:
+      'requests.create; the aggregate lets only the requester withdraw, and only while the request is pending.',
+    proof: [
+      cap('requests.create'),
+      {
+        in: 'domains/hr/src/entities/office-request.ts',
+        contains: 'Only the requester can withdraw a request',
+      },
+    ],
+  },
+
+  'POST /api/requests/draft': {
+    class: 'rbac',
+    justification:
+      'requests.create; the assistant turns the caller’s own sentence into SUGGESTED field values. Nothing is stored: the person reviews and submits through POST /api/requests, where every value is validated.',
+    proof: [cap('requests.create')],
+  },
+  'POST /api/requests/suggest': {
+    class: 'rbac',
+    justification:
+      'requests.create; the assistant reads which catalogued workflow the caller’s own sentence starts and SUGGESTS field values. A workflow key the model invents is never used. Nothing is stored: the person reviews and submits through POST /api/requests, where every value is validated.',
+    proof: [
+      cap('requests.create'),
+      {
+        in: 'apps/api/src/office/office-ai.ts',
+        contains: 'workflows.find((workflow) => workflow.key === key)',
+      },
+    ],
+  },
+  'POST /api/requests/:requestId/brief': {
+    class: 'rbac',
+    justification:
+      'requests.create + visibility of the request + the authority to take its pending stage. The assistant summarises a request the caller already sees and facts computed server-side; it decides nothing. The only write is a history note that help was given.',
+    proof: [cap('requests.create'), { in: 'route', contains: 'mayTakePending(' }],
+  },
+  'POST /api/requests/:requestId/write': {
+    class: 'rbac',
+    justification:
+      'requests.create + visibility of the request + the authority to take its pending stage. The assistant drafts text for the person to edit; it is stored only if they submit it through the decision route. The only write is a history note that help was given.',
+    proof: [cap('requests.create'), { in: 'route', contains: 'mayTakePending(' }],
+  },
+
+  // --- People and teams ----------------------------------------------------------------------------------
+  'POST /api/invites': {
+    class: 'rbac',
+    justification:
+      'members.manage, as the chief executive of the organization or from the caller’s own seat in it (HR). Only the chief executive appoints a team head, and an invitation never gives an executive’s oversight seat. The link’s secret is returned once; only its hash is stored.',
+    proof: [
+      cap('members.manage'),
+      { in: 'route', contains: 'Only the chief executive can appoint a team head' },
+      { in: 'route', contains: 'tokenHash: hashOf(code)' },
+    ],
+  },
+  'POST /api/invites/:inviteId/revoke': {
+    class: 'rbac',
+    justification:
+      'members.manage; taking an unused invitation back only reduces who can join. A used or already revoked invitation is refused.',
+    proof: [cap('members.manage')],
+  },
+  'POST /api/invites/accept': {
+    class: 'rbac',
+    justification:
+      'Self-scoped: the signed-in caller takes the one seat the link was made for (by someone holding members.manage). The link’s secret is the authority; it works once, can be revoked and expires. No membership exists yet to resolve a role against. The seat is fixed by the invitation, never by the request.',
+    proof: [
+      { in: 'route', contains: 'markUsed(invite.id, userId' },
+      { in: 'route', contains: 'invite.seat,' },
+      {
+        in: 'domains/workspaces/src/entities/workspace-invite.ts',
+        contains: "INVITE_SEATS = ['owner', 'admin', 'member']",
+      },
+    ],
+  },
+
+  // --- Project tasks -------------------------------------------------------------------------------------
+  'POST /api/tasks': {
+    class: 'rbac',
+    justification:
+      'tasks.manage; creates a task on a project of the organization for a member of the caller’s team whose role works on tasks.',
+    proof: [
+      cap('tasks.manage'),
+      { in: 'apps/api/src/routes/tasks.ts', contains: 'That person is not a member of this team' },
+    ],
+  },
+  'POST /api/tasks/:taskId/start': {
+    class: 'domain_governed',
+    justification: 'tasks.work; the aggregate lets only the assignee start their task.',
+    proof: [
+      cap('tasks.work'),
+      {
+        in: 'domains/projects/src/entities/project-task.ts',
+        contains: 'Only the person the task is assigned to can do this',
+      },
+    ],
+  },
+  'POST /api/tasks/:taskId/submit': {
+    class: 'domain_governed',
+    justification: 'tasks.work; the aggregate lets only the assignee hand their task in.',
+    proof: [
+      cap('tasks.work'),
+      {
+        in: 'domains/projects/src/entities/project-task.ts',
+        contains: 'Only the person the task is assigned to can do this',
+      },
+    ],
+  },
+  'POST /api/tasks/:taskId/review': {
+    class: 'domain_governed',
+    justification:
+      'tasks.manage; separation of duties in the aggregate: nobody reviews their own work, and sending work back needs a reason.',
+    proof: [
+      cap('tasks.manage'),
+      {
+        in: 'domains/projects/src/entities/project-task.ts',
+        contains: 'You cannot review your own work',
+      },
+    ],
+  },
+  'POST /api/tasks/:taskId/reassign': {
+    class: 'rbac',
+    justification:
+      'tasks.manage; gives an unfinished task to another member of the caller’s team whose role works on tasks.',
+    proof: [cap('tasks.manage')],
+  },
+
+  // --- Recruiting (HR's side of hiring) ----------------------------------------------------------------
+  'POST /api/recruiting/openings': {
+    class: 'domain_governed',
+    justification:
+      'recruiting.manage; a position can only be opened for a hiring request already approved by the executive and by Finance, once per request.',
+    proof: [
+      cap('recruiting.manage'),
+      {
+        in: 'domains/hr/application/src/services/recruiting-application-service.ts',
+        contains: "requisition.status !== 'approved'",
+      },
+    ],
+  },
+  'POST /api/recruiting/openings/:openingId/status': {
+    class: 'rbac',
+    justification:
+      'recruiting.manage; hold / resume / close an opening (closing needs a reason and no open offer).',
+    proof: [cap('recruiting.manage')],
+  },
+  'POST /api/recruiting/openings/:openingId/candidates': {
+    class: 'rbac',
+    justification: 'recruiting.manage; adds a candidate record to an opening that is recruiting.',
+    proof: [cap('recruiting.manage')],
+  },
+  'POST /api/recruiting/candidates/:candidateId/advance': {
+    class: 'rbac',
+    justification: 'recruiting.manage; the aggregate only allows the next pipeline stage.',
+    proof: [cap('recruiting.manage')],
+  },
+  'POST /api/recruiting/candidates/:candidateId/feedback': {
+    class: 'rbac',
+    justification:
+      'recruiting.interview + visibility of the opening (HR/executive, or the hiring manager of that opening); the interviewer is always the session user, once per stage.',
+    proof: [cap('recruiting.interview')],
+  },
+  'POST /api/recruiting/candidates/:candidateId/offer': {
+    class: 'domain_governed',
+    justification:
+      'recruiting.manage; the offer must be inside the salary range approved on the hiring request and must hold one of the approved seats (never more offers than headcount).',
+    proof: [
+      cap('recruiting.manage'),
+      {
+        in: 'domains/hr/src/entities/candidate.ts',
+        contains: 'The offer is outside the salary range approved for this hiring request',
+      },
+      {
+        in: 'domains/hr/src/entities/job-opening.ts',
+        contains: 'no seat is left for another offer',
+      },
+    ],
+  },
+  'POST /api/recruiting/candidates/:candidateId/offer/response': {
+    class: 'domain_governed',
+    justification:
+      'recruiting.manage; an offer is answered exactly once (optimistic write on the candidate); acceptance creates the employee record in `hired`.',
+    proof: [
+      cap('recruiting.manage'),
+      {
+        in: 'domains/hr/src/entities/candidate.ts',
+        contains: 'There is no open offer for this candidate',
+      },
+    ],
+  },
+  'POST /api/recruiting/candidates/:candidateId/close': {
+    class: 'rbac',
+    justification:
+      'recruiting.manage; reject / withdraw with a reason; a pending offer is rescinded and its seat released.',
+    proof: [cap('recruiting.manage')],
+  },
+  // --- Onboarding and assignment ------------------------------------------------------------------------
+  'POST /api/onboarding': {
+    class: 'rbac',
+    justification:
+      'onboarding.hr; starts the checklist for an employee in `hired` (once per employee) and moves them to `onboarding`.',
+    proof: [cap('onboarding.hr')],
+  },
+  'POST /api/onboarding/:onboardingId/items/:item/complete': {
+    class: 'domain_governed',
+    justification:
+      'The item’s owner is server data: the caller must hold THAT owner’s capability (HR / IT / manager), and a manager item belongs to the hiring manager of that hire. An item is completed once; the last one activates the employee.',
+    proof: [
+      cap('onboarding.hr'),
+      cap('onboarding.it'),
+      cap('onboarding.manager'),
+      {
+        in: 'apps/api/src/routes/onboarding.ts',
+        contains: "owner !== 'manager' || onboarding.hiringManagerId === userId",
+      },
+      {
+        in: 'domains/hr/src/entities/onboarding.ts',
+        contains: 'This onboarding item is already done',
+      },
+    ],
+  },
+  'POST /api/projects/:projectId/assignments': {
+    class: 'rbac',
+    justification:
+      'projects.assign, OR onboarding.manager for the hiring manager of THAT employee (their own onboarded hire — the managers’ general AI assignment authority is unchanged). The route additionally requires an ACTIVE employee and a project of the same organization; duplicates are rejected by the domain.',
+    proof: [
+      cap('projects.assign'),
+      cap('onboarding.manager'),
+      { in: 'route', contains: 'onboarding.hiringManagerId !== auth.userId' },
+      { in: 'route', contains: 'Only an active employee can be assigned' },
+    ],
+  },
   'POST /api/workspaces': {
     class: 'rbac',
     justification: 'workspaces.create; no policy DENY rule governs the capability.',

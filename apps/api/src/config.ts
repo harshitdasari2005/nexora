@@ -32,7 +32,7 @@ export type AiProviderKind = 'none' | 'groq' | 'local';
 export interface AiConfig {
   /** The selected narration provider. */
   provider: AiProviderKind;
-  /** The model id served by the provider (e.g. `llama-3.3-70b-versatile`, `llama3`). */
+  /** The model id served by the provider (e.g. `openai/gpt-oss-120b`, `llama3`). */
   model: string;
   /** Bearer token for the provider, when it requires one. */
   apiKey?: string;
@@ -93,7 +93,10 @@ export interface ConnectorsConfig {
 
 /** Session cookie options. */
 export interface CookieConfig {
-  /** The cookie name holding the session token. */
+  /**
+   * The cookie name holding the session token: `__Host-<COOKIE_NAME>` whenever
+   * the cookie is Secure (AUTH-007), otherwise `<COOKIE_NAME>` (HTTP dev).
+   */
   name: string;
   /** SameSite policy for the session cookie. */
   sameSite: 'lax' | 'strict' | 'none';
@@ -152,6 +155,33 @@ export interface ApiConfig {
   logLevel: 'debug' | 'info' | 'warn' | 'error';
 }
 
+/**
+ * The largest session lifetime that still yields a valid expiry timestamp
+ * (JS Date range ≈ 8.64e15 ms from the epoch; this keeps a wide margin).
+ */
+const MAX_SESSION_MAX_AGE_SECONDS = 8_000_000_000_000;
+
+/**
+ * Whether a URL points at the local machine (localhost, *.localhost, 127.0.0.0/8,
+ * ::1). Anything else — or an unparseable value — is treated as NOT loopback, so
+ * the safer production posture applies.
+ */
+function isLoopbackUrl(value: string): boolean {
+  let host: string;
+  try {
+    host = new URL(value).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === '[::1]' ||
+    host === '::1' ||
+    /^127(?:\.\d{1,3}){3}$/.test(host)
+  );
+}
+
 function required(env: NodeJS.ProcessEnv, name: string, fallback?: string): string {
   const value = env[name] ?? fallback;
   if (value === undefined || value.trim().length === 0) {
@@ -185,7 +215,7 @@ export function loadAiConfig(env: NodeJS.ProcessEnv): AiConfig {
   const provider = resolveAiProvider(env);
   const apiKey = (env['AI_API_KEY']?.trim() ?? '') || (env['GROQ_API_KEY']?.trim() ?? '');
   const baseUrl = env['AI_BASE_URL']?.trim() ?? '';
-  const model = env['AI_MODEL']?.trim() || 'llama-3.3-70b-versatile';
+  const model = env['AI_MODEL']?.trim() || 'openai/gpt-oss-120b';
 
   // Fail fast on a provider that cannot possibly serve a completion, rather
   // than degrading to deterministic narration on the first user request and
@@ -232,22 +262,97 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
   if (!Number.isInteger(maxAgeSeconds) || maxAgeSeconds <= 0) {
     throw new Error('Invalid SESSION_MAX_AGE_SECONDS: must be a positive integer');
   }
+  // The value is also the server-side session lifetime, turned into an expiry
+  // timestamp: beyond the representable Date range every login would fail.
+  if (maxAgeSeconds > MAX_SESSION_MAX_AGE_SECONDS) {
+    throw new Error(
+      `Invalid SESSION_MAX_AGE_SECONDS: must be at most ${MAX_SESSION_MAX_AGE_SECONDS} seconds`,
+    );
+  }
+
+  // Production posture (AUTH-003). A deployment counts as production-like when
+  // NODE_ENV=production OR it is reachable at a non-loopback origin — its
+  // WEB_ORIGIN or OIDC_REDIRECT_URI is not localhost/127.0.0.1/::1. That second
+  // signal comes from configuration the deployment cannot run without, so a
+  // missing/wrong NODE_ENV on a real deployment does not silently disable the
+  // production controls below. Local dev, tests and CI (loopback origins, no
+  // NODE_ENV) keep their current behavior.
+  const webOrigin = required(env, 'WEB_ORIGIN', 'http://localhost:5173');
+  const oidcRedirectUri = required(
+    env,
+    'OIDC_REDIRECT_URI',
+    'http://localhost:3001/api/auth/callback',
+  );
+  const production =
+    env['NODE_ENV'] === 'production' ||
+    !isLoopbackUrl(webOrigin) ||
+    !isLoopbackUrl(oidcRedirectUri);
+
+  // Demo mode exposes an UNAUTHENTICATED persona sign-in (`POST /api/demo/login`)
+  // and a data-reset route. A single stray `NEXORA_DEMO_MODE=true` must never
+  // quietly open that path on a production deployment: it takes a second,
+  // explicit acknowledgement, and without it the process refuses to start.
+  const demoEnabled = env['NEXORA_DEMO_MODE'] === 'true';
+  if (production && demoEnabled && env['NEXORA_DEMO_ALLOW_IN_PRODUCTION'] !== 'true') {
+    throw new Error(
+      'Refusing to start: NEXORA_DEMO_MODE=true on a production deployment (NODE_ENV=production ' +
+        'or a non-loopback WEB_ORIGIN/OIDC_REDIRECT_URI) would expose unauthenticated demo ' +
+        'sign-in. Unset NEXORA_DEMO_MODE, or — only for a deliberately public demo deployment — ' +
+        'also set NEXORA_DEMO_ALLOW_IN_PRODUCTION=true.',
+    );
+  }
+
+  // Session cookies: Secure by default on a production deployment. An explicit
+  // COOKIE_SECURE=false there (e.g. TLS terminated and cookies forced insecure by
+  // mistake, or a stale local .env copied over) would send the session token over
+  // plain HTTP, so it needs its own explicit acknowledgement. Local HTTP dev
+  // (loopback origins) is unaffected.
+  const cookieSecure =
+    env['COOKIE_SECURE'] === undefined ? production : env['COOKIE_SECURE'] === 'true';
+  if (production && !cookieSecure && env['NEXORA_ALLOW_INSECURE_COOKIES'] !== 'true') {
+    throw new Error(
+      'Refusing to start: COOKIE_SECURE=false on a production deployment (NODE_ENV=production ' +
+        'or a non-loopback WEB_ORIGIN/OIDC_REDIRECT_URI) would send session cookies over plain ' +
+        'HTTP. Remove COOKIE_SECURE (it defaults to true), or — only for a deliberately ' +
+        'HTTP-only non-loopback environment — also set NEXORA_ALLOW_INSECURE_COOKIES=true.',
+    );
+  }
+
+  // Session cookie name (AUTH-007). Whenever the cookie is Secure it carries the
+  // `__Host-` prefix: browsers then refuse to accept it unless it is Secure,
+  // Path=/ and has NO Domain, so a sibling subdomain or an insecure channel cannot
+  // set, overwrite or shadow it. COOKIE_NAME is the BASE name. Without Secure (plain
+  // HTTP loopback development only) a `__Host-` cookie would be rejected by every
+  // browser, so the base name is used as is. A base that already starts with
+  // `__Host-` is only valid when Secure.
+  const HOST_PREFIX = '__Host-';
+  const baseName = env['COOKIE_NAME'] ?? 'nexora_session';
+  if (baseName.startsWith(HOST_PREFIX) && !cookieSecure) {
+    throw new Error(
+      `Invalid COOKIE_NAME: a "${HOST_PREFIX}" cookie requires Secure cookies (COOKIE_SECURE=true / a production deployment)`,
+    );
+  }
+  const cookieName =
+    cookieSecure && !baseName.startsWith(HOST_PREFIX) ? `${HOST_PREFIX}${baseName}` : baseName;
 
   return {
     port,
     host: env['HOST'] ?? '0.0.0.0',
     databaseUrl: required(env, 'DATABASE_URL'),
     autoMigrate: env['DATABASE_AUTO_MIGRATE'] !== 'false',
-    webOrigin: required(env, 'WEB_ORIGIN', 'http://localhost:5173'),
+    webOrigin,
     oidc: {
       issuerUrl: required(env, 'OIDC_ISSUER_URL', 'http://localhost:8080/realms/nexora'),
       clientId: required(env, 'OIDC_CLIENT_ID', 'nexora-web'),
-      redirectUri: required(env, 'OIDC_REDIRECT_URI', 'http://localhost:3001/api/auth/callback'),
+      redirectUri: oidcRedirectUri,
     },
     cookie: {
-      name: env['COOKIE_NAME'] ?? 'nexora_session',
+      name: cookieName,
       sameSite,
-      secure: env['COOKIE_SECURE'] === 'true',
+      // Secure by default on a production deployment; an explicit COOKIE_SECURE
+      // wins, except that `false` there needs an acknowledgement (checked above).
+      // Local HTTP dev keeps `COOKIE_SECURE=false` from .env.example.
+      secure: cookieSecure,
       maxAgeSeconds,
     },
     ai: loadAiConfig(env),
@@ -264,7 +369,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     },
     observability: { modelPricingJson: env['NEXORA_MODEL_PRICING']?.trim() || undefined },
     s3: loadS3Config(env),
-    demo: { enabled: env['NEXORA_DEMO_MODE'] === 'true' },
+    demo: { enabled: demoEnabled },
     logLevel,
   };
 }

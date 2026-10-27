@@ -22,6 +22,13 @@ import {
   FakeInboundMessageRepository,
   FakeMeasurementRepository,
   FakeEmployeeRepository,
+  FakeCandidateRepository,
+  FakeHiringRequisitionRepository,
+  FakeJobOpeningRepository,
+  FakeOfficeRequestRepository,
+  FakeWorkspaceInviteRepository,
+  FakeOnboardingRepository,
+  FakeProjectTaskRepository,
   FakeKnowledgeArticleRepository,
   FakeKnowledgeCategoryRepository,
   FakeKnowledgeSourceRepository,
@@ -91,6 +98,13 @@ async function onboard(): Promise<OnboardingClient> {
     projects: new FakeProjectRepository(),
     resourceAssignments: new FakeResourceAssignmentRepository(),
     employees: new FakeEmployeeRepository(),
+    hiringRequisitions: new FakeHiringRequisitionRepository(),
+    jobOpenings: new FakeJobOpeningRepository(),
+    candidates: new FakeCandidateRepository(),
+    onboardings: new FakeOnboardingRepository(),
+    officeRequests: new FakeOfficeRequestRepository(),
+    invites: new FakeWorkspaceInviteRepository(),
+    projectTasks: new FakeProjectTaskRepository(),
     documents: new FakeDocumentRepository(),
     documentVersions: new FakeDocumentVersionRepository(),
     documentTemplates: new FakeDocumentTemplateRepository(),
@@ -119,10 +133,11 @@ async function onboard(): Promise<OnboardingClient> {
   const loginResponse = await app.inject({ method: 'GET', url: '/api/auth/login' });
   const state = cookieValue(loginResponse, 'oidc_state')?.split('=')[1] ?? '';
   const verifier = cookieValue(loginResponse, 'oidc_verifier')?.split('=')[1] ?? '';
+  const nonce = cookieValue(loginResponse, 'oidc_nonce')?.split('=')[1] ?? '';
   const callback = await app.inject({
     method: 'GET',
     url: `/api/auth/callback?code=test-code&state=${state}`,
-    headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}` },
+    headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}; oidc_nonce=${nonce}` },
   });
   const session = cookieValue(callback, 'nexora_session');
   if (session === undefined) {
@@ -254,6 +269,13 @@ describe('Nexora onboarding slice (E2E via inject)', () => {
       projects: new FakeProjectRepository(),
       resourceAssignments: new FakeResourceAssignmentRepository(),
       employees: new FakeEmployeeRepository(),
+      hiringRequisitions: new FakeHiringRequisitionRepository(),
+      jobOpenings: new FakeJobOpeningRepository(),
+      candidates: new FakeCandidateRepository(),
+      onboardings: new FakeOnboardingRepository(),
+      officeRequests: new FakeOfficeRequestRepository(),
+      invites: new FakeWorkspaceInviteRepository(),
+      projectTasks: new FakeProjectTaskRepository(),
       documents: new FakeDocumentRepository(),
       documentVersions: new FakeDocumentVersionRepository(),
       documentTemplates: new FakeDocumentTemplateRepository(),
@@ -281,10 +303,11 @@ describe('Nexora onboarding slice (E2E via inject)', () => {
     const loginResponse = await app.inject({ method: 'GET', url: '/api/auth/login' });
     const state = cookieValue(loginResponse, 'oidc_state')?.split('=')[1] ?? '';
     const verifier = cookieValue(loginResponse, 'oidc_verifier')?.split('=')[1] ?? '';
+    const nonce = cookieValue(loginResponse, 'oidc_nonce')?.split('=')[1] ?? '';
     const callback = await app.inject({
       method: 'GET',
       url: `/api/auth/callback?code=test-code&state=${state}`,
-      headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}` },
+      headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}; oidc_nonce=${nonce}` },
     });
     const session = cookieValue(callback, 'nexora_session');
     if (session === undefined) {

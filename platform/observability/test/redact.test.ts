@@ -25,15 +25,17 @@ describe('findSecrets', () => {
     ['Bearer', 'Authorization value Bearer abcdefgh12345'],
     ['gsk_', 'key gsk_abcdefgh1234'],
     ['sk-', 'key sk-abcdefgh1234'],
-    ['AWS', 'AKIAABCDEFGHIJKLMNOP'],
+    // Built at runtime so the literal never appears in tracked source (scan:secrets).
+    ['AWS', `${'AKIA'}ABCDEFGHIJKLMNOP`],
     ['JWT', 'eyJhbGciOi.eyJzdWIiOiIx.abcd1234'],
-    ['private key', '-----BEGIN RSA PRIVATE KEY-----'],
+    ['private key', `-----BEGIN RSA PRIVATE ${'KEY'}-----`],
     ['authorization header', 'Authorization: abc'],
     ['cookie header', 'cookie=abc'],
     ['x-api-key', 'x-api-key: abc'],
     ['api_key assignment', 'api_key = abc'],
     ['password assignment', 'password: hunter2'],
     ['session cookie', 'nexora_session=abc'],
+    ['__Host- session cookie', '__Host-nexora_session=abc'],
   ])('detects %s', (_name, text) => {
     expect(findSecrets(text).length).toBeGreaterThan(0);
   });

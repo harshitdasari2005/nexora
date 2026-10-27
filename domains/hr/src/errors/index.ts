@@ -76,3 +76,98 @@ export function toHrError(error: unknown): HrDomainError {
   }
   return new HrDomainError(String(error), 'INTERNAL_ERROR');
 }
+
+/** The hiring requisition does not exist (or is not visible to the caller). */
+export class RequisitionNotFoundError extends HrDomainError {
+  constructor(details?: unknown) {
+    super('Hiring request not found', 'NOT_FOUND', details);
+  }
+}
+
+/** A requisition transition was attempted that its current state forbids. */
+export class RequisitionStateError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'BUSINESS_RULE_VIOLATION', details);
+  }
+}
+
+/** The actor may not perform this step of the requisition (separation of duties, not the requester, …). */
+export class RequisitionNotPermittedError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'AUTHORIZATION_ERROR', details);
+  }
+}
+
+/** The requisition changed since it was read (a concurrent decision or edit won). */
+export class RequisitionConflictError extends HrDomainError {
+  constructor(details?: unknown) {
+    super(
+      'The hiring request was changed by someone else — reload and try again',
+      'CONFLICT',
+      details,
+    );
+  }
+}
+
+/** The office request does not exist (or is not visible to the caller). */
+export class OfficeRequestNotFoundError extends HrDomainError {
+  constructor(details?: unknown) {
+    super('Request not found', 'NOT_FOUND', details);
+  }
+}
+
+/** A step was attempted that the request's current state forbids. */
+export class OfficeRequestStateError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'BUSINESS_RULE_VIOLATION', details);
+  }
+}
+
+/** The actor may not take this step of the request (their own request, not the requester, …). */
+export class OfficeRequestNotPermittedError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'AUTHORIZATION_ERROR', details);
+  }
+}
+
+/** The job opening does not exist (or is not visible to the caller). */
+export class JobOpeningNotFoundError extends HrDomainError {
+  constructor(details?: unknown) {
+    super('Job opening not found', 'NOT_FOUND', details);
+  }
+}
+
+/** The candidate does not exist (or is not visible to the caller). */
+export class CandidateNotFoundError extends HrDomainError {
+  constructor(details?: unknown) {
+    super('Candidate not found', 'NOT_FOUND', details);
+  }
+}
+
+/** A recruiting step was attempted that the current state forbids. */
+export class RecruitingStateError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'BUSINESS_RULE_VIOLATION', details);
+  }
+}
+
+/** A recruiting record changed since it was read (a concurrent change won). */
+export class RecruitingConflictError extends HrDomainError {
+  constructor(message = 'This record was changed by someone else — reload and try again') {
+    super(message, 'CONFLICT');
+  }
+}
+
+/** The onboarding record does not exist (or is not visible to the caller). */
+export class OnboardingNotFoundError extends HrDomainError {
+  constructor(details?: unknown) {
+    super('Onboarding not found', 'NOT_FOUND', details);
+  }
+}
+
+/** An onboarding step was attempted that the current state forbids. */
+export class OnboardingStateError extends HrDomainError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'BUSINESS_RULE_VIOLATION', details);
+  }
+}

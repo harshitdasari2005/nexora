@@ -35,7 +35,7 @@ import { buildBaseWorld } from './world-v1.js';
 export const DATASET_ID = 'nexora-enterprise-scenarios';
 
 /** The dataset version (SemVer). */
-export const DATASET_VERSION = '2.0.0';
+export const DATASET_VERSION = '2.0.1';
 
 /** Common-sense defaults so each scenario states only what it is about. */
 function expectations(

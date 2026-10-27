@@ -64,8 +64,20 @@ const updatePreferencesSchema: FastifySchema = {
   },
 };
 
+/**
+ * How often an open notification stream re-checks its session when no event
+ * arrives (bounded: one primary-key lookup per open stream per interval).
+ */
+export const SSE_SESSION_RECHECK_MS = 30_000;
+
 /** Dependencies of the notification routes. */
 export interface NotificationRoutesDependencies {
+  /**
+   * Whether a session is still live (read-only; the session domain service's
+   * `isLive`). The live SSE stream re-checks it so a stream cannot outlive its
+   * session.
+   */
+  isSessionLive: (sessionId: string) => Promise<boolean>;
   /** The recipient-scoped inbox listing handler. */
   listNotifications: ListNotificationsHandler;
   /** The unread-count handler. */
@@ -113,6 +125,39 @@ export function isActivityInScope(
   return connectionTenantId !== undefined && itemTenantId === connectionTenantId;
 }
 
+/**
+ * What one SSE connection may see of the activity feed — resolved ONCE at
+ * connect from trusted server state, with exactly the rules of
+ * `GET /api/activity`: workspace membership when a workspace is named, and
+ * the `activity.read` capability evaluated in that scope. `allowed: false`
+ * (non-member workspace, missing capability, no tenant) withholds every
+ * activity frame; the connection still carries the caller's own
+ * notifications.
+ */
+export interface ActivityStreamScope {
+  allowed: boolean;
+  tenantId: string | undefined;
+  /** The verified workspace the feed is narrowed to (absent = organization feed). */
+  workspaceId: string | undefined;
+}
+
+/**
+ * Whether a stream activity item is visible to this connection. Mirrors the
+ * GET feed: the tenant always matches; a workspace-scoped connection receives
+ * only its own workspace's items (an org-level item with no workspace is not
+ * part of a workspace feed); an organization-scoped connection receives the
+ * organization feed, exactly like `GET /api/activity?organizationId=…`.
+ */
+export function isActivityVisibleToStream(
+  item: { tenantId: string; workspaceId?: string },
+  scope: ActivityStreamScope,
+): boolean {
+  if (!scope.allowed || !isActivityInScope(item.tenantId, scope.tenantId)) {
+    return false;
+  }
+  return scope.workspaceId === undefined || item.workspaceId === scope.workspaceId;
+}
+
 /** Resolves the trusted tenant (first membership or verified query org). */
 async function resolveTenant(
   dependencies: NotificationRoutesDependencies,
@@ -147,6 +192,29 @@ async function workspaceDenial(
   });
   const accessible = workspaces.ok && workspaces.value.some((ws) => ws.id === workspaceId);
   return accessible ? undefined : 'You are not a member of this workspace';
+}
+
+/** Resolves {@link ActivityStreamScope} from trusted state (never from the request alone). */
+export async function resolveActivityStreamScope(
+  dependencies: NotificationRoutesDependencies,
+  userId: UserId,
+  tenantId: string | undefined,
+  workspaceId: string | undefined,
+): Promise<ActivityStreamScope> {
+  const denied: ActivityStreamScope = { allowed: false, tenantId, workspaceId: undefined };
+  if (tenantId === undefined) {
+    return denied;
+  }
+  const denial = await workspaceDenial(dependencies, userId, tenantId as TenantId, workspaceId);
+  if (denial !== undefined) {
+    return denied;
+  }
+  const authz = await authorizePermission(
+    dependencies.permissions,
+    { userId, tenantId: tenantId as TenantId, workspaceId },
+    'activity.read',
+  );
+  return authz.ok ? { allowed: true, tenantId, workspaceId } : denied;
 }
 
 /** Registers the notification routes. */
@@ -463,13 +531,22 @@ export function registerNotificationRoutes(
   // seam; the consumer publishes onto it as notifications are created.
   app.get('/api/notifications/stream', async (request, reply) => {
     const auth = requireAuth(request);
-    const query = request.query as { organizationId?: string };
+    const query = request.query as { organizationId?: string; workspaceId?: string };
     // `auth.tenantId` is the identity bootstrap tenant (`tnt_platform`), NOT
     // the caller's organization — the real tenant is resolved from trusted
     // membership, exactly like every other endpoint in this file. Without
     // this, the activity filter below (`item.tenantId === <bootstrap>`) never
     // matched and the live activity feed silently never streamed.
     const tenantId = await resolveTenant(dependencies, auth.userId, query.organizationId);
+
+    // Activity is authorized exactly like `GET /api/activity` (see
+    // `ActivityStreamScope`). Notifications are recipient-scoped and unchanged.
+    const activityScope = await resolveActivityStreamScope(
+      dependencies,
+      auth.userId,
+      tenantId,
+      query.workspaceId,
+    );
 
     reply.hijack();
     const raw = reply.raw;
@@ -494,7 +571,59 @@ export function registerNotificationRoutes(
       }
     };
 
-    const unsubscribe = dependencies.stream.subscribe((event) => {
+    // The stream must not outlive the session that authorized it (AUTH-002).
+    // The session was validated once, above (`requireAuth`); from here the
+    // session id is re-checked, read-only (no touch — see `isSessionLive`):
+    //   1. BEFORE every frame that would be delivered, so nothing is written
+    //      after logout / revocation / expiry; the check is one primary-key
+    //      lookup per DELIVERABLE event (filtered-out events cost nothing);
+    //   2. on a bounded timer, so a stream with no traffic is still closed
+    //      (and its socket, timer and subscription released) shortly after the
+    //      session ends instead of lingering until the client disconnects.
+    // A failed check (invalid session OR a lookup error) fails closed.
+    const sessionId = auth.sessionId;
+    let terminated = false;
+    let timer: NodeJS.Timeout | undefined;
+    let unsubscribe: () => void = () => undefined;
+    const cleanup = (): void => {
+      terminated = true;
+      if (timer !== undefined) {
+        clearInterval(timer);
+        timer = undefined;
+      }
+      unsubscribe();
+    };
+    const terminate = (): void => {
+      cleanup();
+      if (!raw.writableEnded && !raw.destroyed) {
+        raw.end();
+      }
+    };
+    const stillAuthorized = async (): Promise<boolean> => {
+      try {
+        return await dependencies.isSessionLive(sessionId);
+      } catch {
+        return false;
+      }
+    };
+    // Deliverable frames are checked and written strictly in arrival order.
+    let delivery: Promise<void> = Promise.resolve();
+    const deliver = (name: string, payload: unknown): void => {
+      delivery = delivery.then(async () => {
+        if (terminated) {
+          return;
+        }
+        if (!(await stillAuthorized())) {
+          terminate();
+          return;
+        }
+        if (!terminated) {
+          safeWrite(formatSse(name, payload));
+        }
+      });
+    };
+
+    unsubscribe = dependencies.stream.subscribe((event) => {
       // Server-side filtering: only the authenticated recipient's own
       // notifications, and activity scoped to the caller's RESOLVED tenant
       // (never the identity bootstrap tenant — see `isActivityInScope`).
@@ -502,15 +631,25 @@ export function registerNotificationRoutes(
         event.kind === 'notification' &&
         isNotificationForRecipient(event.notification.recipientId, auth.userId)
       ) {
-        safeWrite(formatSse('notification', Notification.snapshot(event.notification)));
+        deliver('notification', Notification.snapshot(event.notification));
       }
-      if (event.kind === 'activity' && isActivityInScope(event.item.tenantId, tenantId)) {
-        safeWrite(formatSse('activity', ActivityItem.snapshot(event.item)));
+      if (event.kind === 'activity' && isActivityVisibleToStream(event.item, activityScope)) {
+        deliver('activity', ActivityItem.snapshot(event.item));
       }
     });
 
+    timer = setInterval(() => {
+      void stillAuthorized().then((live) => {
+        if (!live && !terminated) {
+          terminate();
+        }
+      });
+    }, SSE_SESSION_RECHECK_MS);
+    // Never keep the process alive for a stream timer.
+    timer.unref();
+
     request.raw.on('close', () => {
-      unsubscribe();
+      cleanup();
       if (!raw.writableEnded) {
         raw.end();
       }

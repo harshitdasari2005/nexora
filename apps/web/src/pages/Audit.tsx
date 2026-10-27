@@ -38,6 +38,7 @@ import { api, ApiError } from '../lib/api.js';
 import type { AuditScope } from '../lib/audit.js';
 import type { AuditEventDto, AuditEventSource, DashboardResponse } from '../lib/types.js';
 import { useSession } from '../session.js';
+import { NavIcon } from '../components/NavIcon.js';
 
 /** The Audit Center application page. */
 export function Audit(): JSX.Element {
@@ -106,7 +107,7 @@ export function Audit(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="🛡"
+            icon={<NavIcon name="audit" size={18} />}
             title="Create a workspace first"
             description="The audit trail is scoped to a workspace. Set one up to get started."
             action={
@@ -276,16 +277,7 @@ export function AuditView({
         style={{ flexWrap: 'wrap' }}
       >
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Audit Center
-          </h1>
+          <h1 className="nexora-page-title">Audit Center</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName} · {workspaceName} — a unified record of consequential activity
           </p>
@@ -374,7 +366,7 @@ export function AuditView({
           ) : filtered.length === 0 ? (
             <Card>
               <EmptyState
-                icon="🛡"
+                icon={<NavIcon name="audit" size={18} />}
                 title="No audit events"
                 description="Nothing matches the current filters yet."
               />
@@ -474,7 +466,7 @@ export function AuditView({
           ) : selected === null ? (
             <Card>
               <EmptyState
-                icon="🛡"
+                icon={<NavIcon name="audit" size={18} />}
                 title="Select an event"
                 description="Choose a row to see its full detail."
               />

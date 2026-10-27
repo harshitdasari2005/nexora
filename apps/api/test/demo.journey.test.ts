@@ -10,6 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { demoIds, DEMO_HIRE_REQUEST, DEMO_PERSONA_KEYS, type DemoIds } from '../src/demo/world.js';
+import { hireThroughChain } from './hiring-chain.js';
 import { buildTestApp, parseSse } from './helpers.js';
 
 interface Persona {
@@ -46,6 +47,7 @@ function call(app: FastifyInstance, who: Persona) {
 
 interface Done {
   status: string;
+  response: string;
   approvals: {
     id?: string;
     capabilityId: string;
@@ -114,58 +116,38 @@ describe('Demo World', () => {
     expect(JSON.stringify(managerCtx.json())).toContain('delivery.manager');
   });
 
-  it('runs the governed hiring journey: CEO requests, cannot self-approve, Team Manager approves', async () => {
+  it('hires through the office chain; asking the assistant to hire directly is refused', async () => {
+    // This office turned on POLICY_HIRING_CHANNEL: the shortcut is denied by
+    // policy BEFORE any approval is opened, and the answer says what to do.
     const ceo = await demoLogin(app, 'ceo');
     const done = await chat(app, ceo, DEMO_HIRE_REQUEST, ids.workspaceIds.eng, ids.organizationId);
-    expect(done.status).toBe('blocked');
-    const approval = done.approvals[0]!;
-    expect(approval.capabilityId).toBe('workflow.hire_and_assign_employee');
-    expect(approval.requiredApproverRoleId).toBe('delivery.manager');
-    expect(approval.separationOfDuties).toBe(true);
-    // Nothing exists yet.
-    const before = await call(app, ceo).get(`/api/employees?organizationId=${ids.organizationId}`);
-    expect(JSON.stringify(before.json())).not.toContain('Sarah Thomas');
-
-    const self = await call(app, ceo).post(`/api/ai/approvals/${approval.id}/decision`, {
-      decision: 'approve',
-    });
-    expect(self.statusCode).toBe(403);
-
+    expect(done.status).toBe('failed');
+    expect(done.approvals).toEqual([]);
+    expect(done.steps).toMatchObject([
+      { capabilityId: 'workflow.hire_and_assign_employee', status: 'failed' },
+    ]);
+    expect((done.steps[0] as { errorCode?: string }).errorCode).toBe('POLICY_DENIED');
+    expect(done.response).toContain('hiring request');
     const manager = await demoLogin(app, 'manager');
+    const nobody = await call(app, manager).get(
+      `/api/employees?organizationId=${ids.organizationId}`,
+    );
+    expect(JSON.stringify(nobody.json())).not.toContain('Sarah Thomas');
     const pending = await call(app, manager).get(
       `/api/approvals/pending?organizationId=${ids.organizationId}&workspaceId=${ids.workspaceIds.eng}`,
     );
-    const listed = (pending.json() as { approvals: { id: string; canDecide: boolean }[] })
-      .approvals;
-    expect(listed.find((a) => a.id === approval.id)?.canDecide).toBe(true);
-    const decided = await call(app, manager).post(`/api/ai/approvals/${approval.id}/decision`, {
-      decision: 'approve',
-    });
-    expect(decided.statusCode).toBe(200);
+    expect((pending.json() as { approvals: unknown[] }).approvals).toEqual([]);
 
-    // The approval's persisted state, as read back by ANY workspace member.
-    const read = await call(app, ceo).get(
-      `/api/approvals/${approval.id}?organizationId=${ids.organizationId}&workspaceId=${ids.workspaceIds.eng}`,
-    );
-    expect(read.statusCode).toBe(200);
-    expect((read.json() as { approval: Record<string, unknown> }).approval).toMatchObject({
-      id: approval.id,
-      status: 'completed',
-      decision: 'grant',
-      decidedById: ids.userIds.manager,
-      requesterId: ids.userIds.ceo,
-    });
-    // A workspace the CEO does not belong to never resolves it.
-    const foreign = await call(app, ceo).get(
-      `/api/approvals/${approval.id}?organizationId=${ids.organizationId}&workspaceId=${ids.workspaceIds.fin}`,
-    );
-    expect([403, 404]).toContain(foreign.statusCode);
-
+    // The real way: the whole chain, ending with the new colleague on the project.
+    const hired = await hireThroughChain(app, ids, 'Sarah Thomas');
     const employees = await call(app, manager).get(
       `/api/employees?organizationId=${ids.organizationId}`,
     );
     expect(employees.statusCode).toBe(200);
-    expect(JSON.stringify(employees.json())).toContain('Sarah Thomas');
+    const sarah = (
+      employees.json() as { employees: { id: string; name: string; status: string }[] }
+    ).employees.find((employee) => employee.id === hired.employeeId);
+    expect(sarah).toMatchObject({ name: 'Sarah Thomas', status: 'active' });
 
     // The Team Manager sees the employee ↔ project relationship.
     const members = await call(app, manager).get(
@@ -208,12 +190,14 @@ describe('Demo World', () => {
       decision: 'approve',
     });
     expect(self.statusCode).toBe(403);
-    // A user without the required role (the Team Manager) cannot either.
+    // A user without the required role (the Team Manager — also not a member of
+    // the Finance workspace) cannot either: with no standing in the approval's
+    // workspace it is reported exactly like a missing approval (F-008).
     const manager = await demoLogin(app, 'manager');
     const wrong = await call(app, manager).post(`/api/ai/approvals/${approval.id}/decision`, {
       decision: 'approve',
     });
-    expect(wrong.statusCode).toBe(403);
+    expect(wrong.statusCode).toBe(404);
 
     const cfo = await demoLogin(app, 'cfo');
     const decided = await call(app, cfo).post(`/api/ai/approvals/${approval.id}/decision`, {
@@ -319,6 +303,7 @@ describe('Demo mode disabled', () => {
       ['GET', '/api/demo/config'],
       ['POST', '/api/demo/login'],
       ['POST', '/api/demo/reset'],
+      ['GET', '/api/demo/storylines'],
     ] as const) {
       const response = await app.inject({
         method,

@@ -27,6 +27,7 @@ import { decideApproval } from '../lib/chat.js';
 import { listPendingApprovals, relativeTo } from '../lib/policy.js';
 import type { ApprovalGovernanceDto, DashboardResponse } from '../lib/types.js';
 import { useSession } from '../session.js';
+import { NavIcon } from '../components/NavIcon.js';
 
 const toError = (error: unknown): ApiError =>
   error instanceof ApiError ? error : new ApiError(0, 'INTERNAL_ERROR', 'Request failed');
@@ -136,7 +137,7 @@ export function Approvals(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="🛡"
+            icon={<NavIcon name="approvals" size={18} />}
             title="Create a workspace first"
             description="Approvals are scoped to a workspace. Set one up to get started."
             action={
@@ -212,16 +213,7 @@ export function ApprovalsView({
         style={{ flexWrap: 'wrap' }}
       >
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Approvals
-          </h1>
+          <h1 className="nexora-page-title">Approvals</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName} · {workspaceName} — pending decisions and who may make them
           </p>
@@ -267,7 +259,7 @@ export function ApprovalsView({
       ) : approvals.length === 0 ? (
         <Card>
           <EmptyState
-            icon="✅"
+            icon={<NavIcon name="approvals" size={18} />}
             title="No pending approvals"
             description="Nothing is waiting for a decision."
           />

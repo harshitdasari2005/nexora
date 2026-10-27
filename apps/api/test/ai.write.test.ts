@@ -238,8 +238,10 @@ describe('AI write slice (create workspace via approval)', () => {
     const bobDecision = await client.postAsBob(`/api/ai/approvals/${approvalId}/decision`, {
       decision: 'approve',
     });
-    expect(bobDecision.statusCode).toBe(403);
-    expect(bobDecision.json()).toMatchObject({ error: { code: 'AUTHORIZATION_ERROR' } });
+    // No standing in the approval's organization → reported exactly like a
+    // missing approval (F-008: no existence oracle). Still refused, nothing runs.
+    expect(bobDecision.statusCode).toBe(404);
+    expect(bobDecision.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
     expect(workspaceCount(client)).toBe(before);
 
     // The request is untouched — the owner can still approve it.
@@ -351,10 +353,10 @@ describe('AI write slice (create workspace via approval)', () => {
     const decision = await client.post(`/api/ai/approvals/${approvalId}/decision`, {
       decision: 'approve',
     });
-    expect(decision.statusCode).toBe(403);
-    expect(decision.json()).toMatchObject({
-      error: { code: 'AUTHORIZATION_ERROR', message: expect.stringContaining('organization') },
-    });
+    // A caller who left the organization has no standing there any more: the
+    // approval is reported exactly like a missing one (F-008). Nothing runs.
+    expect(decision.statusCode).toBe(404);
+    expect(decision.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
     expect(workspaceCount(client)).toBe(before);
     await client.app.close();
   });

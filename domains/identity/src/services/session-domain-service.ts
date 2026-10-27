@@ -34,6 +34,7 @@ import type { SessionRepository, UserRepository, PasswordHasher } from '../repos
 import { SessionPolicy, UserLifecyclePolicy } from '../policies/index.js';
 import { Email } from '../value-objects/email.js';
 import { Username } from '../value-objects/username.js';
+import { hashSessionToken } from '../value-objects/session-token.js';
 
 /** Input for starting a session via credentials. */
 export interface StartSessionCredentials {
@@ -136,10 +137,16 @@ export class SessionDomainService {
         );
       }
 
-      const activeCount = await this.#sessions.countActiveByUser(user.id);
+      const issuedAt = nowIso();
+      // Only LIVE sessions count: one that already passed its absolute or idle
+      // lifetime (but was never presented again, so its status is still
+      // `active`) does not hold a slot.
+      const activeCount = await this.#sessions.countActiveByUser(
+        user.id,
+        this.#policy.livenessWindow(issuedAt),
+      );
       this.#policy.assertCanOpenSession(activeCount);
 
-      const issuedAt = nowIso();
       const session = Session.start(
         {
           userId: user.id,
@@ -196,10 +203,16 @@ export class SessionDomainService {
       }
       this.#userPolicy.assertUserCanStartSession(user.status);
 
-      const activeCount = await this.#sessions.countActiveByUser(user.id);
+      const issuedAt = nowIso();
+      // Only LIVE sessions count: one that already passed its absolute or idle
+      // lifetime (but was never presented again, so its status is still
+      // `active`) does not hold a slot.
+      const activeCount = await this.#sessions.countActiveByUser(
+        user.id,
+        this.#policy.livenessWindow(issuedAt),
+      );
       this.#policy.assertCanOpenSession(activeCount);
 
-      const issuedAt = nowIso();
       const session = Session.start(
         {
           userId: user.id,
@@ -232,9 +245,11 @@ export class SessionDomainService {
     token: string,
   ): Promise<Result<Session, SessionNotFoundError | SessionExpiredError | SessionRevokedError>> {
     try {
-      const session = await this.#sessions.findByToken(token);
+      // The raw cookie token is hashed here; only the digest is looked up (AUTH-004).
+      const session = await this.#sessions.findByTokenHash(hashSessionToken(token));
       if (session === undefined) {
-        return err(new SessionNotFoundError({ token }));
+        // Never echo the presented token (it may be a live credential) into error details.
+        return err(new SessionNotFoundError({}));
       }
       const now = nowIso();
       if (session.isExpired(now)) {
@@ -255,6 +270,23 @@ export class SessionDomainService {
         toIdentityError(error) as SessionNotFoundError | SessionExpiredError | SessionRevokedError,
       );
     }
+  }
+
+  /**
+   * Whether a session is STILL usable right now — read-only. It applies exactly
+   * the rules {@link validate} applies (active status, absolute expiry, idle
+   * timeout) but, unlike `validate`, never touches or rewrites the session:
+   * a long-lived connection (an SSE stream) re-checking its session must not
+   * keep that session alive past its idle timeout, nor change its stored state.
+   * An unknown session id is not live.
+   */
+  async isLive(sessionId: string): Promise<boolean> {
+    const session = await this.#sessions.findById(sessionId);
+    if (session === undefined) {
+      return false;
+    }
+    const now = nowIso();
+    return session.isActive(now) && !this.#policy.isIdleExpired(session.lastUsedAt, now);
   }
 
   /**

@@ -15,6 +15,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, Input, Stack, typography } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
+import { NavIcon } from '../components/NavIcon.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
@@ -100,7 +101,7 @@ export function Knowledge(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="📚"
+            icon={<NavIcon name="knowledge" size={18} />}
             title="Create a workspace first"
             description="The Knowledge Base lives inside a workspace. Set one up to get started."
             action={
@@ -203,16 +204,7 @@ export function KnowledgeView({
     <Stack gap={8} style={{ maxWidth: 960, margin: '0 auto' }}>
       <Stack direction="row" gap={4} align="center" justify="space-between">
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Knowledge Base
-          </h1>
+          <h1 className="nexora-page-title">Knowledge Base</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName}
           </p>
@@ -233,7 +225,7 @@ export function KnowledgeView({
         style={{ maxWidth: 420 }}
       />
 
-      <Stack direction="row" gap={6} align="flex-start">
+      <Stack direction="row" gap={6} align="flex-start" className="nexora-split">
         {/* Category rail */}
         <Stack gap={3} style={{ width: 200, flexShrink: 0 }}>
           <Stack
@@ -279,7 +271,7 @@ export function KnowledgeView({
           {visibleArticles.length === 0 ? (
             <Card>
               <EmptyState
-                icon="📚"
+                icon={<NavIcon name="knowledge" size={18} />}
                 title={
                   query.trim().length > 0 || selectedCategory !== null
                     ? 'No articles match'
@@ -490,7 +482,13 @@ function ArticleCreator({
           rows={4}
           style={TEXTAREA_STYLE}
         />
-        <Stack direction="row" gap={3} align="center" justify="space-between">
+        <Stack
+          direction="row"
+          gap={3}
+          align="center"
+          justify="space-between"
+          style={{ flexWrap: 'wrap' }}
+        >
           <select
             id="knowledge-article-category"
             name="articleCategory"
@@ -709,7 +707,13 @@ function ArticleRow({
               rows={5}
               style={TEXTAREA_STYLE}
             />
-            <Stack direction="row" gap={3} align="center" justify="space-between">
+            <Stack
+              direction="row"
+              gap={3}
+              align="center"
+              justify="space-between"
+              style={{ flexWrap: 'wrap' }}
+            >
               <select
                 id="knowledge-edit-category"
                 name="articleCategory"

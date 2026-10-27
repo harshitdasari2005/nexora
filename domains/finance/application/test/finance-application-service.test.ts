@@ -199,6 +199,58 @@ describe('FinanceApplicationService.reviseBudget / closeBudget / review flag', (
     ]);
   });
 
+  it('refuses to change the currency of a budget that already has expenses (utilization would mix currencies)', async () => {
+    const { service } = setup();
+    const budgetId = await createOpenBudget(service);
+    const submitted = await service.submitExpense({
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      budgetId,
+      submittedBy: USER,
+      description: 'Spend in INR',
+      amountMinorUnits: 25_000,
+      currency: 'INR',
+      actorId: USER,
+      correlationId: 'corr_cur_1',
+    });
+    expect(submitted.ok).toBe(true);
+    const revise = (currency: string) =>
+      service.reviseBudget({
+        budgetId,
+        organizationId: TENANT,
+        workspaceId: WORKSPACE,
+        actorId: USER,
+        correlationId: 'corr_cur_2',
+        name: 'Marketing Q3',
+        allocatedMinorUnits: 150_000,
+        currency,
+        periodStart: '2026-07-01T00:00:00.000Z',
+        periodEnd: '2026-09-30T00:00:00.000Z',
+      });
+    const changed = await revise('USD');
+    expect(changed.ok).toBe(false);
+    // Same currency is still a normal revision.
+    expect((await revise('INR')).ok).toBe(true);
+  });
+
+  it('may change the currency of a budget with NO expenses', async () => {
+    const { service } = setup();
+    const budgetId = await createOpenBudget(service);
+    const result = await service.reviseBudget({
+      budgetId,
+      organizationId: TENANT,
+      workspaceId: WORKSPACE,
+      actorId: USER,
+      correlationId: 'corr_cur_3',
+      name: 'Marketing Q3',
+      allocatedMinorUnits: 150_000,
+      currency: 'USD',
+      periodStart: '2026-07-01T00:00:00.000Z',
+      periodEnd: '2026-09-30T00:00:00.000Z',
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it('returns NOT FOUND for a foreign workspace budget id (no data leak)', async () => {
     const { service } = setup();
     const budgetId = await createOpenBudget(service);

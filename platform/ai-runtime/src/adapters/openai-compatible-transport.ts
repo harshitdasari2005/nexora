@@ -44,6 +44,14 @@ export interface OpenAICompatibleTransportOptions {
   temperature?: number;
   /** Request timeout in milliseconds. Default 60s (local models are slower). */
   timeoutMs?: number;
+  /**
+   * Tokens added on top of a request's `maxTokens`. A reasoning model spends
+   * part of its budget thinking before it writes; without headroom a small
+   * budget comes back as an empty answer.
+   */
+  maxTokensHeadroom?: number;
+  /** Extra provider-specific fields of the request body (e.g. `reasoning_effort`). */
+  extraBody?: Readonly<Record<string, unknown>>;
 }
 
 /** A chat message in the OpenAI-compatible wire format. */
@@ -88,7 +96,10 @@ export async function completeOpenAICompatible(
         model: options.model,
         messages: request.messages.map(toWireMessage),
         temperature: request.temperature ?? options.temperature ?? 0.7,
-        ...(request.maxTokens === undefined ? {} : { max_tokens: request.maxTokens }),
+        ...(request.maxTokens === undefined
+          ? {}
+          : { max_tokens: request.maxTokens + (options.maxTokensHeadroom ?? 0) }),
+        ...options.extraBody,
         ...(request.stop === undefined || request.stop.length === 0
           ? {}
           : { stop: [...request.stop] }),

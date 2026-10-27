@@ -21,16 +21,50 @@ export interface ModuleDefinition {
   navLabel: string;
   /** The permission required to see this module. Absent = universal. */
   requiredPermission?: string;
+  /** Alternative: the module is visible to a role holding ANY of these permissions. */
+  anyOfPermissions?: readonly string[];
 }
 
 /** The nav → permission mapping (S34). */
 export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
+  { navLabel: 'My desk' },
+  // Anyone who can raise an office request, or decide one at some stage.
+  {
+    navLabel: 'Office workflows',
+    anyOfPermissions: [
+      'requests.create',
+      'requests.read',
+      'requests.approve_manager',
+      'requests.approve_hr',
+      'requests.approve_finance',
+      'requests.approve_it',
+    ],
+  },
+  // Managers see the board; everyone who does project work sees their own tasks.
+  { navLabel: 'Tasks', anyOfPermissions: ['tasks.manage', 'tasks.work'] },
+  // The directory is for everyone in the organization; inviting is re-checked by the server.
+  { navLabel: 'People & teams' },
+  // How the office ran this week: for the roles that read the organization's insights.
+  { navLabel: 'Weekly review', requiredPermission: 'insights.read' },
+  // What the assistant was tested against, for anyone to read.
+  { navLabel: 'Safety checks' },
   { navLabel: 'Command Center' },
   { navLabel: 'Agent', requiredPermission: 'agent.use' },
   { navLabel: 'Agents', requiredPermission: 'agent.use' },
   { navLabel: 'Problems', requiredPermission: 'problems.read' },
   { navLabel: 'Projects', requiredPermission: 'projects.read' },
   { navLabel: 'Employees', requiredPermission: 'employees.read' },
+  // Raisers see their own requests; the CEO, Finance and HR see all of them.
+  { navLabel: 'Hiring', anyOfPermissions: ['requisitions.create', 'requisitions.read'] },
+  // HR runs it; the executive watches; hiring managers see their own openings.
+  {
+    navLabel: 'Onboarding',
+    anyOfPermissions: ['onboarding.hr', 'onboarding.it', 'onboarding.manager', 'onboarding.read'],
+  },
+  {
+    navLabel: 'Recruiting',
+    anyOfPermissions: ['recruiting.manage', 'recruiting.read', 'recruiting.interview'],
+  },
   { navLabel: 'Documents', requiredPermission: 'documents.read' },
   { navLabel: 'Knowledge', requiredPermission: 'knowledge.read' },
   { navLabel: 'Workflows', requiredPermission: 'workflows.read' },
@@ -51,6 +85,9 @@ export const MODULE_DEFINITIONS: readonly ModuleDefinition[] = [
 /** Whether the given permission set unlocks the named module (fail-closed). */
 export function isModuleVisible(navLabel: string, permissions: readonly string[]): boolean {
   const module = MODULE_DEFINITIONS.find((entry) => entry.navLabel === navLabel);
+  if (module?.anyOfPermissions !== undefined) {
+    return module.anyOfPermissions.some((permission) => permissions.includes(permission));
+  }
   if (module?.requiredPermission === undefined) {
     return true;
   }

@@ -16,6 +16,7 @@ import type { PolicyInvocationRequest, PolicyPort } from '@nexora/ai-runtime/exe
 import type { BudgetId } from '@nexora/module-finance';
 import type { TenantId } from '@nexora/contracts/common';
 import {
+  DIRECT_HIRE_CAPABILITIES,
   POLICY_IDS,
   PolicyEngine,
   getPolicyRegistryEntry,
@@ -52,6 +53,10 @@ const CONFIG_CONSULTATION: readonly {
   {
     policyId: POLICY_IDS.FINANCE_BUDGET_LIMIT,
     applies: (request) => request.capabilityId === SUBMIT_EXPENSE_CAPABILITY,
+  },
+  {
+    policyId: POLICY_IDS.HIRING_CHANNEL,
+    applies: (request) => DIRECT_HIRE_CAPABILITIES.includes(request.capabilityId),
   },
   {
     // Approval governance can attach to ANY non-read-only capability.

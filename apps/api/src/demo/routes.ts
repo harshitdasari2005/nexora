@@ -10,6 +10,8 @@
  *   email or user id (the schema rejects any other property). The backend maps
  *   persona → deterministic seeded user → a REAL session; every request the
  *   browser then makes runs the normal authorization pipeline.
+ * - `GET /api/demo/story` reports where the hiring story of the fixed demo
+ *   organization stands (no pay, no target), to demo persona sessions only.
  * - `POST /api/demo/reset` takes NO target: it resets the fixed demo
  *   organization only, and only for a caller whose session belongs to a demo
  *   persona.
@@ -22,12 +24,14 @@ import type { SessionDomainService } from '@nexora/domain-identity';
 import type { ApiConfig } from '../config.js';
 import { requireAuth } from '../plugins/auth.js';
 import { DemoError, type DemoService } from './demo-service.js';
+import type { StoriesReader } from './stories.js';
 import {
   DEMO_HIRE_REQUEST,
   DEMO_PERSONA_KEYS,
   DEMO_PROJECT_NAME,
   DEMO_BUDGET_NAME,
   DEMO_EXPENSE,
+  DEMO_HIRING_SUGGESTION,
 } from './world.js';
 
 /** Dependencies of the demo routes. */
@@ -36,6 +40,8 @@ export interface DemoRoutesDependencies {
   demo: DemoService;
   sessions: SessionDomainService;
   endSession: EndSessionHandler;
+  /** Reads and derives the Guided Demo's story lines for the demo organization. */
+  stories: Pick<StoriesReader, 'read' | 'list'>;
 }
 
 const STATUS_BY_DEMO_ERROR: Record<DemoError['code'], number> = {
@@ -77,7 +83,9 @@ export function registerDemoRoutes(
   // While a reset runs, every other request is refused (the world is being
   // rebuilt); otherwise requests are tracked so a reset can wait for them.
   app.addHook('onRequest', async (request, reply) => {
-    const path = request.url.split('?')[0] ?? '';
+    // The MATCHED route, not the raw URL: an encoded path (`/api/demo/%72eset`) is
+    // routed to the same handler, so the raw string must not decide the gating.
+    const path = request.routeOptions.url ?? '';
     if (!path.startsWith('/api/') || path === '/api/demo/reset' || path === '/api/health') return;
     // The notification stream is a passive, open-ended subscription that the app
     // shell holds open for the whole session: it is neither gated nor counted as
@@ -107,6 +115,7 @@ export function registerDemoRoutes(
       projectName: DEMO_PROJECT_NAME,
       budgetName: DEMO_BUDGET_NAME,
       expense: DEMO_EXPENSE,
+      hiring: { ...DEMO_HIRING_SUGGESTION, projectId: demo.ids.projectId },
     },
   }));
 
@@ -142,6 +151,47 @@ export function registerDemoRoutes(
       return sendDemoError(reply, request.id, error);
     }
   });
+
+  // Where the story stands and whose turn it is. The guide is for the people
+  // of the demo office only, it always describes the fixed demo organization
+  // (the caller names nothing), and it carries no pay.
+  const notDemoUser = (reply: FastifyReply, requestId: string) =>
+    reply.code(403).send({
+      error: {
+        code: 'DEMO_NOT_DEMO_USER',
+        message: 'Only a demo persona session can read the demo story',
+        requestId,
+      },
+    });
+
+  app.get('/api/demo/story', async (request, reply) => {
+    const auth = requireAuth(request);
+    if (demo.personaOfUser(auth.userId) === undefined) return notDemoUser(reply, request.id);
+    // The story line to follow; the hiring story when none is named.
+    const query = request.query as { story?: unknown };
+    const key = typeof query.story === 'string' ? query.story.slice(0, 64) : 'hiring';
+    const story = await dependencies.stories.read(key);
+    if (story === undefined) {
+      return reply.code(404).send({
+        error: { code: 'NOT_FOUND', message: 'No such story', requestId: request.id },
+      });
+    }
+    return story;
+  });
+
+  // Every story line with where it stands, for choosing one.
+  app.get('/api/demo/stories', async (request, reply) => {
+    const auth = requireAuth(request);
+    if (demo.personaOfUser(auth.userId) === undefined) return notDemoUser(reply, request.id);
+    return { stories: await dependencies.stories.list() };
+  });
+
+  // The same list for the demo's front door, before anyone took a seat: which
+  // stories there are and whose turn each one is. It describes the fictional
+  // demo office only (titles, step names, first names of seeded personas).
+  app.get('/api/demo/storylines', { config: { public: true } }, async () => ({
+    stories: await dependencies.stories.list(),
+  }));
 
   app.post('/api/demo/reset', async (request, reply) => {
     const auth = requireAuth(request);
@@ -186,6 +236,9 @@ export function registerDemoDisabledRoutes(app: FastifyInstance): void {
   app.get('/api/demo/config', { config: { public: true } }, notFound);
   app.post('/api/demo/login', { config: { public: true } }, notFound);
   app.post('/api/demo/reset', { config: { public: true } }, notFound);
+  app.get('/api/demo/story', { config: { public: true } }, notFound);
+  app.get('/api/demo/stories', { config: { public: true } }, notFound);
+  app.get('/api/demo/storylines', { config: { public: true } }, notFound);
 }
 
 function sendDemoError(reply: FastifyReply, requestId: string, error: unknown): FastifyReply {

@@ -68,6 +68,13 @@ import {
   FakeEmailOutboxRepository,
   FakeInboundMessageRepository,
   FakeEmployeeRepository,
+  FakeCandidateRepository,
+  FakeHiringRequisitionRepository,
+  FakeOfficeRequestRepository,
+  FakeWorkspaceInviteRepository,
+  FakeProjectTaskRepository,
+  FakeJobOpeningRepository,
+  FakeOnboardingRepository,
   FakeMeasurementRepository,
   FakeKnowledgeArticleRepository,
   FakeKnowledgeCategoryRepository,
@@ -175,6 +182,8 @@ export async function buildTestApp(
     policyEngine?: Parameters<typeof buildApp>[0]['policyEngine'];
     /** Extra environment variables (e.g. `NEXORA_DEMO_MODE: 'true'`). */
     env?: Record<string, string>;
+    /** A fake chat model for the assistant inside the office workflows. */
+    officeChat?: Parameters<typeof buildApp>[0]['officeChat'];
   } = {},
 ): Promise<{ app: FastifyInstance; repos: RepositorySet; store: InMemoryConversationStore }> {
   const config = loadConfig({
@@ -195,6 +204,13 @@ export async function buildTestApp(
     projects: new FakeProjectRepository(),
     resourceAssignments: new FakeResourceAssignmentRepository(),
     employees: new FakeEmployeeRepository(),
+    hiringRequisitions: new FakeHiringRequisitionRepository(),
+    jobOpenings: new FakeJobOpeningRepository(),
+    candidates: new FakeCandidateRepository(),
+    onboardings: new FakeOnboardingRepository(),
+    officeRequests: new FakeOfficeRequestRepository(),
+    invites: new FakeWorkspaceInviteRepository(),
+    projectTasks: new FakeProjectTaskRepository(),
     documents: new FakeDocumentRepository(),
     documentVersions: new FakeDocumentVersionRepository(),
     documentTemplates: new FakeDocumentTemplateRepository(),
@@ -231,6 +247,7 @@ export async function buildTestApp(
     ...(options.agentClock === undefined ? {} : { agentClock: options.agentClock }),
     ...(options.approvalClock === undefined ? {} : { approvalClock: options.approvalClock }),
     ...(options.policyEngine === undefined ? {} : { policyEngine: options.policyEngine }),
+    ...(options.officeChat === undefined ? {} : { officeChat: options.officeChat }),
     webhookHttp: options.webhookHttp,
     connectors: options.connectors,
     // Journal governed agent executions in-memory so the agent tests can
@@ -255,10 +272,11 @@ export async function login(app: FastifyInstance): Promise<string> {
   const loginResponse = await app.inject({ method: 'GET', url: '/api/auth/login' });
   const state = cookieValue(loginResponse, 'oidc_state')?.split('=')[1] ?? '';
   const verifier = cookieValue(loginResponse, 'oidc_verifier')?.split('=')[1] ?? '';
+  const nonce = cookieValue(loginResponse, 'oidc_nonce')?.split('=')[1] ?? '';
   const callback = await app.inject({
     method: 'GET',
     url: `/api/auth/callback?code=test-code&state=${state}`,
-    headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}` },
+    headers: { cookie: `oidc_state=${state}; oidc_verifier=${verifier}; oidc_nonce=${nonce}` },
   });
   const session = cookieValue(callback, 'nexora_session');
   if (session === undefined) {

@@ -23,6 +23,7 @@ import {
 } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
+import { NavIcon } from '../components/NavIcon.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
@@ -111,7 +112,7 @@ export function Projects(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="🚀"
+            icon={<NavIcon name="projects" size={18} />}
             title="Create your organization first"
             description="Projects live inside an organization. Set one up to get started."
             action={
@@ -210,16 +211,7 @@ export function ProjectsView({
     <Stack gap={8} style={{ maxWidth: 880, margin: '0 auto' }}>
       <Stack direction="row" gap={4} align="center" justify="space-between">
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Projects
-          </h1>
+          <h1 className="nexora-page-title">Projects</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName}
           </p>

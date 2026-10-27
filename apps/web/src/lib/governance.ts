@@ -31,16 +31,6 @@ export function verificationLabel(v: {
   }
 }
 
-/** True only for sources that independently re-read state. */
-export function isIndependentlyVerified(v: { verified: boolean; source: string }): boolean {
-  return (
-    v.verified &&
-    (v.source === 'state_readback' ||
-      v.source === 'provider_readback' ||
-      v.source === 'redetection')
-  );
-}
-
 /** The execution authority in words. */
 export function executionAuthorityLabel(a: GovernanceExecutionAuthority | string): string {
   return a === 'agent_delegation'

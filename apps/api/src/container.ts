@@ -11,8 +11,19 @@ import type { AgentDelegationRepository, AgentIdentityRepository } from '@nexora
 import type { EventPublisher } from '@nexora/shared/events';
 import type { MembershipRepository, OrganizationRepository } from '@nexora/domain-organizations';
 import type { RoleRepository, SessionRepository, UserRepository } from '@nexora/domain-identity';
-import type { ProjectRepository, ResourceAssignmentRepository } from '@nexora/domain-projects';
-import type { EmployeeRepository } from '@nexora/domain-hr';
+import type {
+  ProjectRepository,
+  ProjectTaskRepository,
+  ResourceAssignmentRepository,
+} from '@nexora/domain-projects';
+import type {
+  CandidateRepository,
+  EmployeeRepository,
+  HiringRequisitionRepository,
+  JobOpeningRepository,
+  OfficeRequestRepository,
+  OnboardingRepository,
+} from '@nexora/domain-hr';
 import type {
   DocumentRepository,
   DocumentTemplateRepository,
@@ -52,7 +63,7 @@ import type {
 } from '@nexora/module-notifications';
 
 import { MembershipDomainService, OrganizationDomainService } from '@nexora/domain-organizations';
-import { SessionDomainService, UserDomainService } from '@nexora/domain-identity';
+import { SessionDomainService, SessionPolicy, UserDomainService } from '@nexora/domain-identity';
 import { ProjectDomainService, ResourceAssignmentDomainService } from '@nexora/domain-projects';
 import { EmployeeDomainService } from '@nexora/domain-hr';
 import { DocumentDomainService } from '@nexora/domain-documents';
@@ -63,6 +74,7 @@ import {
   WorkspaceDomainService,
   WorkspaceInstallationService,
   WorkspaceMembershipService,
+  type WorkspaceInviteRepository,
 } from '@nexora/domain-workspaces';
 import {
   AuthenticateWithOidcHandler,
@@ -98,6 +110,9 @@ import {
   CreateEmployeeHandler,
   RevokeHireHandler,
   EmployeeApplicationService,
+  HiringRequisitionApplicationService,
+  OnboardingApplicationService,
+  RecruitingApplicationService,
   FindEmployeeByNameHandler,
   ListEmployeesByIdsHandler,
   ListEmployeesHandler,
@@ -194,6 +209,19 @@ export interface RepositorySet {
   projects: ProjectRepository;
   resourceAssignments: ResourceAssignmentRepository;
   employees: EmployeeRepository;
+  hiringRequisitions: HiringRequisitionRepository;
+  jobOpenings: JobOpeningRepository;
+  candidates: CandidateRepository;
+  onboardings: OnboardingRepository;
+  officeRequests: OfficeRequestRepository;
+  projectTasks: ProjectTaskRepository;
+  /** One-time links that bring a person into a team. */
+  invites: WorkspaceInviteRepository;
+  /**
+   * Makes a multi-record business step all-or-nothing (one PostgreSQL
+   * transaction across the people repositories). Absent for in-memory fakes.
+   */
+  atomically?: <T>(work: () => Promise<T>) => Promise<T>;
   documents: DocumentRepository;
   documentVersions: DocumentVersionRepository;
   documentTemplates: DocumentTemplateRepository;
@@ -273,6 +301,12 @@ export interface Container {
   listProjectMembers: ListProjectMembersHandler;
   /** Employee creation handler. */
   createEmployee: CreateEmployeeHandler;
+  /** The hiring request chain (raise → executive → finance). */
+  hiringRequisitions: HiringRequisitionApplicationService;
+  /** HR's side of hiring: openings, candidates, offers, the hire. */
+  recruiting: RecruitingApplicationService;
+  /** Onboarding a hired person until they are active. */
+  onboarding: OnboardingApplicationService;
   /** Hire compensation (the workflow rollback of the hire step). */
   revokeHire: RevokeHireHandler;
   /** Employee listing handler. */
@@ -411,6 +445,13 @@ export function buildContainer(options: BuildContainerOptions): Container {
     sessions: repositories.sessions,
     users: repositories.users,
     hasher,
+    // ONE absolute session lifetime: the configured `SESSION_MAX_AGE_SECONDS`
+    // that also sets the cookie's max-age. Without this the server kept
+    // accepting a session for the policy default (8 h) regardless of the
+    // configured value (AUTH-005). Idle timeout and the concurrency limit keep
+    // their policy defaults; the same policy instance backs session start,
+    // validation, the live-session count (AUTH-001) and `isLive` (AUTH-002).
+    policy: new SessionPolicy({ ttlMs: options.config.cookie.maxAgeSeconds * 1_000 }),
   });
 
   // Organizations domain services.
@@ -497,6 +538,25 @@ export function buildContainer(options: BuildContainerOptions): Container {
     employeesService,
     publisher,
   });
+  const hiringRequisitionService = new HiringRequisitionApplicationService({
+    requisitions: repositories.hiringRequisitions,
+    publisher,
+  });
+  const onboardingService = new OnboardingApplicationService({
+    onboardings: repositories.onboardings,
+    employeesService,
+    requisitions: repositories.hiringRequisitions,
+    publisher,
+    ...(repositories.atomically === undefined ? {} : { atomically: repositories.atomically }),
+  });
+  const recruitingService = new RecruitingApplicationService({
+    openings: repositories.jobOpenings,
+    candidates: repositories.candidates,
+    requisitions: repositories.hiringRequisitions,
+    employeesService,
+    publisher,
+    ...(repositories.atomically === undefined ? {} : { atomically: repositories.atomically }),
+  });
   const documentService = new DocumentApplicationService({
     documentsService,
     documents: repositories.documents,
@@ -557,6 +617,9 @@ export function buildContainer(options: BuildContainerOptions): Container {
     assignEmployeeToProject: new AssignEmployeeToProjectHandler(projectService),
     listProjectMembers: new ListProjectMembersHandler(projectService),
     createEmployee: new CreateEmployeeHandler(employeeService),
+    hiringRequisitions: hiringRequisitionService,
+    recruiting: recruitingService,
+    onboarding: onboardingService,
     revokeHire: new RevokeHireHandler(employeeService),
     listEmployees: new ListEmployeesHandler(employeeService),
     findEmployeeByName: new FindEmployeeByNameHandler(employeeService),

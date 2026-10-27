@@ -243,6 +243,146 @@ export class NotificationPolicy {
           ],
         };
       }
+      // The hiring chain is an auditable business process: every step (raised,
+      // decided, returned, resubmitted, withdrawn) appears in the activity feed
+      // — and therefore the Audit Center — with the trusted actor. Activity only:
+      // the people whose turn it is see the request on the Hiring page.
+      case 'hiring.requisition.submitted':
+      case 'hiring.requisition.stage_approved':
+      case 'hiring.requisition.approved':
+      case 'hiring.requisition.changes_requested':
+      case 'hiring.requisition.resubmitted':
+      case 'hiring.requisition.withdrawn': {
+        const jobTitle = readString(event.payload, 'jobTitle') ?? 'a role';
+        const stage = readString(event.payload, 'stage');
+        const stageLabel = stage === 'finance' ? 'Finance' : 'the executive';
+        const wording: Record<string, { title: string; body: string }> = {
+          'hiring.requisition.submitted': {
+            title: 'Hiring request raised',
+            body: `A hiring request for ${jobTitle} was raised.`,
+          },
+          'hiring.requisition.stage_approved': {
+            title: 'Hiring request approved by the executive',
+            body: `The hiring request for ${jobTitle} was approved by the executive and now waits for Finance.`,
+          },
+          'hiring.requisition.approved': {
+            title: 'Hiring request approved',
+            body: `The hiring request for ${jobTitle} was approved by Finance and is ready for HR.`,
+          },
+          'hiring.requisition.changes_requested': {
+            title: 'Hiring request returned',
+            body: `The hiring request for ${jobTitle} was returned to the requester by ${stageLabel}.`,
+          },
+          'hiring.requisition.resubmitted': {
+            title: 'Hiring request resubmitted',
+            body: `The hiring request for ${jobTitle} was revised and resubmitted.`,
+          },
+          'hiring.requisition.withdrawn': {
+            title: 'Hiring request withdrawn',
+            body: `The hiring request for ${jobTitle} was withdrawn by the requester.`,
+          },
+        };
+        const text = wording[event.type];
+        return {
+          notifications: [],
+          activity:
+            text === undefined
+              ? []
+              : [{ workspaceId, type: event.type, title: text.title, body: text.body, actorId }],
+        };
+      }
+      // HR's recruiting steps are part of the same auditable hiring trail.
+      // Activity only; the text names the role and the candidate, never contact
+      // details or an offer amount (those are not on the event at all).
+      case 'recruiting.opening.opened':
+      case 'recruiting.opening.status_changed':
+      case 'recruiting.opening.filled':
+      case 'recruiting.candidate.added':
+      case 'recruiting.candidate.stage_changed':
+      case 'recruiting.candidate.feedback_recorded':
+      case 'recruiting.offer.extended':
+      case 'recruiting.offer.accepted':
+      case 'recruiting.offer.declined': {
+        const role = readString(event.payload, 'title') ?? 'the role';
+        const candidate = readString(event.payload, 'candidateName') ?? 'A candidate';
+        const stage = readString(event.payload, 'stage') ?? 'the next stage';
+        const status = readString(event.payload, 'status') ?? 'updated';
+        const wording: Record<string, { title: string; body: string }> = {
+          'recruiting.opening.opened': {
+            title: 'Position opened',
+            body: `HR opened the position for ${role}.`,
+          },
+          'recruiting.opening.status_changed': {
+            title: 'Position updated',
+            body: `The position for ${role} is now ${status.replace('_', ' ')}.`,
+          },
+          'recruiting.opening.filled': {
+            title: 'Position filled',
+            body: `Every approved seat for ${role} has been hired.`,
+          },
+          'recruiting.candidate.added': {
+            title: 'Candidate added',
+            body: `${candidate} was added as a candidate.`,
+          },
+          'recruiting.candidate.stage_changed': {
+            title: 'Candidate moved',
+            body: `${candidate} is now at: ${stage}.`,
+          },
+          'recruiting.candidate.feedback_recorded': {
+            title: 'Interview feedback recorded',
+            body: `Interview feedback was recorded for ${candidate}.`,
+          },
+          'recruiting.offer.extended': {
+            title: 'Offer made',
+            body: `An offer was made to ${candidate}.`,
+          },
+          'recruiting.offer.accepted': {
+            title: 'Offer accepted',
+            body: `${candidate} accepted the offer and was hired.`,
+          },
+          'recruiting.offer.declined': {
+            title: 'Offer declined',
+            body: `${candidate} declined the offer.`,
+          },
+        };
+        const text = wording[event.type];
+        return {
+          notifications: [],
+          activity:
+            text === undefined
+              ? []
+              : [{ workspaceId, type: event.type, title: text.title, body: text.body, actorId }],
+        };
+      }
+      // Onboarding steps complete the hiring trail (activity only).
+      case 'onboarding.started':
+      case 'onboarding.item_completed':
+      case 'onboarding.completed': {
+        const person = readString(event.payload, 'employeeName') ?? 'A new hire';
+        const item = readString(event.payload, 'item') ?? 'An onboarding step';
+        const wording: Record<string, { title: string; body: string }> = {
+          'onboarding.started': {
+            title: 'Onboarding started',
+            body: `Onboarding started for ${person}.`,
+          },
+          'onboarding.item_completed': {
+            title: 'Onboarding step done',
+            body: `${item} — done for ${person}.`,
+          },
+          'onboarding.completed': {
+            title: 'Onboarding completed',
+            body: `${person} finished onboarding and is now active.`,
+          },
+        };
+        const text = wording[event.type];
+        return {
+          notifications: [],
+          activity:
+            text === undefined
+              ? []
+              : [{ workspaceId, type: event.type, title: text.title, body: text.body, actorId }],
+        };
+      }
       case 'workflow.completed':
         return {
           notifications: actorId

@@ -27,8 +27,7 @@
  * see the encode pipeline for why that's affordable now.
  *
  * This is the ONLY page carrying this visual system: the authenticated
- * application, Login's own composition (still `IntelligenceNetwork` /
- * `DigitalHeadquarters`), and Command Center are unchanged.
+ * application and Command Center are unchanged.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -248,6 +247,9 @@ export function Landing(): JSX.Element {
   return (
     <div
       data-theme="dark"
+      // Keeps the landing page on its own palette, typeface and shape — the
+      // app's "desk and ledger" language deliberately stops at this door.
+      className="nexora-landing"
       style={{
         minHeight: '100vh',
         display: 'flex',

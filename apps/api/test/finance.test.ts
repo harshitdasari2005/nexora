@@ -458,10 +458,12 @@ describe('Finance API — expenses', () => {
 });
 
 describe('Finance API — authorization boundaries', () => {
-  it('a CEO (no Finance capabilities) is rejected with 403 on every write and read', async () => {
+  it('an HR Manager (no Finance capabilities) is rejected with 403 on every write and read', async () => {
     const client = await chatClient();
-    // Default onboarding (no workspaceType override) resolves to CEO.
-    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);
+    // An `hr` workspace resolves its owner to people.hr, which holds no finance capability.
+    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client, {
+      workspaceType: 'hr',
+    });
 
     const createDenied = await client.post('/api/finance/budgets', {
       organizationId,

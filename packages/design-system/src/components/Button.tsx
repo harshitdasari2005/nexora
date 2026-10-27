@@ -32,9 +32,21 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const sizeStyles: Record<ButtonSize, CSSProperties> = {
-  sm: { height: 30, paddingInline: spacing[3], fontSize: typography.sizes.sm },
-  md: { height: 34, paddingInline: spacing[4], fontSize: typography.sizes.base },
-  lg: { height: 40, paddingInline: spacing[5], fontSize: typography.sizes.base },
+  sm: {
+    height: 'var(--nexora-control-sm, 32px)',
+    paddingInline: spacing[3],
+    fontSize: typography.sizes.sm,
+  },
+  md: {
+    height: 'var(--nexora-control-md, 38px)',
+    paddingInline: spacing[4],
+    fontSize: typography.sizes.base,
+  },
+  lg: {
+    height: 'var(--nexora-control-lg, 44px)',
+    paddingInline: spacing[5],
+    fontSize: typography.sizes.base,
+  },
 };
 
 /** Renders a styled button. */
@@ -64,11 +76,11 @@ export function Button({
         justifyContent: 'center',
         gap: spacing[2],
         borderRadius: radius.md,
-        fontWeight: typography.weights.medium,
+        fontWeight: 'var(--nexora-control-weight, 600)' as unknown as number,
         letterSpacing: '-0.006em',
         cursor: isDisabled ? 'not-allowed' : 'pointer',
         opacity: isDisabled ? 0.45 : 1,
-        transition: `background-color ${motion.duration.fast} ${motion.easing.standard}, border-color ${motion.duration.fast} ${motion.easing.standard}, color ${motion.duration.fast} ${motion.easing.standard}, filter ${motion.duration.fast} ${motion.easing.standard}`,
+        transition: `background-color ${motion.duration.fast} ${motion.easing.standard}, border-color ${motion.duration.fast} ${motion.easing.standard}, color ${motion.duration.fast} ${motion.easing.standard}, filter ${motion.duration.fast} ${motion.easing.standard}, box-shadow ${motion.duration.fast} ${motion.easing.standard}, transform ${motion.duration.fast} ${motion.easing.standard}`,
         whiteSpace: 'nowrap',
         ...style,
       }}
@@ -96,7 +108,7 @@ function getVariantStyle(variant: ButtonVariant): CSSProperties {
       return {
         background: 'var(--nexora-surface)',
         color: 'var(--nexora-text)',
-        border: '1px solid var(--nexora-border)',
+        border: '1px solid var(--nexora-borderStrong)',
       };
     case 'ghost':
       return {

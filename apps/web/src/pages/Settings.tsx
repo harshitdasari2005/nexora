@@ -173,16 +173,7 @@ export function Settings(): JSX.Element {
     >
       <Stack gap={6} style={{ maxWidth: 720, margin: '0 auto' }}>
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Settings
-          </h1>
+          <h1 className="nexora-page-title">Settings</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             Your profile, organization, preferences, and session.
           </p>

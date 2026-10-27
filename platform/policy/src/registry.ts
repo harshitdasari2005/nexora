@@ -146,6 +146,12 @@ export const POLICY_REGISTRY: readonly PolicyRegistryEntry[] = [
     'REQUIRE_APPROVAL',
     'engine',
   ),
+  organization(
+    POLICY_IDS.HIRING_CHANNEL,
+    'Hiring through hiring requests',
+    'People are hired through a hiring request (the team asks, the CEO and Finance decide, HR recruits). When on, a direct hire by the assistant or an agent is denied.',
+    '1',
+  ),
   platform(
     POLICY_IDS.SIDE_EFFECT_APPROVAL,
     'Side-effect approval',

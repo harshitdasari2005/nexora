@@ -3,7 +3,7 @@
  *
  * ONE reusable framework, MANY business lenses: every business role
  * resolved by the trusted role-context endpoint (`/api/role-context`) maps
- * here to a `RoleTheme` — an atmosphere (tint), an accent, section
+ * here to a `RoleTheme` — an accent, section
  * terminology, a role-specific "brief" question, and a navigation priority
  * order. The Command Center, AppShell, Agent, and Problems pages all read
  * the SAME theme for the SAME role; there is no per-role React page, only
@@ -13,8 +13,6 @@
  * (existing `@nexora/module-command-center` catalog), then add one entry
  * here. Nothing about the rendering engine changes.
  */
-
-import type { IntelligenceNetworkTint } from '../components/IntelligenceNetwork.js';
 
 /** The generic widget-group labels + the problem-attention heading. */
 export interface RoleThemeSections {
@@ -47,8 +45,6 @@ export interface RoleTheme {
   briefQuestion: string;
   /** The default AI Assistant prompt for this lens. */
   assistantPrompt: string;
-  /** The ambient background hue. */
-  tint: IntelligenceNetworkTint;
   /** A solid accent color (hex) for badges, icons, and hero gradients. */
   accent: string;
   /** A translucent version of {@link accent} for soft fills/washes. */
@@ -72,7 +68,6 @@ export const DEFAULT_THEME: RoleTheme = {
   briefLabel: 'Nexora Brief',
   briefQuestion: 'What needs my attention?',
   assistantPrompt: 'What needs my attention?',
-  tint: 'indigo',
   accent: '#5b5bd6',
   accentSoft: '#5b5bd61f',
   sections: {
@@ -95,7 +90,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Executive Brief',
     briefQuestion: 'What matters across the organization today?',
     assistantPrompt: 'What should I know about the organization today?',
-    tint: 'gold',
     accent: '#4f46e5',
     accentSoft: '#4f46e51f',
     sections: {
@@ -126,7 +120,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Financial Brief',
     briefQuestion: 'What financial issues require action?',
     assistantPrompt: 'What financial issues need my attention?',
-    tint: 'emerald',
     accent: '#047857',
     accentSoft: '#0478571f',
     sections: {
@@ -156,7 +149,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Engineering Brief',
     briefQuestion: 'What technology signals require attention?',
     assistantPrompt: 'What technical risks need attention?',
-    tint: 'cyan',
     accent: '#0369a1',
     accentSoft: '#0369a11f',
     sections: {
@@ -186,7 +178,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Team Delivery Brief',
     briefQuestion: 'What does the team need from me today?',
     assistantPrompt: 'What does my team need attention on?',
-    tint: 'steel',
     accent: '#2563eb',
     accentSoft: '#2563eb1f',
     sections: {
@@ -216,7 +207,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'My Work',
     briefQuestion: 'What should I work on next?',
     assistantPrompt: 'What should I work on next?',
-    tint: 'cyan',
     accent: '#0e7490',
     accentSoft: '#0e74901f',
     sections: {
@@ -245,7 +235,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'People Brief',
     briefQuestion: 'What people signals need attention?',
     assistantPrompt: 'What people signals need my attention today?',
-    tint: 'rose',
     accent: '#be123c',
     accentSoft: '#be123c1f',
     sections: {
@@ -274,7 +263,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Sales Brief',
     briefQuestion: 'What growth signals require action?',
     assistantPrompt: 'What growth signals need my attention?',
-    tint: 'jade',
     accent: '#15803d',
     accentSoft: '#15803d1f',
     sections: {
@@ -303,7 +291,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Marketing Brief',
     briefQuestion: 'What market signals need my attention?',
     assistantPrompt: 'What marketing signals should I know about?',
-    tint: 'magenta',
     accent: '#a21caf',
     accentSoft: '#a21caf1f',
     sections: {
@@ -332,7 +319,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Product Brief',
     briefQuestion: 'What product risks should I know about?',
     assistantPrompt: 'Which product risks need attention?',
-    tint: 'violet',
     accent: '#7c3aed',
     accentSoft: '#7c3aed1f',
     sections: {
@@ -362,7 +348,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Product Brief',
     briefQuestion: 'What product priorities need my attention?',
     assistantPrompt: 'Which product priorities need my attention?',
-    tint: 'violet',
     accent: '#6d28d9',
     accentSoft: '#6d28d91f',
     sections: {
@@ -392,7 +377,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Legal Brief',
     briefQuestion: 'What governance signals need my attention?',
     assistantPrompt: 'What compliance or governance risks need my attention?',
-    tint: 'amber',
     accent: '#92400e',
     accentSoft: '#92400e1f',
     sections: {
@@ -422,7 +406,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Legal Brief',
     briefQuestion: 'What compliance signals need my attention?',
     assistantPrompt: 'What compliance issues need my attention?',
-    tint: 'amber',
     accent: '#78350f',
     accentSoft: '#78350f1f',
     sections: {
@@ -452,7 +435,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Operations Brief',
     briefQuestion: 'What operational signals need my attention?',
     assistantPrompt: 'What operational signals need attention?',
-    tint: 'orange',
     accent: '#c2410c',
     accentSoft: '#c2410c1f',
     sections: {
@@ -481,7 +463,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Operations Brief',
     briefQuestion: 'What operational risks need my attention?',
     assistantPrompt: 'What operational risks need my attention?',
-    tint: 'orange',
     accent: '#9a3412',
     accentSoft: '#9a34121f',
     sections: {
@@ -510,7 +491,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Customer Brief',
     briefQuestion: 'What customer signals need my attention?',
     assistantPrompt: 'Which customers need my attention?',
-    tint: 'teal',
     accent: '#0d9488',
     accentSoft: '#0d94881f',
     sections: {
@@ -538,7 +518,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Customer Brief',
     briefQuestion: 'What customer signals need my attention?',
     assistantPrompt: 'Which customers need my attention?',
-    tint: 'teal',
     accent: '#0f766e',
     accentSoft: '#0f766e1f',
     sections: {
@@ -566,7 +545,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Procurement Brief',
     briefQuestion: 'What procurement signals need my attention?',
     assistantPrompt: 'What procurement risks need my attention?',
-    tint: 'olive',
     accent: '#4d7c0f',
     accentSoft: '#4d7c0f1f',
     sections: {
@@ -594,7 +572,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Procurement Brief',
     briefQuestion: 'What supplier signals need my attention?',
     assistantPrompt: 'What supplier risks need my attention?',
-    tint: 'olive',
     accent: '#3f6212',
     accentSoft: '#3f62121f',
     sections: {
@@ -622,7 +599,6 @@ export const ROLE_THEMES: Record<string, RoleTheme> = {
     briefLabel: 'Delivery Brief',
     briefQuestion: 'What does my team need from me today?',
     assistantPrompt: 'What does my team need from me today?',
-    tint: 'steel',
     accent: '#2563eb',
     accentSoft: '#2563eb1f',
     sections: {

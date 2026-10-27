@@ -892,6 +892,37 @@ describe('orchestrator — policy before approval', () => {
   });
 });
 
+/** Allows the orchestrator's precheck, then asks for approval at the executor's own evaluation. */
+class FlipAfterFirstEvaluationPort extends ControlledPort {
+  override evaluate(request: PolicyInvocationRequest): ReturnType<PolicyPort['evaluate']> {
+    if (this.requests.length >= 1) {
+      this.rule.outcome = 'REQUIRE_APPROVAL';
+    }
+    return super.evaluate(request);
+  }
+}
+
+describe('orchestrator — an ungated step claims no approval', () => {
+  it('policy flipping to REQUIRE_APPROVAL between the precheck and the executor does NOT run the step', async () => {
+    const port = new FlipAfterFirstEvaluationPort('ALLOW');
+    const h = orchestratorHarness(port, 'read_only');
+
+    const result = await run(h);
+
+    expect(port.requests.length).toBeGreaterThanOrEqual(2); // precheck + executor evaluation
+    expect(h.contexts).toHaveLength(0); // the tool never ran with nobody having approved it
+    expect(result.status).not.toBe('completed');
+    expect(result.steps[0]?.status).not.toBe('succeeded');
+  });
+
+  it('control: with a stable ALLOW the same ungated step still runs', async () => {
+    const h = orchestratorHarness(new ControlledPort('ALLOW'), 'read_only');
+    const result = await run(h);
+    expect(result.status).toBe('completed');
+    expect(h.contexts).toHaveLength(1);
+  });
+});
+
 describe('orchestrator — the planner gate cannot be skipped by policy', () => {
   it('a policy that ALLOWs a consequential tool still opens an approval (gate holds)', async () => {
     const port = new ControlledPort('ALLOW');

@@ -31,7 +31,8 @@ const HIGH_SIGNAL_PATTERNS = [
   /\bAIza[0-9A-Za-z_-]{35}\b/, // Google API keys
   /\beyJ[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{15,}\.[A-Za-z0-9_-]{10,}/, // JWTs
   // Hardcoded password/secret literals in tracked config-like files
-  /(password|passwd|secret|api[_-]?key|token)\s*[:=]\s*['"][^'"]{12,}['"]/i,
+  // The optional quote after the key lets it match JSON (`"apiToken": "…"`).
+  /(password|passwd|secret|api[_-]?key|token)['"]?\s*[:=]\s*['"][^'"]{12,}['"]/i,
 ];
 
 /** Files whose content legitimately matches the generic literal pattern. */
@@ -40,6 +41,16 @@ const IGNORE_PATHS = new Set([
   '.env.example',
   'infrastructure/keycloak/realm-nexora.json', // seeded dev users (dev only)
 ]);
+
+/**
+ * Line-level allowance for DELIBERATELY FAKE credentials used as redaction-test
+ * fixtures (e.g. the redactor's own "does this look like an AWS key?" cases).
+ * It is honoured ONLY on a line that carries the marker, ONLY in files under a
+ * `test/` directory — so a real secret anywhere else, or on an unmarked line of
+ * a test file, is still a finding. It never changes which patterns are applied.
+ */
+const FIXTURE_MARKER = 'scan-secrets:allow-fixture';
+const isTestFile = (file) => /(^|\/)test\//.test(file);
 
 function trackedFiles() {
   const out = execFileSync('git', ['ls-files'], { encoding: 'utf8', cwd: process.cwd() });
@@ -53,7 +64,7 @@ function trackedFiles() {
  * patterns above still cover real credentials in any file.
  */
 function isConfigLikeFile(file) {
-  return /\.env(\.|$)|\\.json$|\.ya?ml$/.test(file);
+  return /\.env(\.|$)|\.json$|\.ya?ml$/.test(file);
 }
 
 function scan() {
@@ -75,6 +86,9 @@ function scan() {
         continue;
       }
       for (let i = 0; i < lines.length; i += 1) {
+        if (isTestFile(file) && lines[i].includes(FIXTURE_MARKER)) {
+          continue;
+        }
         if (pattern.test(lines[i])) {
           findings.push(`${file}:${i + 1}: ${pattern.toString()}`);
         }

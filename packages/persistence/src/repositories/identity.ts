@@ -7,8 +7,13 @@
  * `hydrate()` (PERSISTENCE.md §4). Child state lives in JSONB documents.
  */
 
-import { and, eq, isNull, or } from 'drizzle-orm';
-import type { RoleRepository, SessionRepository, UserRepository } from '@nexora/domain-identity';
+import { and, eq, gt, gte, isNull, or } from 'drizzle-orm';
+import type {
+  RoleRepository,
+  SessionLivenessWindow,
+  SessionRepository,
+  UserRepository,
+} from '@nexora/domain-identity';
 import { PasswordHash, Role, Session, User } from '@nexora/domain-identity';
 import type { Email, PasswordAlgorithm, Username } from '@nexora/domain-identity';
 import type { TenantId, UserId } from '@nexora/contracts/common';
@@ -46,6 +51,8 @@ function rowToUserSnapshot(row: UserRow): ReturnType<typeof User.snapshot> {
       displayName: string;
       updatedAt: string;
     },
+    oidcIssuer: row.oidcIssuer ?? undefined,
+    oidcSubject: row.oidcSubject ?? undefined,
     roles: row.roles as readonly string[],
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
@@ -64,6 +71,8 @@ function userSnapshotToRow(snapshot: ReturnType<typeof User.snapshot>): UserRow 
     passwordHash: snapshot.passwordHash.hash,
     status: snapshot.status,
     profile: snapshot.profile,
+    oidcIssuer: snapshot.oidcIssuer ?? null,
+    oidcSubject: snapshot.oidcSubject ?? null,
     roles: snapshot.roles,
     createdAt: toDate(snapshot.createdAt),
     updatedAt: toDate(snapshot.updatedAt),
@@ -112,10 +121,54 @@ export class PgUserRepository implements UserRepository {
     return row !== undefined;
   }
 
+  async findByOidcIdentity(issuer: string, subject: string): Promise<User | undefined> {
+    // Exact match on the composite partial unique index `users_oidc_identity_unique`;
+    // deliberately no email fallback.
+    const row = await this.#db.query.users.findFirst({
+      where: and(eq(users.oidcIssuer, issuer), eq(users.oidcSubject, subject)),
+    });
+    return row === undefined ? undefined : User.hydrate(rowToUserSnapshot(row));
+  }
+
+  async bindOidcIdentity(userId: UserId, issuer: string, subject: string): Promise<boolean> {
+    try {
+      // One conditional UPDATE: only an UNBOUND user can be bound, so of two
+      // concurrent first logins exactly one matches the WHERE and wins; the
+      // unique index rejects an identity already bound to another account.
+      const updated = await this.#db
+        .update(users)
+        .set({ oidcIssuer: issuer, oidcSubject: subject, updatedAt: new Date() })
+        .where(and(eq(users.id, userId), isNull(users.oidcIssuer), isNull(users.oidcSubject)))
+        .returning({ id: users.id });
+      return updated.length === 1;
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
   async save(user: User): Promise<void> {
     const row = userSnapshotToRow(User.snapshot(user));
-    await this.#db.insert(users).values(row).onConflictDoUpdate({ target: users.id, set: row });
+    // The OIDC binding is written on INSERT only. An UPDATE (profile, status,
+    // roles…) from an aggregate loaded before a login bound the account must
+    // never overwrite or clear that binding.
+    const { oidcIssuer: _issuer, oidcSubject: _subject, ...mutable } = row;
+    void _issuer;
+    void _subject;
+    await this.#db.insert(users).values(row).onConflictDoUpdate({ target: users.id, set: mutable });
   }
+}
+
+/** Whether a driver error is a PostgreSQL unique-constraint violation (23505). */
+function isUniqueViolation(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && current !== null && typeof current === 'object'; depth += 1) {
+    if ((current as { code?: unknown }).code === '23505') return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 /** Maps a sessions row to a {@link Session} snapshot. */
@@ -124,7 +177,7 @@ function rowToSessionSnapshot(row: SessionRow): ReturnType<typeof Session.snapsh
     id: row.id,
     userId: row.userId as UserId,
     tenantId: row.tenantId as TenantId,
-    token: row.token,
+    tokenHash: row.tokenHash,
     status: row.status,
     issuedAt: toIso(row.issuedAt),
     expiresAt: toIso(row.expiresAt),
@@ -140,7 +193,7 @@ function sessionSnapshotToRow(snapshot: ReturnType<typeof Session.snapshot>): Se
     id: snapshot.id,
     userId: snapshot.userId,
     tenantId: snapshot.tenantId,
-    token: snapshot.token,
+    tokenHash: snapshot.tokenHash,
     status: snapshot.status,
     issuedAt: toDate(snapshot.issuedAt),
     expiresAt: toDate(snapshot.expiresAt),
@@ -163,9 +216,10 @@ export class PgSessionRepository implements SessionRepository {
     return row === undefined ? undefined : Session.hydrate(rowToSessionSnapshot(row));
   }
 
-  async findByToken(token: string): Promise<Session | undefined> {
+  async findByTokenHash(tokenHash: string): Promise<Session | undefined> {
+    // Exact lookup on the unique `sessions_token_hash_unique` index.
     const row = await this.#db.query.sessions.findFirst({
-      where: eq(sessions.token, token),
+      where: eq(sessions.tokenHash, tokenHash),
     });
     return row === undefined ? undefined : Session.hydrate(rowToSessionSnapshot(row));
   }
@@ -177,9 +231,16 @@ export class PgSessionRepository implements SessionRepository {
     return rows.map((row) => Session.hydrate(rowToSessionSnapshot(row)));
   }
 
-  async countActiveByUser(userId: UserId): Promise<number> {
+  async countActiveByUser(userId: UserId, window: SessionLivenessWindow): Promise<number> {
+    // LIVE = status active AND the same two comparisons session validation
+    // applies (`isSessionLive`): not past absolute expiry, not idle-expired.
     const rows = await this.#db.query.sessions.findMany({
-      where: and(eq(sessions.userId, userId), eq(sessions.status, 'active')),
+      where: and(
+        eq(sessions.userId, userId),
+        eq(sessions.status, 'active'),
+        gt(sessions.expiresAt, new Date(window.now)),
+        gte(sessions.lastUsedAt, new Date(window.idleSince)),
+      ),
     });
     return rows.length;
   }

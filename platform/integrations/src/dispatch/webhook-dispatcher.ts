@@ -23,6 +23,7 @@
 import type { EventEnvelope, EventPublisher } from '@nexora/shared/events';
 import type { TenantId, WorkspaceId } from '@nexora/contracts/common';
 
+import { createGuardedWebhookHttpClient } from './destination-guard.js';
 import { IntegrationApplicationService } from '../application/integration-application-service.js';
 import { WebhookDelivery } from '../domain/webhook-delivery.js';
 import type { WebhookEndpoint } from '../domain/webhook-endpoint.js';
@@ -38,24 +39,19 @@ export interface WebhookDispatcherLogger {
   error(obj: Record<string, unknown>, message?: string): void;
 }
 
-/** The HTTP transport port (defaults to the global `fetch`). */
+/** The HTTP transport port (defaults to the SSRF-guarded transport). */
 export interface WebhookHttpClient {
   post(input: { url: string; headers: Record<string, string>; body: string }): Promise<{
     status: number;
   }>;
 }
 
-/** The default transport: global fetch (Node ≥ 18). */
-export const fetchWebhookHttpClient: WebhookHttpClient = {
-  async post({ url, headers, body }) {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...headers },
-      body,
-    });
-    return { status: response.status };
-  },
-};
+/**
+ * The default transport: SSRF-guarded (see `destination-guard.ts`) — public
+ * destinations only, connection pinned to the validated address, redirect
+ * hops re-validated.
+ */
+export const guardedWebhookHttpClient: WebhookHttpClient = createGuardedWebhookHttpClient();
 
 /** Dependencies of the {@link WebhookDispatcher}. */
 export interface WebhookDispatcherDependencies {
@@ -65,7 +61,7 @@ export interface WebhookDispatcherDependencies {
   deliveries: WebhookDeliveryRepository;
   /** Publishes delivery outcome events (observability/audit). */
   publisher: EventPublisher;
-  /** The HTTP transport (defaults to fetch). */
+  /** The HTTP transport (defaults to the SSRF-guarded transport). */
   http?: WebhookHttpClient;
   /** Retry budget: max attempts (default 3). */
   maxAttempts?: number;
@@ -80,6 +76,9 @@ export interface WebhookDispatcherDependencies {
  * payloads to subscribed endpoints. Attached to the EventPublisher seam at
  * the composition root — domains never call it directly.
  */
+/** The only error text recorded for a transport-level delivery failure. */
+const TRANSPORT_FAILURE = 'Delivery failed';
+
 export class WebhookDispatcher {
   readonly #endpoints: WebhookEndpointRepository;
   readonly #deliveries: WebhookDeliveryRepository;
@@ -93,7 +92,7 @@ export class WebhookDispatcher {
     this.#endpoints = dependencies.endpoints;
     this.#deliveries = dependencies.deliveries;
     this.#publisher = dependencies.publisher;
-    this.#http = dependencies.http ?? fetchWebhookHttpClient;
+    this.#http = dependencies.http ?? guardedWebhookHttpClient;
     this.#maxAttempts = dependencies.maxAttempts ?? 3;
     this.#backoffMs = dependencies.backoffMs ?? 250;
     this.#logger = dependencies.logger;
@@ -152,8 +151,12 @@ export class WebhookDispatcher {
           return;
         }
         lastError = `HTTP ${response.status}`;
-      } catch (caught) {
-        lastError = caught instanceof Error ? caught.message : String(caught);
+      } catch {
+        // One generic outcome for EVERY transport failure (blocked destination,
+        // DNS failure, refused/closed port, TLS, timeout). The receipt is readable
+        // by workspace members, so a specific message would make delivery an oracle
+        // for internal names and open ports.
+        lastError = TRANSPORT_FAILURE;
       }
       if (attempt < this.#maxAttempts) {
         await sleep(this.#backoffMs * attempt);

@@ -132,7 +132,28 @@ export class FinanceApplicationService {
     try {
       validateBudgetFields(command);
       const budgetId = BudgetId.from(command.budgetId);
-      await this.#requireVisibleBudget(budgetId, command.organizationId, command.workspaceId);
+      const existing = await this.#requireVisibleBudget(
+        budgetId,
+        command.organizationId,
+        command.workspaceId,
+      );
+      // A budget's expenses are denominated in its currency (submit enforces it) and
+      // utilization sums their minor units: changing the currency under existing
+      // expenses would silently mix currencies in that sum.
+      if (command.currency !== existing.allocated.currency) {
+        const expenses = await this.#expensesService.listByWorkspace(
+          command.organizationId,
+          command.workspaceId,
+        );
+        if (expenses.ok && expenses.value.some((expense) => expense.budgetId === existing.id)) {
+          return err(
+            new FinanceStateTransitionError(
+              'The currency of a budget that already has expenses cannot be changed',
+              { budgetId: existing.id, budgetCurrency: existing.allocated.currency },
+            ),
+          );
+        }
+      }
       const context = financeContext(
         command.actorId,
         command.correlationId,

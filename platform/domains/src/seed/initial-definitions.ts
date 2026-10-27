@@ -134,12 +134,15 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     // enterprise integration oversight — all external connector surfaces
     // (GitHub + Slack) are within executive focus. S34: broad organizational
     // RBAC permissions — the CEO is the one role that reads AND decides
-    // across every surface (never write access it has no executable tool
-    // for, e.g. projects.update has no executable surface anywhere yet).
+    // across every surface. The CEO can SEE every department and RAISE any
+    // request in it (budgets, expenses, documents, project updates) — but holds
+    // no `expenses.decide`: money is decided by Finance, so approvals still
+    // follow the chain even for the chief executive.
     capabilityIds: [
       'organization.read',
       'workspaces.list',
       'workspaces.create',
+      'members.manage',
       'projects.read',
       'projects.create',
       'projects.assign',
@@ -172,6 +175,25 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'slack.messages.send',
       'integrations.manage',
       'marketplace.manage',
+      'projects.update',
+      'documents.upload',
+      'approvals.create',
+      'budgets.read',
+      'budgets.manage',
+      'expenses.read',
+      'expenses.create',
+      'requisitions.create',
+      'requisitions.read',
+      'requisitions.approve_executive',
+      'recruiting.read',
+      'recruiting.interview',
+      'onboarding.read',
+      'onboarding.manager',
+      'requests.create',
+      'requests.read',
+      'requests.approve_manager',
+      'tasks.manage',
+      'requests.approve_executive',
     ],
   },
   {
@@ -215,6 +237,10 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'expenses.create',
       'expenses.decide',
       'policy.read',
+      'requisitions.read',
+      'requisitions.approve_finance',
+      'requests.create',
+      'requests.approve_finance',
     ],
   },
   {
@@ -227,10 +253,19 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     capabilityIds: [
       'employees.read',
       'employees.manage',
+      'members.manage',
       'documents.read',
       'problems.read',
       'agent.use',
       'activity.read',
+      'requisitions.read',
+      'recruiting.manage',
+      'recruiting.read',
+      'recruiting.interview',
+      'onboarding.hr',
+      'onboarding.read',
+      'requests.create',
+      'requests.approve_hr',
     ],
   },
   {
@@ -259,6 +294,16 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'github.issues.create',
       'integrations.manage',
       'marketplace.manage',
+      'requisitions.create',
+      'recruiting.interview',
+      'onboarding.manager',
+      'onboarding.it',
+      'requests.create',
+      'requests.approve_manager',
+      'requests.approve_it',
+      'tasks.manage',
+      'tasks.work',
+      'requests.approve_engineering',
     ],
   },
   {
@@ -284,6 +329,16 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'github.issues.create',
       'integrations.manage',
       'marketplace.manage',
+      'requisitions.create',
+      'recruiting.interview',
+      'onboarding.manager',
+      'onboarding.it',
+      'requests.create',
+      'requests.approve_manager',
+      'requests.approve_it',
+      'tasks.manage',
+      'tasks.work',
+      'requests.approve_engineering',
     ],
   },
   {
@@ -315,6 +370,9 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'github.repositories.read',
       'github.issues.read',
       'github.issues.create',
+      'onboarding.it',
+      'requests.create',
+      'tasks.work',
     ],
   },
   {
@@ -344,6 +402,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'insights.read',
       'agent.use',
       'activity.read',
+      'requests.create',
+      'requests.approve_sales',
     ],
   },
   {
@@ -360,6 +420,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'insights.read',
       'agent.use',
       'activity.read',
+      'requests.create',
+      'requests.approve_marketing',
     ],
   },
   {
@@ -432,6 +494,14 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'github.issues.create',
       'slack.channels.read',
       'slack.messages.send',
+      'requisitions.create',
+      'recruiting.interview',
+      'onboarding.manager',
+      'requests.create',
+      'requests.approve_manager',
+      'tasks.manage',
+      'tasks.work',
+      'requests.approve_engineering',
     ],
   },
   {
@@ -462,6 +532,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'audit.read',
       'policy.read',
       'policy.manage',
+      'requests.create',
+      'requests.approve_legal',
     ],
   },
   {
@@ -502,6 +574,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'activity.read',
       'integrations.manage',
       'marketplace.manage',
+      'requests.create',
+      'requests.approve_legal',
     ],
   },
   {
@@ -517,6 +591,8 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
       'documents.read',
       'agent.use',
       'activity.read',
+      'requests.create',
+      'requests.approve_support',
     ],
   },
   {
@@ -524,7 +600,7 @@ export const INITIAL_ROLES: readonly DomainRoleDefinition[] = [
     name: 'Support Manager',
     description: 'Leads customer support',
     domainId: 'customersuccess',
-    capabilityIds: [],
+    capabilityIds: ['requests.create', 'requests.approve_support'],
   },
   {
     id: 'procurement.manager',
@@ -602,6 +678,149 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
       'Manage employee records (existing surface: create-employee; broader manage surfaces land with the People domain)',
   },
   {
+    id: 'requisitions.create',
+    name: 'Raise Hiring Requests',
+    description:
+      'Raise a hiring request for one’s team, see one’s own requests, and revise or withdraw them (surface: the hiring requisition routes)',
+  },
+  {
+    id: 'requisitions.read',
+    name: 'Read Hiring Requests',
+    description:
+      'See every hiring request of the organization, not only one’s own (surface: the hiring requisition list/read)',
+  },
+  {
+    id: 'requisitions.approve_executive',
+    name: 'Decide Hiring Requests (Executive)',
+    description:
+      'Take the executive decision on a hiring request — the first stage of the chain; never one’s own request',
+  },
+  {
+    id: 'requisitions.approve_finance',
+    name: 'Decide Hiring Requests (Finance)',
+    description:
+      'Take the finance decision on a hiring request — the second stage of the chain, after the executive decision; never one’s own request',
+  },
+  {
+    id: 'recruiting.manage',
+    name: 'Run Recruiting',
+    description:
+      'Open a position for an approved hiring request, manage its candidates, make offers inside the approved terms and record the answers (surface: the recruiting routes)',
+  },
+  {
+    id: 'recruiting.read',
+    name: 'Read Recruiting',
+    description:
+      'See every job opening and candidate of the organization, including offers (surface: the recruiting reads)',
+  },
+  {
+    id: 'recruiting.interview',
+    name: 'Interview Candidates',
+    description:
+      'See the candidates of the openings one is the hiring manager of, and record interview feedback — never offer amounts',
+  },
+  {
+    id: 'onboarding.hr',
+    name: 'Run Onboarding (HR)',
+    description:
+      'Start a new hire’s onboarding and complete HR’s checklist items (paperwork, orientation)',
+  },
+  {
+    id: 'onboarding.it',
+    name: 'Onboarding (IT)',
+    description:
+      'See new hires being onboarded and complete IT’s checklist items (accounts, equipment)',
+  },
+  {
+    id: 'onboarding.manager',
+    name: 'Onboarding (Hiring Manager)',
+    description:
+      'See the onboarding of one’s own hires and complete the manager’s checklist items (buddy)',
+  },
+  {
+    id: 'onboarding.read',
+    name: 'Read Onboarding',
+    description: 'See every onboarding of the organization',
+  },
+  {
+    id: 'requests.create',
+    name: 'Raise Office Requests',
+    description:
+      'Raise an everyday office request (leave, purchase, IT access), see one’s own requests and withdraw them (surface: the office request routes)',
+  },
+  {
+    id: 'requests.read',
+    name: 'Read Office Requests',
+    description: 'See every office request of the organization, not only one’s own',
+  },
+  {
+    id: 'requests.approve_manager',
+    name: 'Decide Office Requests (Manager)',
+    description:
+      'Take the manager decision on a request raised from one’s own team — the first stage of every chain; never one’s own request',
+  },
+  {
+    id: 'requests.approve_hr',
+    name: 'Decide Office Requests (HR)',
+    description: 'Take the HR decision on a leave request, after the manager',
+  },
+  {
+    id: 'requests.approve_finance',
+    name: 'Decide Office Requests (Finance)',
+    description: 'Take the finance decision on a purchase request, after the manager',
+  },
+  {
+    id: 'requests.approve_it',
+    name: 'Decide Office Requests (IT)',
+    description: 'Take the IT decision on an access or equipment request, after the manager',
+  },
+  {
+    id: 'requests.approve_executive',
+    name: 'Decide Office Requests (Executive)',
+    description:
+      'Take the chief executive’s stage of an office workflow (project proposals, contracts, budgets, policies, incident reviews)',
+  },
+  {
+    id: 'requests.approve_engineering',
+    name: 'Take Office Requests (Engineering)',
+    description:
+      'Take engineering’s stage of an office workflow (triage and fix bugs, approve releases, restore service)',
+  },
+  {
+    id: 'requests.approve_marketing',
+    name: 'Take Office Requests (Marketing)',
+    description:
+      'Take marketing’s stage of an office workflow (approve campaigns and content, launch, record results)',
+  },
+  {
+    id: 'requests.approve_sales',
+    name: 'Take Office Requests (Sales)',
+    description: 'Take the sales head’s stage of an office workflow (discounts, contracts)',
+  },
+  {
+    id: 'requests.approve_support',
+    name: 'Take Office Requests (Support)',
+    description:
+      'Take support’s stage of an office workflow (resolve customer problems, approve refunds, reply to customers)',
+  },
+  {
+    id: 'requests.approve_legal',
+    name: 'Take Office Requests (Legal)',
+    description:
+      'Take Legal’s stage of an office workflow (review contracts, campaigns and policies)',
+  },
+  {
+    id: 'tasks.manage',
+    name: 'Manage Project Tasks',
+    description:
+      'Create tasks on a project, give them to people, see every task and review handed-in work — never one’s own',
+  },
+  {
+    id: 'tasks.work',
+    name: 'Work On Tasks',
+    description: 'See the tasks assigned to oneself, start them and hand them in for review',
+  },
+  {
     id: 'workflows.read',
     name: 'Read Workflows',
     description: 'Read workflow instances (existing surface: workflow listing)',
@@ -633,6 +852,12 @@ export const INITIAL_CAPABILITIES: readonly CapabilityDefinition[] = [
     name: 'Create Workspaces',
     description:
       'Create a workspace (existing surface: workspace creation + AI create-workspace tool)',
+  },
+  {
+    id: 'members.manage',
+    name: 'Bring People In',
+    description:
+      'Invite a person to a seat in a team of the organization, and take an unused invitation back',
   },
   {
     id: 'projects.assign',

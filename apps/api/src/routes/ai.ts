@@ -344,12 +344,20 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
     // Lazy sweeps: expiry, then recovery of abandoned `executing` approvals
     // (failed RECOVERY_REQUIRED — never re-executed; a human verifies state).
     await dependencies.lifecycle.sweepApprovals();
-    const records = await dependencies.approvals.listByTenant(query.organizationId, {
+    // Filtered by status in the query, BEFORE the limit: otherwise the newest
+    // PENDING_SCAN_LIMIT approvals of every state would crowd older pending ones
+    // out of an approver's list.
+    const pending = await dependencies.approvals.listByTenant(query.organizationId, {
       workspaceId: query.workspaceId,
       limit: PENDING_SCAN_LIMIT,
+      statuses: ['awaiting_approval'],
     });
-    const pending = records.filter((record) => record.status === 'awaiting_approval');
-    const recoveryRequired = records
+    const failed = await dependencies.approvals.listByTenant(query.organizationId, {
+      workspaceId: query.workspaceId,
+      limit: PENDING_SCAN_LIMIT,
+      statuses: ['failed'],
+    });
+    const recoveryRequired = failed
       .filter(isRecoveryRequired)
       .map((record) => toApprovalGovernanceDto(record, { canDecide: false }));
     const names = new Map<string, string | undefined>();
@@ -503,6 +511,20 @@ export function registerAiRoutes(app: FastifyInstance, dependencies: AiRoutesDep
           outcome: 'blocked',
           occurredAt: new Date().toISOString(),
         });
+        if (authorization.refusal === 'NOT_A_MEMBER') {
+          // No standing in the approval's organization/workspace: the caller is
+          // told EXACTLY what they would be told for a missing approval, so the
+          // response cannot be used to learn whether an approval id exists. The
+          // refusal above is still recorded in the approval's own tenant audit
+          // trail (documented: TRUST_MODEL §approval authority, NXS-119).
+          return reply.code(404).send({
+            error: {
+              code: 'NOT_FOUND',
+              message: 'Approval request not found',
+              requestId: request.id,
+            },
+          });
+        }
         return reply.code(403).send({
           error: {
             code: 'AUTHORIZATION_ERROR',

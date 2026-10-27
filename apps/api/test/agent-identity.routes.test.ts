@@ -349,18 +349,34 @@ describe('/api/agents/:agentId/delegations — grant rules', () => {
     expect(view.effectiveCapabilityIds).toEqual(['projects.find_project']);
   });
 
-  it('refuses a capability the CEO does not hold (403 DELEGATION_EXCEEDS_USER_AUTHORITY), persists nothing, audits a blocked row', async () => {
-    const { client, q } = await ceoClient();
-    // Precondition: the CEO in the engineering workspace holds no finance authority.
+  it('refuses a capability the grantor does not hold (403 DELEGATION_EXCEEDS_USER_AUTHORITY), persists nothing, audits a blocked row', async () => {
+    const { client, scope, q: ceoQ } = await ceoClient();
+    // The grantor is a Team Manager (admin seat → delivery.manager): may manage
+    // agents, holds NO finance authority. (The CEO can raise expenses, so the
+    // CEO is no longer a grantor that lacks this capability.)
+    const managerScope: Scope = {
+      organizationId: scope.organizationId,
+      workspaceId: 'wsp_agents_manager',
+    };
+    await seedWorkspace(client.repos, {
+      id: managerScope.workspaceId,
+      organizationId: scope.organizationId,
+      slug: 'agents-manager',
+    });
+    await seedWorkspaceMembership(client.repos, {
+      workspaceId: managerScope.workspaceId,
+      userId: currentUserId(client),
+      role: 'admin',
+      organizationId: scope.organizationId,
+    });
+    const q = qs(managerScope);
     const roleContext = (
       (await client.get(`/api/role-context?${q}`)).json() as {
         current: { roleId: string; permissions: string[] };
       }
     ).current;
-    expect(roleContext.roleId).toBe('executive.ceo');
-    expect(roleContext.permissions.some((permission) => permission.startsWith('finance.'))).toBe(
-      false,
-    );
+    expect(roleContext.roleId).toBe('delivery.manager');
+    expect(roleContext.permissions).not.toContain('expenses.create');
 
     // The finance definition's ceiling includes finance.submit_expense, so
     // the ONLY reason to refuse is the grantor's own authority.
@@ -374,7 +390,7 @@ describe('/api/agents/:agentId/delegations — grant rules', () => {
     expect(view.delegations).toEqual([]);
     expect(view.effectiveCapabilityIds).toEqual([]);
 
-    const blocked = (await auditEvents(client, q)).filter(
+    const blocked = (await auditEvents(client, ceoQ)).filter(
       (event) =>
         event.source === 'activity' &&
         event.status === 'blocked' &&
@@ -384,7 +400,7 @@ describe('/api/agents/:agentId/delegations — grant rules', () => {
     expect(blocked[0]?.agent?.id).toBe(agentId);
     expect(blocked[0]?.detail).toContain('finance.submit_expense');
 
-    // Positive control: a capability of the same definition the CEO DOES hold.
+    // Positive control: a capability of the same definition the grantor DOES hold.
     const ok = await grant(client, q, agentId, {
       capabilityId: 'notifications.what_needs_attention',
     });

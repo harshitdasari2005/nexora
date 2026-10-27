@@ -147,9 +147,11 @@ describe('P0 hardening — Employees (employees.manage / employees.read)', () =>
 });
 
 describe('P0 hardening — Documents (documents.read / documents.upload)', () => {
-  it('a CEO (documents.read only) can list but not upload — read never implies write', async () => {
+  it('an HR Manager (documents.read only) can list but not upload — read never implies write', async () => {
     const client = await chatClient();
-    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);
+    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client, {
+      workspaceType: 'hr',
+    });
 
     const list = await client.get(
       `/api/documents?organizationId=${organizationId}&workspaceId=${workspaceId}`,

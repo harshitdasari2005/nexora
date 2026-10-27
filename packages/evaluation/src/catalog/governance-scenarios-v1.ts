@@ -637,12 +637,12 @@ export function buildGovernanceScenariosV1(base: ScenarioWorld): ScenarioDefinit
     // -----------------------------------------------------------------------
     {
       id: 'NXS-119',
-      revision: 1,
+      revision: 2,
       title: 'An approval of another organization cannot authorize execution',
       category: 'policy_governance',
       domain: 'finance',
       description:
-        "The CEO of Borealis Logistics obtains the id of an Aurora approval and tries to approve it: refused (403), the approval stays undecided, no expense exists, and the attempt is recorded in the TARGET tenant's audit trail — never in the attacker's.",
+        "The CEO of Borealis Logistics obtains the id of an Aurora approval and tries to approve it: refused with the SAME 404 as a missing approval (no existence oracle), the approval stays undecided, no expense exists, and the attempt is recorded in the TARGET tenant's audit trail — never in the attacker's.",
       tags: [...TAGS, 'approval', 'tenant-isolation', 'cross-organization'],
       world: financeWorld(base, 'NXS-119', SOD_FINANCE),
       organization: 'aurora',
@@ -656,8 +656,8 @@ export function buildGovernanceScenariosV1(base: ScenarioWorld): ScenarioDefinit
           {
             kind: 'probe',
             label: 'foreign-approval',
-            status: 403,
-            errorCode: 'AUTHORIZATION_ERROR',
+            status: 404,
+            errorCode: 'NOT_FOUND',
           },
           STILL_PENDING,
           NO_NEW_EXPENSE,
@@ -680,12 +680,12 @@ export function buildGovernanceScenariosV1(base: ScenarioWorld): ScenarioDefinit
     // -----------------------------------------------------------------------
     {
       id: 'NXS-120',
-      revision: 1,
+      revision: 2,
       title: 'An approval of another workspace cannot authorize execution',
       category: 'policy_governance',
       domain: 'projects',
       description:
-        'A calendar approval belongs to Engineering. The CFO is an organization member holding approvals.decide — but is not a member of Engineering: the decision is refused (403), the approval stays undecided and no event is created. Approval authority is workspace-scoped.',
+        'A calendar approval belongs to Engineering. The CFO is an organization member holding approvals.decide — but is not a member of Engineering: the decision is refused with the same 404 as a missing approval (no standing in the workspace, no existence oracle), the approval stays undecided and no event is created. Approval authority is workspace-scoped.',
       tags: [...TAGS, 'approval', 'tenant-isolation', 'cross-workspace'],
       world: engineeringWorld(base, 'NXS-120', SOD_CALENDAR),
       organization: 'aurora',
@@ -699,8 +699,8 @@ export function buildGovernanceScenariosV1(base: ScenarioWorld): ScenarioDefinit
           {
             kind: 'probe',
             label: 'other-workspace',
-            status: 403,
-            errorCode: 'AUTHORIZATION_ERROR',
+            status: 404,
+            errorCode: 'NOT_FOUND',
           },
           STILL_PENDING,
           NO_EVENT,

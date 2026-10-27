@@ -18,9 +18,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { signInboundBody } from '../src/routes/integrations.js';
+import { EmailRecord } from '@nexora/module-integrations';
+import type { TenantId, WorkspaceId } from '@nexora/contracts/common';
+
 import {
   buildTestApp,
   chatClient,
+  chatClientWithSecondUser,
   currentUserId,
   login,
   onboardOrgAndWorkspace,
@@ -66,6 +70,8 @@ describe('S20 integrations — webhook registry (API)', () => {
     expect(listedBody.endpoints[0]?.id).toBe(endpointId);
     expect(listedBody.endpoints[0]?.secretMasked).not.toContain(createdBody.secret);
     expect(listedBody.endpoints[0]?.secretMasked).toContain('…');
+    // No byte of the signing secret is returned after creation (not even a prefix).
+    expect(listedBody.endpoints[0]?.secretMasked).not.toContain(createdBody.secret.slice(0, 4));
     expect(listedBody.subscribableEvents).toContain('project.created');
     expect(listedBody.subscribableEvents).toContain('workflow.waiting_for_approval');
 
@@ -350,6 +356,45 @@ describe('S20 integrations — email outbox (API)', () => {
     );
     expect(alien.statusCode).toBe(403);
 
+    await client.app.close();
+  });
+});
+
+describe('email outbox — recipient scoping', () => {
+  it('a plain workspace member reads only their OWN emails; the integration administrator reads all', async () => {
+    const client = await chatClientWithSecondUser();
+    const scope = await onboardOrgAndWorkspace(client);
+    await client.second.join({
+      organizationId: scope.organizationId,
+      workspaceId: scope.workspaceId,
+      workspaceRole: 'member',
+    });
+    const ownerId = currentUserId(client);
+    const record = (recipientId: string, email: string, subject: string, event: string) =>
+      EmailRecord.create({
+        tenantId: scope.organizationId as TenantId,
+        workspaceId: scope.workspaceId as WorkspaceId,
+        recipientId,
+        recipientEmail: email,
+        subject,
+        body: `body for ${email}`,
+        sourceEventId: event,
+        correlationId: 'corr_outbox',
+      });
+    await client.repos.emailOutbox.save(record(ownerId, 'owner@nexora.dev', 'For the owner', 'e1'));
+    await client.repos.emailOutbox.save(
+      record(client.second.userId, 'member@nexora.dev', 'For the member', 'e2'),
+    );
+    const url = `/api/integrations/email/outbox?organizationId=${scope.organizationId}&workspaceId=${scope.workspaceId}`;
+
+    const asMember = (await client.second.get(url)).json() as { emails: { subject: string }[] };
+    expect(asMember.emails.map((email) => email.subject)).toEqual(['For the member']);
+
+    const asOwner = (await client.get(url)).json() as { emails: { subject: string }[] };
+    expect(asOwner.emails.map((email) => email.subject).sort()).toEqual([
+      'For the member',
+      'For the owner',
+    ]);
     await client.app.close();
   });
 });

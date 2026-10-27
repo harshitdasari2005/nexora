@@ -370,8 +370,6 @@ export function CommandPalette({
                     fontSize: '11px',
                     color: 'var(--nexora-textMuted)',
                     fontWeight: typography.weights.semibold,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
                   }}
                 >
                   {group}

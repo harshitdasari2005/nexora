@@ -23,6 +23,8 @@
  * registration in the seed.
  */
 
+import { createHash } from 'node:crypto';
+
 import type { RetrieveKnowledgeHandler } from '@nexora/application-knowledge';
 import type { GetTenantMeasurementsHandler } from '@nexora/module-measurements';
 import type { ListProjectsHandler } from '@nexora/application-projects';
@@ -49,6 +51,30 @@ import type { AgentProblemProvider } from '@nexora/module-agents';
 import type { ProblemStore } from '@nexora/module-detection';
 import type { ProblemStatus } from '@nexora/contracts/detection';
 import { nowIso } from '@nexora/shared/time';
+
+const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
+
+/** The longest correlation id the notification and email tables can store. */
+const MAX_CORRELATION_LENGTH = 128;
+
+/**
+ * The deterministic id of a problem's `problem.detected` event. One problem
+ * always gives the same id (a re-detected problem never notifies twice) and
+ * two different problems never share one.
+ */
+export function problemEventId(problemCorrelationId: string): string {
+  return `evt_${digest(problemCorrelationId).slice(0, 40)}`;
+}
+
+/**
+ * A problem's identity names its kind, organization, workspace and user, and
+ * can outgrow what the notification tables store. A long one keeps its
+ * readable start and ends in a digest of the whole, so it stays unique.
+ */
+export function boundedCorrelationId(problemCorrelationId: string): string {
+  if (problemCorrelationId.length <= MAX_CORRELATION_LENGTH) return problemCorrelationId;
+  return `${problemCorrelationId.slice(0, MAX_CORRELATION_LENGTH - 17)}~${digest(problemCorrelationId).slice(0, 16)}`;
+}
 
 /** The bounds of the snapshot sections (S22 — never full scans). */
 const SNAPSHOT_SECTION_LIMIT = 20;
@@ -166,12 +192,14 @@ export function buildDetection(options: BuildDetectionOptions): DetectionSurface
                 // notification consumer's (tenant, source_event, recipient)
                 // idempotency key then makes even a re-published event a
                 // no-op — a re-detected problem can never re-notify.
-                id: `evt_${problem.correlationId.slice(-48)}`,
+                // A digest of the WHOLE identity: the tail alone is the
+                // workspace and user, which two different problems share.
+                id: problemEventId(problem.correlationId),
                 type: 'problem.detected',
                 version: 1,
                 tenantId: problem.tenantId,
                 workspaceId: problem.workspaceId,
-                correlationId: problem.correlationId,
+                correlationId: boundedCorrelationId(problem.correlationId),
                 actor: { kind: 'user', id: problem.userId },
                 payload: {
                   problemId: problem.id,

@@ -97,7 +97,9 @@ describe('Session hydrate round-trip', () => {
     const hydrated = Session.hydrate(Session.snapshot(session));
     expect(hydrated.id).toBe(session.id);
     expect(hydrated.userId).toBe(userId);
-    expect(hydrated.token).toBe('tok-123');
+    // Only the digest survives persistence; the raw token is gone.
+    expect(hydrated.tokenHash).toBe(session.tokenHash);
+    expect(() => hydrated.token).toThrow(/only available on a newly started session/);
     expect(hydrated.status.value).toBe('ended');
     expect(hydrated.issuedAt).toBe(session.issuedAt);
     expect(hydrated.expiresAt).toBe(session.expiresAt);

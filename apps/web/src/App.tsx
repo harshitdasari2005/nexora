@@ -16,6 +16,9 @@ import { Documents } from './pages/Documents.js';
 import { Knowledge } from './pages/Knowledge.js';
 import { Apps } from './pages/Apps.js';
 import { Employees } from './pages/Employees.js';
+import { Hiring } from './pages/Hiring.js';
+import { OnboardingPage } from './pages/Onboarding.js';
+import { Recruiting } from './pages/Recruiting.js';
 import { Integrations } from './pages/Integrations.js';
 import { Insights } from './pages/Insights.js';
 import { Agent } from './pages/Agent.js';
@@ -33,7 +36,15 @@ import { Runtime } from './pages/Runtime.js';
 import { Policy } from './pages/Policy.js';
 import { Approvals } from './pages/Approvals.js';
 import { DemoStart } from './pages/DemoStart.js';
+import { DeskPage } from './pages/Desk.js';
 import { GuidedDemo } from './pages/GuidedDemo.js';
+import { RequestsPage } from './pages/Requests.js';
+import { TasksPage } from './pages/Tasks.js';
+import { PeoplePage } from './pages/People.js';
+import { ReviewPage } from './pages/Review.js';
+import { ProofPage } from './pages/Proof.js';
+import { JoinPage } from './pages/Join.js';
+import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { DemoProvider } from './demo/DemoProvider.js';
 import { RequireAuth, SessionProvider } from './session.js';
 
@@ -43,203 +54,278 @@ export function App(): JSX.Element {
     <BrowserRouter>
       <SessionProvider>
         <DemoProvider>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/demo" element={<DemoStart />} />
-            <Route
-              path="/app/demo"
-              element={
-                <RequireAuth>
-                  <GuidedDemo />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/onboarding/organization"
-              element={
-                <RequireAuth>
-                  <OrganizationWizard />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/onboarding/workspace"
-              element={
-                <RequireAuth>
-                  <WorkspaceWizard />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app"
-              element={
-                <RequireAuth>
-                  <Dashboard />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/command-center"
-              element={
-                <RequireAuth>
-                  <CommandCenter />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/agent"
-              element={
-                <RequireAuth>
-                  <Agent />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/agents"
-              element={
-                <RequireAuth>
-                  <Agents />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/problems"
-              element={
-                <RequireAuth>
-                  <Problems />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/projects"
-              element={
-                <RequireAuth>
-                  <Projects />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/employees"
-              element={
-                <RequireAuth>
-                  <Employees />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/documents"
-              element={
-                <RequireAuth>
-                  <Documents />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/knowledge"
-              element={
-                <RequireAuth>
-                  <Knowledge />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/apps"
-              element={
-                <RequireAuth>
-                  <Apps />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/workflows"
-              element={
-                <RequireAuth>
-                  <Workflows />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/calendar"
-              element={
-                <RequireAuth>
-                  <Calendar />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/finance"
-              element={
-                <RequireAuth>
-                  <Finance />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/audit"
-              element={
-                <RequireAuth>
-                  <Audit />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/runtime"
-              element={
-                <RequireAuth>
-                  <Runtime />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/policy"
-              element={
-                <RequireAuth>
-                  <Policy />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/approvals"
-              element={
-                <RequireAuth>
-                  <Approvals />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/integrations"
-              element={
-                <RequireAuth>
-                  <Integrations />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/insights"
-              element={
-                <RequireAuth>
-                  <Insights />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/assistant"
-              element={
-                <RequireAuth>
-                  <Assistant />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="/app/settings"
-              element={
-                <RequireAuth>
-                  <Settings />
-                </RequireAuth>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Landing />} />
+              <Route path="/demo" element={<DemoStart />} />
+              <Route
+                path="/app/demo"
+                element={
+                  <RequireAuth>
+                    <GuidedDemo />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/desk"
+                element={
+                  <RequireAuth>
+                    <DeskPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/requests"
+                element={
+                  <RequireAuth>
+                    <RequestsPage />
+                  </RequireAuth>
+                }
+              />
+              <Route path="/join" element={<JoinPage />} />
+              <Route
+                path="/app/proof"
+                element={
+                  <RequireAuth>
+                    <ProofPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/review"
+                element={
+                  <RequireAuth>
+                    <ReviewPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/people"
+                element={
+                  <RequireAuth>
+                    <PeoplePage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/tasks"
+                element={
+                  <RequireAuth>
+                    <TasksPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/onboarding/organization"
+                element={
+                  <RequireAuth>
+                    <OrganizationWizard />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/onboarding/workspace"
+                element={
+                  <RequireAuth>
+                    <WorkspaceWizard />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app"
+                element={
+                  <RequireAuth>
+                    <Dashboard />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/command-center"
+                element={
+                  <RequireAuth>
+                    <CommandCenter />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/agent"
+                element={
+                  <RequireAuth>
+                    <Agent />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/agents"
+                element={
+                  <RequireAuth>
+                    <Agents />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/problems"
+                element={
+                  <RequireAuth>
+                    <Problems />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/projects"
+                element={
+                  <RequireAuth>
+                    <Projects />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/employees"
+                element={
+                  <RequireAuth>
+                    <Employees />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/hiring"
+                element={
+                  <RequireAuth>
+                    <Hiring />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/onboarding"
+                element={
+                  <RequireAuth>
+                    <OnboardingPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/recruiting"
+                element={
+                  <RequireAuth>
+                    <Recruiting />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/documents"
+                element={
+                  <RequireAuth>
+                    <Documents />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/knowledge"
+                element={
+                  <RequireAuth>
+                    <Knowledge />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/apps"
+                element={
+                  <RequireAuth>
+                    <Apps />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/workflows"
+                element={
+                  <RequireAuth>
+                    <Workflows />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/calendar"
+                element={
+                  <RequireAuth>
+                    <Calendar />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/finance"
+                element={
+                  <RequireAuth>
+                    <Finance />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/audit"
+                element={
+                  <RequireAuth>
+                    <Audit />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/runtime"
+                element={
+                  <RequireAuth>
+                    <Runtime />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/policy"
+                element={
+                  <RequireAuth>
+                    <Policy />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/approvals"
+                element={
+                  <RequireAuth>
+                    <Approvals />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/integrations"
+                element={
+                  <RequireAuth>
+                    <Integrations />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/insights"
+                element={
+                  <RequireAuth>
+                    <Insights />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/assistant"
+                element={
+                  <RequireAuth>
+                    <Assistant />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/app/settings"
+                element={
+                  <RequireAuth>
+                    <Settings />
+                  </RequireAuth>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </ErrorBoundary>
         </DemoProvider>
       </SessionProvider>
     </BrowserRouter>

@@ -298,13 +298,14 @@ describe('approval governance — decide authority, expiry, pending list', () =>
     await configure(app, orgId, [{ capabilityPrefix: 'calendar.', separationOfDuties: true }]);
     const approval = await open(app, orgId, wsId);
 
-    // Lena belongs to a DIFFERENT organization.
+    // Lena belongs to a DIFFERENT organization. No standing → the approval is
+    // reported exactly like a missing one (404, F-008: no existence oracle).
     const foreign = await decide(app, 'lena', approval.id);
-    expect(foreign.statusCode).toBe(403);
+    expect(foreign.statusCode).toBe(404);
     // Rahul is an org member and holds approvals.decide, but is not a member of
-    // the approval's workspace (aurora-eng).
+    // the approval's workspace (aurora-eng): the same 404.
     const otherWorkspace = await decide(app, 'rahul', approval.id);
-    expect(otherWorkspace.statusCode).toBe(403);
+    expect(otherWorkspace.statusCode).toBe(404);
     expect(await eventsCreated(app, orgId, wsId)).toHaveLength(0);
 
     // The pending list is scoped the same way.
@@ -325,6 +326,73 @@ describe('approval governance — decide authority, expiry, pending list', () =>
 
     // Positive control.
     expect((await decide(app, 'vikram', approval.id)).statusCode).toBe(200);
+  });
+
+  it('F-008: an approval id probed without standing is indistinguishable from a missing id (and the refusal is audited in the approval’s own tenant only)', async () => {
+    const { app, orgId, wsId } = await setup();
+    await configure(app, orgId, [{ capabilityPrefix: 'calendar.', separationOfDuties: true }]);
+    const approval = await open(app, orgId, wsId);
+    const blockedDecisions = async () =>
+      (await audit(app, orgId, wsId)).filter(
+        (e) => e.source === 'activity' && e.status === 'blocked',
+      );
+    const before = (await blockedDecisions()).length;
+
+    const missing = await decide(app, 'lena', 'apr_00000000-0000-0000-0000-000000000000');
+    const foreignOrg = await decide(app, 'lena', approval.id);
+    const otherWorkspace = await decide(app, 'rahul', approval.id);
+    const strip = (r: { json(): unknown }) => {
+      const body = r.json() as { error: Record<string, unknown> };
+      return { ...body.error, requestId: undefined };
+    };
+    // Same status and same body for: no such approval / another organization's
+    // approval / an approval in a workspace the caller is not a member of.
+    expect(missing.statusCode).toBe(404);
+    expect(foreignOrg.statusCode).toBe(404);
+    expect(otherWorkspace.statusCode).toBe(404);
+    expect(strip(foreignOrg)).toEqual(strip(missing));
+    expect(strip(otherWorkspace)).toEqual(strip(missing));
+    // The documented defender-side record: each refused attempt on the REAL
+    // approval is audited in the approval's own tenant (never the prober's);
+    // the missing id has no tenant to record in.
+    expect((await blockedDecisions()).length).toBe(before + 2);
+    // …and nothing changed: the approval is still pending and decidable.
+    expect(await eventsCreated(app, orgId, wsId)).toHaveLength(0);
+
+    // A legitimate MEMBER who is refused (the requester under separation of
+    // duties) still gets the specific 403 and the audit record.
+    const refused = await decide(app, 'meera', approval.id);
+    expect(refused.statusCode).toBe(403);
+    expect((await blockedDecisions()).length).toBe(before + 3);
+
+    // Positive control: the authorized approver still decides normally.
+    expect((await decide(app, 'vikram', approval.id)).statusCode).toBe(200);
+  });
+
+  it('F-008: a LEGACY (non-governed) approval does not leak to an outsider through the requester rule either', async () => {
+    const { app, orgId, wsId } = await setup();
+    // No policy configured → the legacy "only the requester decides" rule applies.
+    const approval = await open(app, orgId, wsId);
+    const blocked = async () =>
+      (await audit(app, orgId, wsId)).filter(
+        (e) => e.source === 'activity' && e.status === 'blocked',
+      );
+    const before = (await blocked()).length;
+    const missing = await decide(app, 'lena', 'apr_00000000-0000-0000-0000-000000000001');
+    const foreign = await decide(app, 'lena', approval.id);
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json()).toEqual({
+      error: {
+        ...(missing.json() as { error: Record<string, unknown> }).error,
+        requestId: (foreign.json() as { error: { requestId: string } }).error.requestId,
+      },
+    });
+    expect((await blocked()).length).toBe(before + 1); // audited in the approval's tenant
+    // A member who is not the requester still gets the specific refusal + audit.
+    expect((await decide(app, 'vikram', approval.id)).statusCode).toBe(403);
+    expect((await blocked()).length).toBe(before + 2);
+    // The requester decides normally.
+    expect((await decide(app, 'meera', approval.id)).statusCode).toBe(200);
   });
 
   it('an already-decided approval is 409 (not 410) and publishes no expiry', async () => {

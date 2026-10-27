@@ -5,10 +5,9 @@
  * application experience): lists the employees of the current organization
  * with loading, empty, and error states. The page talks to the same
  * application layer the AI uses (`GET /api/employees`) — one business
- * execution path for humans and agents. Employees are typically created by
- * the flagship workflow (“Hire Priya and assign her to Mobile Banking”) or
- * the AI hire capability, so this view is intentionally read-only: the
- * authoritative write path is the governed AI/approval surface.
+ * execution path for humans and agents. A person joins the list when a
+ * candidate accepts an offer (Hiring → Recruiting → Onboarding), so this view
+ * is read-only: the way in is the hiring process, not a form here.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -29,6 +28,7 @@ import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
 import type { DashboardResponse, EmployeeDto } from '../lib/types.js';
 import { useSession } from '../session.js';
+import { NavIcon } from '../components/NavIcon.js';
 
 /** The employees application page. */
 export function Employees(): JSX.Element {
@@ -58,7 +58,13 @@ export function Employees(): JSX.Element {
         return;
       }
       const listed = await api<{ employees: EmployeeDto[] }>(
-        `/employees?organizationId=${encodeURIComponent(dashboard.organization.id)}`,
+        // The workspace the person is working from decides their role (HR
+        // reads the list from the HR workspace); the server re-checks membership.
+        `/employees?organizationId=${encodeURIComponent(dashboard.organization.id)}${
+          dashboard.workspace === null
+            ? ''
+            : `&workspaceId=${encodeURIComponent(dashboard.workspace.id)}`
+        }`,
       );
       setState({ dashboard, employees: listed.employees, loading: false, error: null });
     } catch (error) {
@@ -98,7 +104,7 @@ export function Employees(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="🚀"
+            icon={<NavIcon name="employees" size={18} />}
             title="Create your organization first"
             description="Employees live inside an organization. Set one up to get started."
             action={
@@ -147,16 +153,7 @@ export function EmployeesView({
     <Stack gap={8} style={{ maxWidth: 880, margin: '0 auto' }}>
       <Stack direction="row" gap={4} align="center" justify="space-between">
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Employees
-          </h1>
+          <h1 className="nexora-page-title">Employees</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName}
           </p>
@@ -180,9 +177,9 @@ export function EmployeesView({
         {employees.length === 0 ? (
           <Card>
             <EmptyState
-              icon="⚕"
+              icon={<NavIcon name="employees" size={18} />}
               title="No employees yet"
-              description="Ask the AI: “Hire Priya and assign her to the Mobile Banking project.”"
+              description="People appear here once HR hires them for an approved hiring request."
             />
           </Card>
         ) : (
@@ -210,6 +207,21 @@ export function EmployeeRow({ employee }: { employee: EmployeeDto }): JSX.Elemen
       >
         <Stack gap={0.5} style={{ minWidth: 0 }}>
           <div style={{ fontWeight: typography.weights.semibold }}>{employee.name}</div>
+          {employee.jobTitle !== undefined || employee.department !== undefined ? (
+            <div style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
+              {[employee.jobTitle, employee.department].filter(Boolean).join(' · ')}
+            </div>
+          ) : null}
+          {employee.email !== undefined || employee.startDate !== undefined ? (
+            <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
+              {[
+                employee.email,
+                employee.startDate === undefined ? undefined : `starts ${employee.startDate}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+          ) : null}
           <div style={{ fontSize: typography.sizes.xs, color: 'var(--nexora-textMuted)' }}>
             Joined{' '}
             {new Date(employee.createdAt).toLocaleDateString('en-US', {

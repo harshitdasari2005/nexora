@@ -192,7 +192,7 @@ export class DetectionApplicationService {
     problemId: string,
   ): Promise<{ stillPresent: boolean; problem: BusinessProblemDto } | undefined> {
     const record = await this.#store.findById(scope.tenantId, problemId);
-    if (record === undefined) {
+    if (record === undefined || !DetectionApplicationService.#inScope(record, scope)) {
       return undefined;
     }
     const signal = this.#registry.get(record.signalId);
@@ -245,7 +245,9 @@ export class DetectionApplicationService {
     if (deduped.length === 0) {
       return [];
     }
-    const records = await this.#store.findByIds(scope.tenantId, deduped);
+    const records = (await this.#store.findByIds(scope.tenantId, deduped)).filter((record) =>
+      DetectionApplicationService.#inScope(record, scope),
+    );
     if (records.length === 0) {
       return [];
     }
@@ -276,10 +278,24 @@ export class DetectionApplicationService {
     return result;
   }
 
-  /** Resolves one problem by id (tenant-scoped; forged ids resolve to nothing). */
+  /**
+   * Whether a stored problem belongs to the caller's exact scope: the tenant
+   * is matched by the store, the workspace here (a workspace problem is only
+   * visible inside its workspace; an org-level problem only to an org-level
+   * scope — the same exact-match rule as `listByScope` and the correlation
+   * id). A foreign-workspace id therefore resolves exactly like a missing one.
+   */
+  static #inScope(
+    record: { tenantId: string; workspaceId?: string },
+    scope: { tenantId: string; workspaceId?: string },
+  ): boolean {
+    return record.tenantId === scope.tenantId && record.workspaceId === scope.workspaceId;
+  }
+
+  /** Resolves one problem by id (tenant + workspace scoped; forged ids resolve to nothing). */
   async getById(scope: DetectionScope, problemId: string): Promise<BusinessProblemDto | undefined> {
     const record = await this.#store.findById(scope.tenantId, problemId);
-    if (record === undefined) {
+    if (record === undefined || !DetectionApplicationService.#inScope(record, scope)) {
       return undefined;
     }
     const signal = this.#registry.get(record.signalId);
@@ -304,7 +320,7 @@ export class DetectionApplicationService {
     now: string,
   ): Promise<boolean> {
     const record = await this.#store.findById(scope.tenantId, problemId);
-    if (record === undefined) {
+    if (record === undefined || !DetectionApplicationService.#inScope(record, scope)) {
       return false;
     }
     try {

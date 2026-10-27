@@ -24,7 +24,7 @@ Domain ──► EventEnvelope ──► Publisher seam ──► NotificationEv
   `workflow.completed`, `workflow.failed`,
   `workflow.waiting_for_approval`, `document.available`,
   `document.processing_failed`, `knowledge.indexed`, …).
-- The `NotificationForwardingPublisher` (composition root, `apps/api`) hands
+- The application event publisher (`buildApplicationEventPublisher`, composition root, `apps/api`) hands
   every envelope to the consumer **before** the base publisher. The consumer
   is guaranteed never to throw, so a notification failure can never break
   the business mutation that emitted the event.

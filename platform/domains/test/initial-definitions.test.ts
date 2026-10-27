@@ -55,12 +55,38 @@ const EXPECTED_CAPABILITY_IDS = [
   'knowledge.publish',
   'employees.read',
   'employees.manage',
+  'requisitions.create',
+  'requisitions.read',
+  'requisitions.approve_executive',
+  'requisitions.approve_finance',
+  'recruiting.manage',
+  'recruiting.read',
+  'recruiting.interview',
+  'onboarding.hr',
+  'onboarding.it',
+  'onboarding.manager',
+  'onboarding.read',
+  'requests.create',
+  'requests.read',
+  'requests.approve_manager',
+  'requests.approve_hr',
+  'requests.approve_finance',
+  'requests.approve_it',
+  'requests.approve_executive',
+  'requests.approve_engineering',
+  'requests.approve_marketing',
+  'requests.approve_sales',
+  'requests.approve_support',
+  'requests.approve_legal',
+  'tasks.manage',
+  'tasks.work',
   'workflows.read',
   'workflows.execute',
   'approvals.read',
   'approvals.create',
   'workspaces.list',
   'workspaces.create',
+  'members.manage',
   'projects.assign',
   'calendar.create',
   'github.repositories.read',
@@ -113,6 +139,26 @@ describe('initial domain registrations', () => {
     expect(catalog.capabilities.list().map((capability) => capability.id)).toEqual(
       EXPECTED_CAPABILITY_IDS,
     );
+  });
+
+  it('splits the hiring-request chain across roles: raise, executive decision, finance decision', () => {
+    const catalog = createInitialCatalog();
+    const holders = (capability: string): string[] =>
+      catalog.roles
+        .list()
+        .filter((role) => role.capabilityIds.includes(capability))
+        .map((role) => role.id)
+        .sort();
+    expect(holders('requisitions.create')).toEqual([
+      'delivery.manager',
+      'executive.ceo',
+      'technology.cto',
+      'technology.engineering_manager',
+    ]);
+    // Each decision stage belongs to exactly one role — and they are different roles.
+    expect(holders('requisitions.approve_executive')).toEqual(['executive.ceo']);
+    expect(holders('requisitions.approve_finance')).toEqual(['finance.cfo']);
+    expect(holders('requisitions.read')).toEqual(['executive.ceo', 'finance.cfo', 'people.hr']);
   });
 
   it('grants policy.read / policy.manage only to the governance roles', () => {

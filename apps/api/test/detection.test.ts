@@ -21,6 +21,7 @@ import type { BusinessProblemDto } from '@nexora/contracts/detection';
 import type { TenantId } from '@nexora/contracts/common';
 
 import { buildTestApp, chatClient, onboardOrgAndWorkspace, type ChatClient } from './helpers.js';
+import { boundedCorrelationId, problemEventId } from '../src/detection/build.js';
 
 /** Creates + publishes a knowledge article through the real API path. */
 async function createAndPublishArticle(
@@ -363,6 +364,27 @@ describe('S27 detection — agent DTO problems', () => {
       ).notifications.values(),
     ].filter((n) => n.type === 'problem.detected');
     expect(after).toHaveLength(1);
+  });
+
+  it('gives every problem its own event id, and an identity the notification tables can store', () => {
+    const scope =
+      'org_daacfd10-b539-44fe-a63e-b2c974ff4315:wsp_0e051eb0-4d29-49e1-8881-68b300ff2cdd:usr_76bd6fcb-0dc3-475a-8e56-0f0cca7c4ad6';
+    // Two different problems of the same person in the same workspace: the
+    // tail of their identities is identical, so the id must come from the whole.
+    const delay = `onboarding_delay:${scope}`;
+    const budget = `budget_overrun:${scope}`;
+    expect(problemEventId(delay)).not.toBe(problemEventId(budget));
+    expect(problemEventId(delay)).toBe(problemEventId(delay));
+    expect(problemEventId(delay).length).toBeLessThanOrEqual(64);
+
+    expect(delay.length).toBeGreaterThan(128);
+    expect(boundedCorrelationId(delay).length).toBeLessThanOrEqual(128);
+    expect(boundedCorrelationId(delay)).not.toBe(boundedCorrelationId(`${delay}x`));
+    expect(boundedCorrelationId(delay).startsWith('onboarding_delay:org_')).toBe(true);
+    // A short identity is kept exactly as it is.
+    expect(boundedCorrelationId('workflow_failure:org_1:wsp_1:usr_1')).toBe(
+      'workflow_failure:org_1:wsp_1:usr_1',
+    );
   });
 
   it('prompt injection in knowledge never changes the trusted problem surface', async () => {

@@ -147,6 +147,46 @@ describe('PolicyView', () => {
     expect(html).not.toContain('<textarea');
   });
 
+  it('the hiring policy is a plain on/off switch with no settings to type', () => {
+    const { currentVersion: _never, ...unconfigured } = budget;
+    void _never;
+    const off = renderToString(
+      <PolicyChangeForm
+        policy={{
+          ...unconfigured,
+          policyId: 'POLICY_HIRING_CHANNEL',
+          title: 'Hiring through hiring requests',
+          enabled: false,
+          config: undefined,
+        }}
+        submitting={false}
+        onSubmit={() => undefined}
+      />,
+    ).replace(/<!-- -->/g, '');
+    expect(off).toContain('people join only through a hiring request');
+    expect(off).toContain('>Turn on<');
+    expect(off).not.toContain('Enable policy');
+    expect(off).not.toContain('<select');
+    expect(off).not.toContain('Capability prefix');
+
+    const on = renderToString(
+      <PolicyChangeForm
+        policy={{
+          ...budget,
+          policyId: 'POLICY_HIRING_CHANNEL',
+          currentVersion: 1,
+          enabled: true,
+          config: { directHire: 'deny' },
+        }}
+        submitting={false}
+        onSubmit={() => undefined}
+      />,
+    ).replace(/<!-- -->/g, '');
+    expect(on).toContain('Disable policy');
+    expect(on).not.toContain('>Turn on<');
+    expect(on).not.toContain('Create new version');
+  });
+
   it('hides the manage form without policy.manage and for platform policies', () => {
     const readOnly = renderToString(
       <PolicyView {...props({ selectedId: budget.policyId, canManage: false })} />,

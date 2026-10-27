@@ -11,7 +11,8 @@
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import type { EventPublisher } from '@nexora/shared/events';
-import type { ApprovalEngine } from '@nexora/ai-runtime';
+import type { ApprovalEngine, ChatProvider } from '@nexora/ai-runtime';
+import { GroqAdapter, OllamaAdapter } from '@nexora/ai-runtime/adapters';
 import type { ConversationStore } from '@nexora/ai-runtime/conversation';
 import {
   createDatabase,
@@ -26,6 +27,14 @@ import {
   PgEmailOutboxRepository,
   PgInboundMessageRepository,
   PgEmployeeRepository,
+  PgOfficeRequestRepository,
+  PgWorkspaceInviteRepository,
+  PgProjectTaskRepository,
+  createTransactionalDatabase,
+  PgCandidateRepository,
+  PgHiringRequisitionRepository,
+  PgJobOpeningRepository,
+  PgOnboardingRepository,
   PgKnowledgeArticleRepository,
   PgKnowledgeCategoryRepository,
   PgKnowledgeIndexStore,
@@ -112,6 +121,10 @@ import { approvalRefusalReasonCode, createApprovalLifecycle } from './ai/approva
 import { registerAiRoutes } from './routes/ai.js';
 import { DemoService } from './demo/demo-service.js';
 import { registerDemoDisabledRoutes, registerDemoRoutes } from './demo/routes.js';
+import { StoriesReader } from './demo/stories.js';
+import { readStoryFacts } from './demo/story-reader.js';
+import { createRequestAuthority } from './office/request-authority.js';
+import { registerOriginGuard } from './plugins/origin-guard.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerHealth } from './routes/health.js';
@@ -126,6 +139,19 @@ import { registerCalendarRoutes } from './routes/calendar.js';
 import { registerFinanceRoutes } from './routes/finance.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerEmployeeRoutes } from './routes/employees.js';
+import { registerHiringRoutes } from './routes/hiring.js';
+import { OfficeRequest } from '@nexora/domain-hr';
+import { OfficeAi } from './office/office-ai.js';
+import { registerOfficeRequestRoutes } from './routes/office-requests.js';
+import { registerOnboardingRoutes } from './routes/onboarding.js';
+import { registerTaskRoutes } from './routes/tasks.js';
+import { registerPeopleRoutes } from './routes/people.js';
+import { registerReviewRoutes } from './routes/review.js';
+import { registerProofRoutes } from './routes/proof.js';
+import { createStaffing } from './office/staffing.js';
+import { MembershipDomainService } from '@nexora/domain-organizations';
+import { WorkspaceMembershipService } from '@nexora/domain-workspaces';
+import { registerRecruitingRoutes } from './routes/recruiting.js';
 import { registerIntegrationsRoutes } from './routes/integrations.js';
 import { registerKnowledgeRoutes } from './routes/knowledge.js';
 import { registerDomainRoutes } from './routes/domains.js';
@@ -219,6 +245,11 @@ export interface AppDependencies {
    * registry for the contrived closure scenarios). Never used by production.
    */
   onAiRuntime?: (runtime: AiRuntime) => void;
+  /**
+   * The chat model of the assistant inside the office workflows (tests inject
+   * a fake; production derives it from `config.ai`).
+   */
+  officeChat?: ChatProvider;
 }
 
 /** Builds the Nexora API application. */
@@ -260,12 +291,20 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
   // (Command Center, AI, agent) already uses, never a second authorization
   // system.
   const rbac = { roleResolver: businessRoleResolver, catalog: domainCatalog };
+  // Who holds which seat: a workflow stage nobody can take falls to the executive.
+  const staffing = createStaffing({
+    workspaces: repositories.workspaces,
+    workspaceMemberships: repositories.workspaceMemberships,
+    catalog: domainCatalog,
+  });
 
   // The integration application service is composed AFTER the AI runtime
   // (its inbound router targets the existing ApprovalEngine); the webhook
   // dispatcher + email projection are registered onto the same chain.
   const integrationsPolicy = new NotificationPolicy();
 
+  // Browser-origin guard (AUTH-008): registered before every route it protects.
+  registerOriginGuard(app, { config: dependencies.config });
   registerAuth(app, { config: dependencies.config, sessions: container.sessionsService });
   registerHealth(app);
   // Demo World (explicit opt-in). When disabled these routes do not exist (404).
@@ -281,6 +320,27 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
       demo,
       sessions: container.sessionsService,
       endSession: container.endSession,
+      stories: new StoriesReader({
+        ids: demo.ids,
+        requests: repositories.officeRequests,
+        tasks: repositories.projectTasks,
+        projects: repositories.projects,
+        authority: createRequestAuthority(rbac, staffing),
+        permissions: rbac,
+        personaOfUser: (userId) => demo.personaOfUser(userId),
+        readHiringFacts: (organizationId) =>
+          readStoryFacts(
+            {
+              requisitions: container.hiringRequisitions,
+              recruiting: container.recruiting,
+              onboarding: container.onboarding,
+              projects: repositories.projects,
+              resourceAssignments: repositories.resourceAssignments,
+              personaOfUser: (userId) => demo.personaOfUser(userId),
+            },
+            organizationId,
+          ),
+      }),
     });
     // Idempotent: seeds the deterministic demo organization when it is absent
     // or drifted, and never touches any other organization.
@@ -317,7 +377,146 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     createEmployee: container.createEmployee,
     listEmployees: container.listEmployees,
     listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
     permissions: rbac,
+  });
+  // Display names only — never an email fallback (same rule as the governance read models).
+  const hiringDisplayName = async (userId: string): Promise<string | undefined> => {
+    const user = await repositories.users.findById(userId as never);
+    const displayName = user?.profile.displayName.value;
+    return displayName === undefined || displayName.length === 0 ? undefined : displayName;
+  };
+  registerHiringRoutes(app, {
+    requisitions: container.hiringRequisitions,
+    recruiting: container.recruiting,
+    projects: repositories.projects,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
+  });
+  registerOnboardingRoutes(app, {
+    onboarding: container.onboarding,
+    employees: repositories.employees,
+    projects: repositories.projects,
+    resourceAssignments: repositories.resourceAssignments,
+    assignEmployeeToProject: container.assignEmployeeToProject,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
+  });
+  // The assistant inside the office workflows uses the SAME model connection
+  // the deployment configured for the AI runtime (none / local / Groq). With
+  // none, it answers by plain rules and says so.
+  const officeChat =
+    dependencies.officeChat ??
+    (dependencies.config.ai.provider === 'groq'
+      ? new GroqAdapter({
+          model: dependencies.config.ai.model,
+          ...(dependencies.config.ai.apiKey === undefined
+            ? {}
+            : { apiKey: dependencies.config.ai.apiKey }),
+          ...(dependencies.config.ai.baseUrl === undefined
+            ? {}
+            : { baseUrl: dependencies.config.ai.baseUrl }),
+        }).chat
+      : dependencies.config.ai.provider === 'local'
+        ? new OllamaAdapter({
+            model: dependencies.config.ai.model,
+            ...(dependencies.config.ai.baseUrl === undefined
+              ? {}
+              : { baseUrl: dependencies.config.ai.baseUrl }),
+            ...(dependencies.config.ai.apiKey === undefined
+              ? {}
+              : { apiKey: dependencies.config.ai.apiKey }),
+          }).chat
+        : undefined);
+  const officeAssistant = new OfficeAi(
+    officeChat === undefined
+      ? {}
+      : {
+          chat: officeChat,
+          model: dependencies.config.ai.model,
+          onModelFailure: (reason) =>
+            app.log.warn({ reason }, 'office assistant fell back to plain rules'),
+        },
+  );
+  registerOfficeRequestRoutes(app, {
+    assistant: officeAssistant,
+    requests: repositories.officeRequests,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    staffing,
+    resolveUserName: hiringDisplayName,
+    // An approved project proposal opens the project it proposed, so the team
+    // can be given tasks on it. A project of that name already existing is fine.
+    onCompleted: async (completed, actorId, correlationId) => {
+      if (completed.type !== 'project_proposal') return;
+      const details = OfficeRequest.snapshot(completed).details;
+      const name = details['name'];
+      if (typeof name !== 'string') return;
+      const existing = await repositories.projects.listByOrganization(completed.organizationId);
+      if (existing.some((project) => project.name.value.toLowerCase() === name.toLowerCase())) {
+        return;
+      }
+      const problem = details['problem'];
+      await container.createProject.handle({
+        organizationId: completed.organizationId,
+        name: name.slice(0, 80),
+        ...(typeof problem === 'string' ? { description: problem.slice(0, 500) } : {}),
+        actorId: actorId as never,
+        correlationId,
+      });
+    },
+  });
+  registerProofRoutes(app);
+  registerReviewRoutes(app, {
+    requests: repositories.officeRequests,
+    tasks: repositories.projectTasks,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
+    assistant: officeAssistant,
+  });
+  registerPeopleRoutes(app, {
+    organizations: repositories.organizations,
+    memberships: repositories.memberships,
+    workspaces: repositories.workspaces,
+    workspaceMemberships: repositories.workspaceMemberships,
+    invites: repositories.invites,
+    organizationMembers: new MembershipDomainService({
+      memberships: repositories.memberships,
+      organizations: repositories.organizations,
+    }),
+    teamMembers: new WorkspaceMembershipService({
+      memberships: repositories.workspaceMemberships,
+      workspaces: repositories.workspaces,
+    }),
+    listOrganizations: container.listOrganizations,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
+    publish: (events) => publisher.publish(events),
+    ...(repositories.atomically === undefined ? {} : { atomically: repositories.atomically }),
+  });
+  registerTaskRoutes(app, {
+    tasks: repositories.projectTasks,
+    projects: repositories.projects,
+    workspaceMemberships: repositories.workspaceMemberships,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
+  });
+  registerRecruitingRoutes(app, {
+    recruiting: container.recruiting,
+    requisitions: container.hiringRequisitions,
+    listOrganizations: container.listOrganizations,
+    listMyWorkspaces: container.listMyWorkspaces,
+    permissions: rbac,
+    resolveUserName: hiringDisplayName,
   });
   registerDocumentRoutes(app, {
     uploadDocument: container.uploadDocument,
@@ -418,6 +617,7 @@ export async function buildApp(dependencies: AppDependencies): Promise<FastifyIn
     listMyWorkspaces: container.listMyWorkspaces,
     stream: notificationStream,
     permissions: rbac,
+    isSessionLive: (sessionId) => container.sessionsService.isLive(sessionId),
   });
 
   // Enterprise AI Runtime: register the workspaces capability surface and
@@ -1053,18 +1253,32 @@ export function buildPgRepositories(
       'No repositories or database provided: pass either `repositories` (fakes) or `database` (PostgreSQL).',
     );
   }
+  // The people records (candidate, seat count, employee, onboarding) are
+  // written together or not at all: these repositories share one transaction
+  // whenever a step runs inside `atomically`.
+  const people = createTransactionalDatabase(database);
   return {
     users: new PgUserRepository(database),
     sessions: new PgSessionRepository(database),
     roles: new PgRoleRepository(database),
     organizations: new PgOrganizationRepository(database),
-    memberships: new PgMembershipRepository(database),
+    // Memberships join the same transaction: taking an invited seat adds the
+    // organization membership, the team seat and uses the link, or none of it.
+    memberships: new PgMembershipRepository(people.database),
     workspaces: new PgWorkspaceRepository(database),
-    workspaceMemberships: new PgWorkspaceMembershipRepository(database),
+    workspaceMemberships: new PgWorkspaceMembershipRepository(people.database),
+    invites: new PgWorkspaceInviteRepository(people.database),
     workspaceInstallations: new PgWorkspaceInstallationRepository(database),
     projects: new PgProjectRepository(database),
     resourceAssignments: new PgResourceAssignmentRepository(database),
-    employees: new PgEmployeeRepository(database),
+    employees: new PgEmployeeRepository(people.database),
+    hiringRequisitions: new PgHiringRequisitionRepository(people.database),
+    jobOpenings: new PgJobOpeningRepository(people.database),
+    candidates: new PgCandidateRepository(people.database),
+    onboardings: new PgOnboardingRepository(people.database),
+    atomically: people.transaction,
+    officeRequests: new PgOfficeRequestRepository(database),
+    projectTasks: new PgProjectTaskRepository(database),
     documents: new PgDocumentRepository(database),
     documentVersions: new PgDocumentVersionRepository(database),
     documentTemplates: new PgDocumentTemplateRepository(database),

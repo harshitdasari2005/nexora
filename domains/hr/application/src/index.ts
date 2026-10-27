@@ -19,3 +19,8 @@ export * from './query-handlers/list-employees.handler.js';
 export * from './dto/employee.dto.js';
 export * from './validators/create-employee.validator.js';
 export * from './services/employee-application-service.js';
+export * from './dto/hiring-requisition.dto.js';
+export * from './services/hiring-requisition-application-service.js';
+export * from './dto/recruiting.dto.js';
+export * from './services/recruiting-application-service.js';
+export * from './services/onboarding-application-service.js';

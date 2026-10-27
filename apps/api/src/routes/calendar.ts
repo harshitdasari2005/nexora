@@ -332,7 +332,7 @@ export function registerCalendarRoutes(
   app.post('/api/calendar/events/:id/cancel', async (request, reply) => {
     const auth = requireAuth(request);
     const params = request.params as { id: string };
-    const body = request.body as { organizationId?: string; workspaceId?: string };
+    const body = (request.body ?? {}) as { organizationId?: string; workspaceId?: string };
     const organizationId = body.organizationId;
     const workspaceId = body.workspaceId;
     if (organizationId === undefined || workspaceId === undefined) {

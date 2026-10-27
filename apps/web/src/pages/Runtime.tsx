@@ -25,6 +25,7 @@ import {
 } from '@nexora/design-system';
 
 import { AppShell } from '../components/AppShell.js';
+import { NavIcon } from '../components/NavIcon.js';
 import { ErrorState } from '../components/ErrorState.js';
 import { LoadingScreen } from '../components/LoadingScreen.js';
 import { api, ApiError } from '../lib/api.js';
@@ -160,7 +161,7 @@ export function Runtime(): JSX.Element {
       >
         <Card padding={10} elevationLevel="md" style={{ maxWidth: 520, width: '100%' }}>
           <EmptyState
-            icon="🛡"
+            icon={<NavIcon name="runtime" size={18} />}
             title="Create a workspace first"
             description="Runtime telemetry is scoped to a workspace. Set one up to get started."
             action={
@@ -297,16 +298,7 @@ export function RuntimeView({
         style={{ flexWrap: 'wrap' }}
       >
         <Stack gap={1}>
-          <h1
-            style={{
-              fontSize: typography.sizes['3xl'],
-              fontWeight: typography.weights.bold,
-              letterSpacing: '-0.03em',
-              lineHeight: 1.1,
-            }}
-          >
-            Runtime Runs
-          </h1>
+          <h1 className="nexora-page-title">Runtime Runs</h1>
           <p style={{ fontSize: typography.sizes.sm, color: 'var(--nexora-textSecondary)' }}>
             {organizationName} · {workspaceName} — how the AI runtime performed
           </p>
@@ -389,7 +381,7 @@ export function RuntimeView({
               ) : runs.length === 0 ? (
                 <Card>
                   <EmptyState
-                    icon="🛡"
+                    icon={<NavIcon name="runtime" size={18} />}
                     title="No runtime runs"
                     description="Nothing matches the current filters yet."
                   />
@@ -457,7 +449,7 @@ export function RuntimeView({
               {selectedId === null ? (
                 <Card>
                   <EmptyState
-                    icon="🛡"
+                    icon={<NavIcon name="runtime" size={18} />}
                     title="Select a run"
                     description="Choose a row to see its timeline."
                   />

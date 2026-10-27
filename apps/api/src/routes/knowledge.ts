@@ -22,17 +22,9 @@
  * never a second permission model.
  *
  * Authoring mutations (create/update/publish/archive an article, create a
- * category) are deliberately NOT capability-gated: the catalog defines a
- * `knowledge.publish` capability but assigns it to ZERO roles (verified
- * against every role's `capabilityIds` in the Phase 1 catalog). Gating
- * writes behind it would make knowledge authoring impossible for every
- * role in the system — not a legitimate enforcement of an existing
- * restriction, but an unconditional outage of a working, tested feature.
- * Per the fail-closed instruction to reuse only an EXISTING, ACCURATE
- * capability and never silently invent or misapply one, and since changing
- * which roles hold a capability is a role-catalog change (out of scope
- * here), write endpoints stay at membership/workspace scope only. This is
- * a documented, intentional gap — see the P0 hardening report.
+ * category) require the `knowledge.publish` capability, evaluated through the
+ * same `authorizePermission` path (the role catalog assigns it to the roles
+ * that author knowledge). Workspace membership alone does not authorize a write.
  */
 
 import type { FastifyInstance, FastifyReply } from 'fastify';

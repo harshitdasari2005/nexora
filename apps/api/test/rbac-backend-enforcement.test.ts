@@ -199,6 +199,27 @@ describe('backend RBAC — problems.investigate (remediation plan driving)', () 
     expectForbidden(await client.post(`/api/plans/plan_x/cancel?${q}`, {}));
     await client.app.close();
   });
+
+  it('a General Counsel (no problems.read) cannot LIST or READ remediation plans — plans embed the full problem and evidence', async () => {
+    const client = await chatClient();
+    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client, {
+      workspaceType: 'legal',
+    });
+    const q = `organizationId=${organizationId}&workspaceId=${workspaceId}`;
+    expectForbidden(await client.get(`/api/plans?${q}`));
+    expectForbidden(await client.get(`/api/plans/plan_x?${q}`));
+    await client.app.close();
+  });
+
+  it('a role WITH problems.read still lists plans', async () => {
+    const client = await chatClient();
+    const { organizationId, workspaceId } = await onboardOrgAndWorkspace(client);
+    const listed = await client.get(
+      `/api/plans?organizationId=${organizationId}&workspaceId=${workspaceId}`,
+    );
+    expect(listed.statusCode).toBe(200);
+    await client.app.close();
+  });
 });
 
 describe('backend RBAC — knowledge.publish (authoring)', () => {

@@ -10,14 +10,59 @@
 
 import { api, ApiError } from './api.js';
 
+/** Every person in the demo office (the server's fixed list). */
+export type DemoPersonaKey =
+  | 'ceo'
+  | 'cto'
+  | 'manager'
+  | 'dev_aarav'
+  | 'dev_meghna'
+  | 'hr'
+  | 'cfo'
+  | 'controller'
+  | 'marketing'
+  | 'sales'
+  | 'support'
+  | 'legal';
+
 /** A demo persona as published by the server (no email, no user id). */
 export interface DemoPersona {
-  key: 'ceo' | 'manager' | 'controller' | 'cfo';
+  key: DemoPersonaKey;
   displayName: string;
   title: string;
   responsibility: string;
   /** The workspace the persona starts in (a server-published scope id). */
   workspaceId: string;
+}
+
+/**
+ * Where a person lands after signing in: their desk in their own workspace —
+ * what is waiting for them, with the guided story's next step on top.
+ */
+export function demoHomePath(organizationId: string, persona: DemoPersona): string {
+  return `/app/desk?${demoScopeQuery(organizationId, persona)}`;
+}
+
+/** The trusted scope query of a persona's own workspace. */
+export function demoScopeQuery(organizationId: string, persona: DemoPersona): string {
+  return `organizationId=${encodeURIComponent(organizationId)}&workspaceId=${encodeURIComponent(persona.workspaceId)}`;
+}
+
+/** What the guided story suggests typing into the forms (the user may change any of it). */
+export interface DemoHiringSuggestion {
+  jobTitle: string;
+  department: string;
+  projectId: string;
+  headcount: number;
+  employmentType: 'full_time' | 'part_time' | 'contract' | 'intern';
+  salaryMinMinorUnits: number;
+  salaryMaxMinorUnits: number;
+  currency: string;
+  urgency: 'low' | 'normal' | 'high';
+  justification: string;
+  jobPosting: string;
+  candidateName: string;
+  candidateEmail: string;
 }
 
 /** `GET /api/demo/config` when demo mode is enabled. */
@@ -31,6 +76,8 @@ export interface DemoConfig {
     projectName: string;
     budgetName: string;
     expense: { description: string; amountMinorUnits: number; currency: string };
+    /** Absent on an older backend. */
+    hiring?: DemoHiringSuggestion;
   };
 }
 
@@ -57,40 +104,91 @@ export async function demoReset(): Promise<{ resetAt: string }> {
   return api<{ resetAt: string }>('/demo/reset', { method: 'POST' });
 }
 
-/** The approval as read back from `GET /api/approvals/:id` (persisted state). */
-export interface ApprovalStateDto {
-  id: string;
-  capabilityId: string;
-  toolId: string;
-  requesterId: string;
-  requesterName?: string;
-  status: string;
-  createdAt: string;
-  expiresAt: string;
-  requiredApproverRoleId?: string;
-  separationOfDuties: boolean;
-  policy?: { policyId: string; version: string; outcome: string };
-  reason: string;
-  canDecide: boolean;
-  denyReason?: string;
-  runId: string;
-  intent: string;
-  decision?: 'grant' | 'reject';
-  decidedById?: string;
-  decidedByName?: string;
-  decidedAt?: string;
-  executedAt?: string;
-  error?: string;
+/** The screen a step of a guided story is done on. */
+export type StoryScreen = 'hiring' | 'recruiting' | 'onboarding' | 'requests' | 'tasks';
+
+/** One step of a guided story, as derived by the backend from the real records. */
+export interface StoryStep {
+  key: string;
+  title: string;
+  state: 'done' | 'current' | 'waiting' | 'skipped' | 'returned';
+  detail: string;
+  /** Who acts now (set on the current step only). */
+  who: readonly DemoPersonaKey[];
+  screen: StoryScreen;
+  /** Whose job this step is in an office. */
+  owner?: string;
 }
 
-/** Reads one approval's persisted state in a workspace scope. */
-export async function fetchApproval(
-  approvalId: string,
-  scope: { organizationId: string; workspaceId: string },
-): Promise<ApprovalStateDto> {
-  const query = new URLSearchParams(scope).toString();
-  const result = await api<{ approval: ApprovalStateDto }>(
-    `/approvals/${encodeURIComponent(approvalId)}?${query}`,
-  );
-  return result.approval;
+/** A story line the guided demo can follow. */
+export interface StoryInfo {
+  key: string;
+  title: string;
+  department: string;
+  about: string;
+}
+
+/** `GET /api/demo/story`: where a story stands and whose turn it is. */
+export interface DemoStory extends StoryInfo {
+  subject?: string;
+  steps: readonly StoryStep[];
+  next?: {
+    step: string;
+    who: readonly DemoPersonaKey[];
+    action: string;
+    screen: StoryScreen;
+    /** The workspace each of those people acts from, when it is not their own. */
+    at?: Readonly<Partial<Record<DemoPersonaKey, string>>>;
+  };
+  finished: boolean;
+}
+
+/** One entry of `GET /api/demo/stories`. */
+export interface StorySummary extends StoryInfo {
+  status: 'not_started' | 'in_progress' | 'finished';
+  stepCount: number;
+  stepsDone: number;
+  waitingFor: readonly DemoPersonaKey[];
+  /** What happens, step by step. */
+  steps?: readonly string[];
+}
+
+/** The story the demo opens with. */
+export const DEFAULT_STORY = 'hiring';
+const STORY_STORAGE_KEY = 'nexora.demo.story';
+/** Fired in this browser when the viewer picks another story to follow. */
+export const STORY_EVENT = 'nexora:story';
+
+/** The story this viewer chose to follow (a per-browser convenience, nothing more). */
+export function selectedStoryKey(): string {
+  try {
+    return window.localStorage.getItem(STORY_STORAGE_KEY) ?? DEFAULT_STORY;
+  } catch {
+    return DEFAULT_STORY;
+  }
+}
+
+/** Follows another story from now on. */
+export function selectStory(key: string): void {
+  try {
+    window.localStorage.setItem(STORY_STORAGE_KEY, key);
+  } catch {
+    // Storage is unavailable (private window): the choice lasts for this page only.
+  }
+  window.dispatchEvent(new CustomEvent(STORY_EVENT, { detail: key }));
+}
+
+/** Reads a guided story (derived on the server; the browser decides nothing). */
+export function fetchDemoStory(key: string = DEFAULT_STORY): Promise<DemoStory> {
+  return api<DemoStory>(`/demo/story?story=${encodeURIComponent(key)}`);
+}
+
+/** Reads every story line with where it stands. */
+export async function fetchDemoStories(): Promise<StorySummary[]> {
+  return (await api<{ stories: StorySummary[] }>('/demo/stories')).stories;
+}
+
+/** The same list for the demo's front door (no session needed in demo mode). */
+export async function fetchDemoStorylines(): Promise<StorySummary[]> {
+  return (await api<{ stories: StorySummary[] }>('/demo/storylines')).stories;
 }
