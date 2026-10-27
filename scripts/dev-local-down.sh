@@ -5,8 +5,8 @@
 #
 # Stops the API/Web dev servers started by `pnpm dev:local` (exactly those
 # PIDs — nothing else), then runs `docker compose down` on the Nexora
-# infrastructure. Volumes and all data are preserved (never `-v`), unrelated
-# processes are never touched, and host port 9000 is left alone.
+# infrastructure. Volumes and all data are preserved (never `-v`) and
+# unrelated processes are never touched.
 #
 # Note: Ctrl+C in the `pnpm dev:local` terminal already stops the API/Web
 # servers; this command additionally stops the infrastructure containers.
@@ -15,8 +15,7 @@ set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_BASE="$ROOT_DIR/infrastructure/compose/docker-compose.yml"
-COMPOSE_MINIO="$ROOT_DIR/infrastructure/compose/docker-compose.minio-ports.yml"
-COMPOSE_FILES=(-f "$COMPOSE_BASE" -f "$COMPOSE_MINIO")
+COMPOSE_FILES=(-f "$COMPOSE_BASE")
 
 PID_FILE="${TMPDIR:-/tmp}/nexora-dev-local.pids"
 

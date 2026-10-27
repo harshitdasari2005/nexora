@@ -22,15 +22,16 @@ pnpm dev:local        # infra (compose) -> health checks -> API (:3001) + Web (:
 pnpm dev:local:down   # stop the managed API/Web processes + `docker compose down` (volumes preserved)
 ```
 
-- `dev:local` always uses the MinIO port override file, so host port 9000
-  (owned by an unrelated process) is never touched; MinIO S3 = `:9002`,
-  console = `:9003`. Set `S3_PORT=9002` in `.env` to match.
+- `dev:local` needs a repo-root `.env` (`cp .env.example .env`). MinIO is
+  published on `S3_PORT` from `.env` (default `:9000`, console one above), so
+  the API and MinIO always agree — change `S3_PORT` if that port is taken.
 - Ctrl+C in the `dev:local` terminal stops the API/Web servers only;
   infrastructure containers keep running (restart is fast).
 - Fail-safe: Docker missing, occupied ports, or an unhealthy service are
   reported with a clear message — the launcher never kills an occupying
   process (including unrelated projects).
-- Ports are overridable: `NEXORA_API_PORT=3100 NEXORA_WEB_PORT=5174 pnpm dev:local`.
+- Ports are overridable: `NEXORA_API_PORT=3100 NEXORA_WEB_PORT=5174 pnpm dev:local`
+  (sign-in through Keycloak is registered for the default ports 3001/5173 only).
 - Browser auto-open is a convenience only; disable with `--no-open` or
   `NEXORA_OPEN_BROWSER=0`.
 

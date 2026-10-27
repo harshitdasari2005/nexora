@@ -17,16 +17,17 @@
 #
 # Overrides (optional, for machines where a port is taken):
 #   NEXORA_API_PORT=3100 NEXORA_WEB_PORT=5174 pnpm dev:local
+# (Sign-in through Keycloak is registered for the default ports 3001/5173.)
 #
-# The MinIO port override file is always used: host 9000 belongs to an
-# unrelated process and is never touched. MinIO S3 = :9002, console = :9003.
+# MinIO's host port follows S3_PORT in .env (default 9000; console = S3_PORT + 1),
+# so the API always talks to the port MinIO is actually on.
 
 set -uo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_BASE="$ROOT_DIR/infrastructure/compose/docker-compose.yml"
-COMPOSE_MINIO="$ROOT_DIR/infrastructure/compose/docker-compose.minio-ports.yml"
-COMPOSE_FILES=(-f "$COMPOSE_BASE" -f "$COMPOSE_MINIO")
+COMPOSE_FILES=(-f "$COMPOSE_BASE")
+ENV_FILE="$ROOT_DIR/.env"
 
 # Ports (overridable; defaults match the standard stack).
 API_PORT="${NEXORA_API_PORT:-3001}"
@@ -139,9 +140,19 @@ wait_for_web() {
 info "Nexora local development launcher"
 info "  API port: ${API_PORT}  Web port: ${WEB_PORT}"
 
+if [[ ! -f "$ENV_FILE" ]]; then
+  fail "No .env at the repo root. Create it with: cp .env.example .env — then re-run: pnpm dev:local"
+fi
+
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   fail "Docker is not running. Start Docker Desktop, then re-run: pnpm dev:local"
 fi
+
+# MinIO is published on the port the API will use (S3_PORT in .env).
+S3_PORT_FROM_ENV="$(grep -E '^S3_PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2 | tr -d '[:space:]\"'"'"'')"
+export NEXORA_MINIO_PORT="${S3_PORT_FROM_ENV:-9000}"
+export NEXORA_MINIO_CONSOLE_PORT="${NEXORA_MINIO_CONSOLE_PORT:-$((NEXORA_MINIO_PORT + 1))}"
+info "  MinIO port: ${NEXORA_MINIO_PORT} (S3_PORT in .env)"
 
 # --- 1. port conflicts (report, never kill) ---------------------------------
 
@@ -179,8 +190,9 @@ API_PID=$!
 (
   cd "$ROOT_DIR" || exit 1
   # `run dev --port N`: the single `--` is consumed by pnpm, so Vite
-  # receives `--port N` (NOT `-- --port N`).
-  pnpm --filter @nexora/app-web run dev --port "$WEB_PORT"
+  # receives `--port N` (NOT `-- --port N`). NEXORA_API_PORT points the
+  # /api proxy at the API started above.
+  NEXORA_API_PORT="$API_PORT" pnpm --filter @nexora/app-web run dev --port "$WEB_PORT"
 ) &
 WEB_PID=$!
 

@@ -58,7 +58,7 @@ import type { TenantId, UserId, WorkspaceId } from '@nexora/contracts/common';
 import { buildContainer } from '../src/container.js';
 import { buildPgRepositories } from '../src/app.js';
 import { buildApplicationEventPublisher } from '../src/events/application-publisher.js';
-import type { ApiConfig } from '../src/config.js';
+import { loadConfig, type ApiConfig } from '../src/config.js';
 
 /** The demo user's email — override with DEMO_USER_EMAIL if needed. */
 const DEMO_USER_EMAIL = process.env['DEMO_USER_EMAIL']?.trim() || 'alex@nexora.dev';
@@ -148,7 +148,8 @@ async function main(): Promise<void> {
   }
 
   const db: NexoraDatabase = createDatabase(databaseUrl);
-  const config = { s3: undefined } as unknown as ApiConfig;
+  // The real config from .env, minus object storage (the seed never touches documents).
+  const config: ApiConfig = { ...loadConfig(process.env), s3: undefined };
   const repositories = buildPgRepositories(db, config);
   const { publisher } = buildApplicationEventPublisher({ repositories });
   const container = buildContainer({ config, repositories, publisher });
